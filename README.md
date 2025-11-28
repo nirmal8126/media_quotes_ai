@@ -20,6 +20,15 @@ You can start editing the page by modifying `app/page.tsx`. The page auto-update
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
+## Environment variables
+
+The project relies on several secrets (Supabase keys, OpenAI key, and payment provider credentials). Copy one of the sample files below, fill in the actual values, and keep the real `.env.*` files out of source control:
+
+- Copy `.env.local.example` → `.env.local` for development (PostCSS/Next uses this file automatically).
+- Copy `.env.production.example` → `.env.production` when building/deploying (override values such as `NEXT_PUBLIC_SITE_URL`).
+
+The samples list all required variables: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `OPENAI_API_KEY`, `RAZORPAY_*`, `STRIPE_*`, and `NEXT_PUBLIC_SITE_URL`.
+
 ## Learn More
 
 To learn more about Next.js, take a look at the following resources:
