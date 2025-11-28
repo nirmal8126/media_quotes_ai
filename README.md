@@ -27,7 +27,7 @@ The project relies on several secrets (Supabase keys, OpenAI key, and payment pr
 - Copy `.env.local.example` → `.env.local` for development (PostCSS/Next uses this file automatically).
 - Copy `.env.production.example` → `.env.production` when building/deploying (override values such as `NEXT_PUBLIC_SITE_URL`).
 
-The samples list all required variables: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `OPENAI_API_KEY`, `RAZORPAY_*`, `STRIPE_*`, and `NEXT_PUBLIC_SITE_URL`.
+The samples list all required variables: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `OPENAI_API_KEY`, `RAZORPAY_*`, `STRIPE_*`, and `NEXT_PUBLIC_SITE_URL`.
 
 ### Prisma
 

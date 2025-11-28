@@ -1,64 +1,158 @@
-import Image from "next/image";
+import Link from 'next/link';
 
-export default function Home() {
+const featureHighlights = [
+  {
+    title: 'AI scripts on demand',
+    description: 'Generate briefing-ready scripts, thumbnails, and captions tailored to each platform in seconds.',
+  },
+  {
+    title: 'Calendar that delivers',
+    description: 'Publish-ready schedules auto-sync with creator preferences so teams know exactly when to post.',
+  },
+  {
+    title: 'Automation workspace',
+    description: 'Reminders, approvals, and reporting run together so you can scale without adding extra ops hours.',
+  },
+];
+
+const infoSections = [
+  {
+    title: 'Reels intelligence',
+    body:
+      'We analyze prior uploads, brand tone, and trending prompts, then codify those learnings into reusable themes for every new batch of AI-created content.',
+  },
+  {
+    title: 'Payments + plans',
+    body:
+      'Monetize creators with transparent plan tiers, Razorpay + Stripe checkouts, and realtime dashboards that keep finance teams on the same page.',
+  },
+  {
+    title: 'Control everything',
+    body:
+      'Role-based access, activity logs, and Supabase service-role APIs keep the launchpad secure while your operations team moves fast.',
+  },
+];
+
+export default function HomePage() {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
+    <div className="min-h-screen bg-slate-50 text-slate-900">
+      <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/90 backdrop-blur">
+        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-5">
+          <div className="flex items-center gap-3 text-lg font-semibold tracking-tight text-orange-300">
+            <div className="h-10 w-10 rounded-2xl bg-gradient-to-br from-orange-500 via-orange-400 to-amber-400" />
+            MediaQuotes AI
+          </div>
+          <nav className="hidden items-center gap-6 text-sm uppercase tracking-[0.25em] text-slate-600 sm:flex">
+            <a className="hover:text-slate-900" href="#product">
+              Product
+            </a>
+            <a className="hover:text-slate-900" href="#showcase">
+              Showcase
+            </a>
+            <a className="hover:text-slate-900" href="#pricing">
+              Pricing
+            </a>
+            <a className="hover:text-slate-900" href="#contact">
+              Contact
+            </a>
+          </nav>
+          <div className="flex items-center gap-3 text-sm">
+            <Link
+              className="rounded-full border border-slate-300 px-4 py-2 text-slate-900 hover:border-orange-400"
+              href="/auth"
             >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
+              Sign in
+            </Link>
+            <Link
+              className="rounded-full bg-orange-400 px-4 py-2 font-semibold text-slate-950"
+              href="/auth"
             >
-              Learning
-            </a>{" "}
-            center.
+              Get started
+            </Link>
+          </div>
+        </div>
+      </header>
+
+      <main className="mx-auto flex max-w-6xl flex-col gap-20 px-6 py-16">
+        <section className="grid gap-10 md:grid-cols-[1.1fr,0.9fr] md:items-center">
+          <div className="space-y-6">
+            <p className="text-sm uppercase tracking-[0.5em] text-orange-400">Creator operating system</p>
+            <h1 className="text-4xl font-semibold leading-tight text-slate-900 md:text-5xl">
+              Build consistent, high-performing short-form content without the agency backlog.
+            </h1>
+            <p className="max-w-2xl text-lg text-slate-600">
+              MediaQuotes AI orchestrates every step of the creator workflow—planning, generation, payment, and reporting—so
+              teams can execute ambitious social strategies with a single dashboard.
+            </p>
+            <div className="flex flex-wrap gap-4">
+              <button className="rounded-full bg-slate-900 px-6 py-3 text-sm font-semibold text-white">Request demo</button>
+              <button className="rounded-full border border-slate-300 px-6 py-3 text-sm text-slate-600">View case studies</button>
+            </div>
+          </div>
+          <div className="rounded-3xl border border-slate-200 bg-white p-8 shadow-[0_25px_50px_-30px_rgba(15,23,42,0.25)]">
+            <p className="text-xs uppercase tracking-[0.4em] text-slate-500">Live metrics</p>
+            <div className="mt-6 space-y-4 text-sm text-slate-700">
+              <div className="flex items-center justify-between">
+                <span className="text-slate-400">Active creators</span>
+                <span className="text-xl font-semibold text-slate-900">4,120</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-400">Reels/month</span>
+                <span className="text-xl font-semibold text-slate-900">32k</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-400">Avg. approval time</span>
+                <span className="text-xl font-semibold text-slate-900">2h 12m</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="product" className="space-y-6">
+          <h2 className="text-3xl font-semibold text-slate-900">What MediaQuotes AI manages for you</h2>
+          <div className="grid gap-6 md:grid-cols-3">
+            {featureHighlights.map((feature) => (
+              <article
+                key={feature.title}
+                className="rounded-3xl border border-slate-200 bg-white p-6 shadow-[0_15px_30px_-10px_rgba(2,6,23,0.12)]"
+              >
+                <h3 className="text-lg font-semibold text-slate-900">{feature.title}</h3>
+                <p className="mt-3 text-sm text-slate-600">{feature.description}</p>
+              </article>
+            ))}
+          </div>
+        </section>
+
+        <section id="showcase" className="grid gap-10 md:grid-cols-2">
+          {infoSections.map((section) => (
+            <article key={section.title} className="rounded-3xl border border-slate-200 bg-white p-6 shadow-[0_15px_30px_-10px_rgba(2,6,23,0.12)]">
+              <h3 className="text-xl font-semibold text-slate-900">{section.title}</h3>
+              <p className="mt-4 text-sm leading-relaxed text-slate-600">{section.body}</p>
+              <p className="mt-6 text-xs uppercase tracking-[0.4em] text-orange-400">Live today with creators</p>
+            </article>
+          ))}
+        </section>
+
+        <section id="pricing" className="rounded-3xl border border-slate-200 bg-white p-10 text-center shadow-[0_20px_60px_-30px_rgba(15,23,42,0.15)]">
+          <p className="text-sm uppercase tracking-[0.4em] text-slate-500">Plans</p>
+          <h3 className="mt-4 text-2xl font-semibold text-slate-900">Start with a free trial, scale to enterprise</h3>
+          <p className="mt-3 text-sm text-slate-600">
+            Transparent pricing, Razorpay + Stripe checkouts, and support bundle add-ons keep every team aligned.
           </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
+          <div className="mt-6 flex flex-wrap items-center justify-center gap-4">
+            <button className="rounded-full bg-orange-400 px-5 py-3 font-semibold text-slate-950">See pricing</button>
+            <button className="rounded-full border border-slate-300 px-5 py-3 text-sm text-slate-600">Talk to sales</button>
+          </div>
+        </section>
+
+        <section id="contact" className="space-y-6 border-t border-slate-200 pt-10 text-center">
+          <p className="text-xs uppercase tracking-[0.4em] text-slate-500">Questions?</p>
+          <h3 className="text-2xl font-semibold text-slate-900">Let’s talk creatives, automations, and payments</h3>
+          <div className="flex flex-wrap items-center justify-center gap-4">
+            <button className="rounded-full border border-slate-300 px-5 py-3 text-sm text-slate-700">Schedule a call</button>
+            <button className="rounded-full bg-slate-900 px-5 py-3 text-sm font-semibold text-white">Email hello@mediaquotes.ai</button>
+          </div>
+        </section>
       </main>
     </div>
   );
