@@ -1,0 +1,46 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String    @id @default(uuid())
+  email     String    @unique
+  fullName  String?   @map("full_name")
+  planTier  String?   @map("plan_tier")
+  status    String?
+  createdAt DateTime? @map("created_at")
+  quotaUsed Int?      @map("quota_used")
+}
+
+model Plan {
+  id            String   @id @default(uuid())
+  name          String
+  price         Int
+  reelsPerMonth Int      @map("reels_per_month")
+  perks         Json?
+}
+
+model Subscription {
+  id                       String   @id @default(uuid())
+  userId                   String   @map("user_id")
+  provider                 String
+  planTier                 String   @map("plan_tier")
+  status                   String
+  providerSubscriptionId   String?  @map("provider_subscription_id")
+  metadata                 Json?
+  createdAt                DateTime @map("created_at")
+}
+
+model ActivityLog {
+  id               String   @id @default(uuid())
+  userName         String?  @map("user_name")
+  actionDescription String? @map("action_description")
+  planTier         String?  @map("plan_tier")
+  metadata         Json?
+  createdAt        DateTime @map("created_at")
+}

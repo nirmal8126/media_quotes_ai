@@ -29,6 +29,14 @@ The project relies on several secrets (Supabase keys, OpenAI key, and payment pr
 
 The samples list all required variables: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `OPENAI_API_KEY`, `RAZORPAY_*`, `STRIPE_*`, and `NEXT_PUBLIC_SITE_URL`.
 
+### Prisma
+
+This project now ships with Prisma configured against your Supabase database. After copying either example env file, set `DATABASE_URL` to the Supabase Postgres connection string (service role credentials are generally required).
+
+- Run `npx prisma db pull` to sync the Prisma schema with your Supabase tables.
+- Generate the client with `npx prisma generate` whenever you change `prisma/schema.prisma`.
+- You can use Prisma migrations (`npx prisma migrate dev`) if you prefer, but be careful not to conflict with any Supabase managed migrations.
+
 ## Learn More
 
 To learn more about Next.js, take a look at the following resources:
