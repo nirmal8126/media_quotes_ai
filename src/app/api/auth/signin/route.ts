@@ -1,5 +1,9 @@
 import { NextResponse } from 'next/server';
-import { createSupabaseClient } from '@/lib/supabase-client';
+import { createServerClient } from '@supabase/auth-helpers-nextjs';
+import { buildSupabaseCookies } from '@/lib/supabase-cookies';
+
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 function isValidEmail(value: unknown): value is string {
   return typeof value === 'string' && value.includes('@');
@@ -10,6 +14,10 @@ function isValidPassword(value: unknown): value is string {
 }
 
 export async function POST(request: Request) {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+    return NextResponse.json({ error: 'Supabase credentials are missing.' }, { status: 500 });
+  }
+
   const body = await request.json();
   const email = body?.email;
   const password = body?.password;
@@ -21,12 +29,20 @@ export async function POST(request: Request) {
     );
   }
 
-  const supabase = createSupabaseClient();
+  const supabaseCookies = buildSupabaseCookies(request);
+
+  const supabase = createServerClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+    cookies: supabaseCookies.cookies,
+  });
   const { data, error } = await supabase.auth.signInWithPassword({ email, password });
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: error.status });
+    const response = NextResponse.json({ error: error.message }, { status: error.status ?? 500 });
+    supabaseCookies.applyToResponse(response);
+    return response;
   }
 
-  return NextResponse.json({ session: data.session, user: data.user });
+  const response = NextResponse.json({ session: data.session, user: data.user });
+  supabaseCookies.applyToResponse(response);
+  return response;
 }

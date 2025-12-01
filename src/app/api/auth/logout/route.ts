@@ -1,23 +1,29 @@
 import { NextResponse } from 'next/server';
-import { createSupabaseClient } from '@/lib/supabase-client';
+import { createServerClient } from '@supabase/auth-helpers-nextjs';
+import { buildSupabaseCookies } from '@/lib/supabase-cookies';
 
-function extractToken(request: Request) {
-  const header = request.headers.get('Authorization') ?? '';
-  return header.startsWith('Bearer ') ? header.slice(7) : null;
-}
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 export async function POST(request: Request) {
-  const token = extractToken(request);
-  if (!token) {
-    return NextResponse.json({ error: 'Missing access token.' }, { status: 401 });
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+    return NextResponse.json({ error: 'Supabase credentials are missing.' }, { status: 500 });
   }
 
-  const supabase = createSupabaseClient(token);
+  const supabaseCookies = buildSupabaseCookies(request);
+  const supabase = createServerClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+    cookies: supabaseCookies.cookies,
+  });
+
   const { error } = await supabase.auth.signOut();
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: error.status });
+    const response = NextResponse.json({ error: error.message }, { status: error.status ?? 500 });
+    supabaseCookies.applyToResponse(response);
+    return response;
   }
 
-  return NextResponse.json({ success: true });
+  const response = NextResponse.json({ success: true });
+  supabaseCookies.applyToResponse(response);
+  return response;
 }

@@ -1,6 +1,40 @@
 import Link from 'next/link';
+import { redirect } from 'next/navigation';
+import LogoutButton from './LogoutButton';
 
-export default function DashboardPage() {
+import { createServerClient } from '@supabase/auth-helpers-nextjs';
+import { cookies } from 'next/headers';
+
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+async function getAuthenticatedSession() {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+    throw new Error('Missing Supabase URL or service role key in environment.');
+  }
+
+  const cookieStore = await cookies();
+  const supabase = createServerClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+    cookies: {
+      getAll: () => cookieStore.getAll().map(({ name, value }) => ({ name, value })),
+      setAll: async () => {},
+    },
+  });
+
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+
+  return session;
+}
+
+export default async function DashboardPage() {
+  const session = await getAuthenticatedSession();
+
+  if (!session) {
+    redirect('/auth?returnUrl=/dashboard');
+  }
+
   return (
     <main className="min-h-screen bg-slate-950 text-white px-6 py-10">
       <section className="max-w-4xl mx-auto space-y-6">
@@ -8,8 +42,12 @@ export default function DashboardPage() {
           <p className="text-sm uppercase tracking-[0.4em] text-orange-400">Creator dashboard</p>
           <h1 className="text-4xl font-semibold">MediaQuotes AI – Creator Edition</h1>
           <p className="text-slate-300">
-            Generate 30 reels per month with scripts, thumbnails, captions, hashtags, hooks, and a weekly posting schedule.
+            Generate 30 reels per month with scripts, thumbnails, captions, hashtags, hooks, and a weekly posting
+            schedule.
           </p>
+        </div>
+        <div className="flex items-center justify-end">
+          <LogoutButton />
         </div>
         <div className="grid gap-4 md:grid-cols-3">
           {[
