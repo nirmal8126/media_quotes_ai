@@ -34,7 +34,7 @@ export async function POST(request: Request) {
   }
 
   const supabase = createSupabaseClient();
-
+// console.log('supabase connection:', supabase);
   const { data, error } = await supabase.auth.signUp({
     email,
     password,
@@ -42,28 +42,33 @@ export async function POST(request: Request) {
       data: { full_name: name },
     },
   });
-
+  console.log('Signup error:', error);
   if (error) {
     return NextResponse.json({ error: error.message }, { status: error.status ?? 500 });
   }
 
   if (data.user?.id) {
-    try {
-      await supabaseAdmin
-        .from('users')
-        .upsert(
-          {
-            id: data.user.id,
-            email: data.user.email,
-            full_name: name,
-            plan_tier: 'standard',
-            quota_used: 0,
-            created_at: new Date().toISOString(),
-          },
-          { onConflict: 'id' },
-        );
-    } catch (insertError) {
+    const { error: insertError } = await supabaseAdmin
+      .from('users')
+      .upsert(
+        {
+          id: data.user.id,
+          email: data.user.email,
+          full_name: name,
+          plan_tier: 'standard',
+          quota_used: 0,
+          created_at: new Date().toISOString(),
+        },
+        { onConflict: 'id' },
+      );
+
+    if (insertError) {
+      const status = (insertError as { status?: number }).status;
       console.error('Failed to sync Supabase auth user to public.users', insertError);
+      return NextResponse.json(
+        { error: 'Database error saving new user', details: insertError.message },
+        { status: status ?? 500 },
+      );
     }
   }
 
