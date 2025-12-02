@@ -6,6 +6,7 @@ import type { ReactNode } from 'react';
 const navItems = [
   { href: '/dashboard', label: 'Overview' },
   { href: '/dashboard/generate', label: 'Generate' },
+  { href: '/dashboard/quotes', label: 'Quotes' },
   { href: '/dashboard/downloads', label: 'Downloads' },
   { href: '/dashboard/calendar', label: 'Calendar' },
 ];
