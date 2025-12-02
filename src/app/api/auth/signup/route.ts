@@ -1,12 +1,16 @@
 import { NextResponse } from 'next/server';
-import { createSupabaseClient } from '@/lib/supabase-client';
+import { createServerClient } from '@supabase/ssr';
 import { supabaseAdmin } from '@/lib/supabase';
+import { buildSupabaseCookies } from '@/lib/supabase-cookies';
 
 type SignupPayload = {
   name?: unknown;
   email?: unknown;
   password?: unknown;
 };
+
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
 function isValidName(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length >= 2;
@@ -21,6 +25,10 @@ function isValidPassword(value: unknown): value is string {
 }
 
 export async function POST(request: Request) {
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+    return NextResponse.json({ error: 'Supabase credentials are missing.' }, { status: 500 });
+  }
+
   const body = (await request.json().catch(() => ({}))) as SignupPayload;
   const name = isValidName(body.name) ? body.name.trim() : '';
   const email = isValidEmail(body.email) ? body.email.trim() : '';
@@ -33,8 +41,11 @@ export async function POST(request: Request) {
     );
   }
 
-  const supabase = createSupabaseClient();
-// console.log('supabase connection:', supabase);
+  const supabaseCookies = buildSupabaseCookies(request);
+  const supabase = createServerClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    cookies: supabaseCookies.cookies,
+  });
+
   const { data, error } = await supabase.auth.signUp({
     email,
     password,
@@ -42,9 +53,11 @@ export async function POST(request: Request) {
       data: { full_name: name },
     },
   });
-  console.log('Signup error:', error);
+
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: error.status ?? 500 });
+    const response = NextResponse.json({ error: error.message }, { status: error.status ?? 500 });
+    supabaseCookies.applyToResponse(response);
+    return response;
   }
 
   if (data.user?.id) {
@@ -65,12 +78,16 @@ export async function POST(request: Request) {
     if (insertError) {
       const status = (insertError as { status?: number }).status;
       console.error('Failed to sync Supabase auth user to public.users', insertError);
-      return NextResponse.json(
+      const response = NextResponse.json(
         { error: 'Database error saving new user', details: insertError.message },
         { status: status ?? 500 },
       );
+      supabaseCookies.applyToResponse(response);
+      return response;
     }
   }
 
-  return NextResponse.json({ user: data.user });
+  const response = NextResponse.json({ user: data.user, session: data.session });
+  supabaseCookies.applyToResponse(response);
+  return response;
 }

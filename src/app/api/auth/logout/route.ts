@@ -1,17 +1,17 @@
 import { NextResponse } from 'next/server';
-import { createServerClient } from '@supabase/auth-helpers-nextjs';
+import { createServerClient } from '@supabase/ssr';
 import { buildSupabaseCookies } from '@/lib/supabase-cookies';
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
 export async function POST(request: Request) {
-  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
     return NextResponse.json({ error: 'Supabase credentials are missing.' }, { status: 500 });
   }
 
   const supabaseCookies = buildSupabaseCookies(request);
-  const supabase = createServerClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+  const supabase = createServerClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     cookies: supabaseCookies.cookies,
   });
 
@@ -23,7 +23,7 @@ export async function POST(request: Request) {
     return response;
   }
 
-  const response = NextResponse.json({ success: true });
+  const response = NextResponse.json({ success: true, redirect: '/auth/signin' });
   supabaseCookies.applyToResponse(response);
   return response;
 }

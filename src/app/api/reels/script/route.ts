@@ -1,20 +1,22 @@
 import { NextResponse } from 'next/server';
 import { evaluateQuota } from '@/lib/plan';
 import { fetchUserQuota, generateScriptAssets, incrementUserQuota, storeGeneratedReel } from '@/lib/reel-service';
+import { requireUser } from '@/lib/api-auth';
 
-export async function POST(req: Request) {
+export async function POST(request: Request) {
   try {
-    const body = await req.json().catch(() => ({}));
-    const userId = body.userId;
-
-    if (!userId) {
-      return NextResponse.json({ error: 'Missing userId' }, { status: 400 });
+    const session = await requireUser(request);
+    if ('errorResponse' in session) {
+      return session.errorResponse;
     }
+
+    const { user, applyCookies } = session;
+    const body = await request.json().catch(() => ({}));
 
     const tone = body.tone ?? 'educational';
     const platform = body.platform ?? 'instagram';
-    const { user } = await fetchUserQuota(userId);
-    const quota = evaluateQuota(user.plan_tier, user.quota_used);
+    const { user: quotaUser } = await fetchUserQuota(user.id);
+    const quota = evaluateQuota(quotaUser.plan_tier, quotaUser.quota_used);
 
     if (!quota.allowsGeneration) {
       return NextResponse.json({ error: 'Quota exceeded for this plan', quota }, { status: 403 });
@@ -22,7 +24,7 @@ export async function POST(req: Request) {
 
     const assets = await generateScriptAssets(tone, platform);
     await storeGeneratedReel({
-      userId,
+      userId: user.id,
       tone,
       platform,
       script: assets.script,
@@ -30,16 +32,18 @@ export async function POST(req: Request) {
       hook: assets.hook,
     });
 
-    const newUsed = await incrementUserQuota(userId);
-    const refreshedQuota = evaluateQuota(user.plan_tier, newUsed);
+    const newUsed = await incrementUserQuota(user.id);
+    const refreshedQuota = evaluateQuota(quotaUser.plan_tier, newUsed);
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       message: 'Script generated',
       quota: refreshedQuota,
       script: assets.script,
       shotBreakdown: assets.shotBreakdown,
       hook: assets.hook,
     });
+    applyCookies(response);
+    return response;
   } catch (error) {
     const message = (error as Error).message || 'Unable to generate script';
     console.error('reels/script failed', error);

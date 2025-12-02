@@ -9,6 +9,7 @@ import {
   incrementUserQuota,
   storeGeneratedReel,
 } from '@/lib/reel-service';
+import { requireUser } from '@/lib/api-auth';
 
 const bestTimes = ['6:30 PM', '12:00 PM', '8:00 PM', '7:15 PM', '9:45 AM'];
 const tones = ['funny', 'educational', 'emotional'];
@@ -17,31 +18,44 @@ function pickTone(index: number) {
   return tones[index % tones.length];
 }
 
-export async function POST(req: Request) {
-  const payload = await req.json().catch(() => ({}));
-  const userId = payload.userId;
-
-  if (!userId) {
-    return NextResponse.json({ error: 'Missing userId for automation' }, { status: 400 });
+export async function POST(request: Request) {
+  const sessionResult = await requireUser(request);
+  if ('errorResponse' in sessionResult) {
+    return sessionResult.errorResponse;
   }
 
-  const { data: user, error } = await supabaseAdmin
+  const { user: sessionUser, applyCookies } = sessionResult;
+  const payload = await request.json().catch(() => ({}));
+  const requestedUserId = payload.userId;
+  const userId = requestedUserId && requestedUserId !== sessionUser.id ? null : sessionUser.id;
+
+  if (!userId) {
+    const response = NextResponse.json({ error: 'Unauthorized to run automation for another user' }, { status: 403 });
+    applyCookies(response);
+    return response;
+  }
+
+  const { data: userRow, error } = await supabaseAdmin
     .from('users')
     .select('id, plan_tier, quota_used')
     .eq('id', userId)
     .maybeSingle();
 
-  if (error || !user) {
-    return NextResponse.json({ error: 'Unable to load user' }, { status: 404 });
+  if (error || !userRow) {
+    const response = NextResponse.json({ error: 'Unable to load user' }, { status: 404 });
+    applyCookies(response);
+    return response;
   }
 
-  const planTier = normalizePlanTier(user.plan_tier);
-  const quotaStatus = evaluateQuota(planTier, user.quota_used);
+  const planTier = normalizePlanTier(userRow.plan_tier);
+  const quotaStatus = evaluateQuota(planTier, userRow.quota_used);
   const targetBatch = planTier === 'pro' ? 60 : 30;
   const toGenerate = Math.min(Math.max(targetBatch - quotaStatus.used, 0), quotaStatus.remaining);
 
   if (toGenerate <= 0) {
-    return NextResponse.json({ message: 'Quota already fulfilled for this cycle', planTier, quotaStatus });
+    const response = NextResponse.json({ message: 'Quota already fulfilled for this cycle', planTier, quotaStatus });
+    applyCookies(response);
+    return response;
   }
 
   const generatedEntries: { reelId: string; title: string; scheduledDate: string }[] = [];
@@ -97,11 +111,13 @@ export async function POST(req: Request) {
   nextAuto.setDate(now.getDate() + 7);
   await supabaseAdmin.from('users').update({ next_auto_generation: nextAuto.toISOString() }).eq('id', userId);
 
-  return NextResponse.json({
+  const response = NextResponse.json({
     message: 'Auto-plan generated',
     generated: generatedEntries.length,
     planTier,
     nextAutoGeneration: nextAuto.toISOString(),
     entries: generatedEntries,
   });
+  applyCookies(response);
+  return response;
 }

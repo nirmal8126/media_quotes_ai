@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import LogoutButton from './LogoutButton';
 
-import { createServerClient } from '@supabase/auth-helpers-nextjs';
+import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -17,7 +17,7 @@ async function getAuthenticatedSession() {
   const supabase = createServerClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
     cookies: {
       getAll: () => cookieStore.getAll().map(({ name, value }) => ({ name, value })),
-      setAll: async () => {},
+      setAll: () => {},
     },
   });
 

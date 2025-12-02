@@ -59,13 +59,13 @@ export default function HomePage() {
           <div className="flex items-center gap-3 text-sm">
             <Link
               className="rounded-full border border-slate-300 px-4 py-2 text-slate-900 hover:border-orange-400"
-              href="/auth"
+              href="/auth/signin"
             >
               Sign in
             </Link>
             <Link
               className="rounded-full bg-orange-400 px-4 py-2 font-semibold text-slate-950"
-              href="/auth"
+              href="/auth/signup"
             >
               Get started
             </Link>

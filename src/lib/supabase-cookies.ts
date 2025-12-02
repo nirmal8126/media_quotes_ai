@@ -8,8 +8,11 @@ type CookieItem = {
 };
 
 export type SupabaseCookies = {
+  get: (name: string) => string | undefined;
   getAll: () => Array<{ name: string; value?: string }>;
-  setAll: (items: CookieItem[]) => Promise<void>;
+  set: (name: string, value: string, options?: Record<string, unknown>) => void;
+  remove: (name: string, options?: Record<string, unknown>) => void;
+  setAll: (items: CookieItem[]) => void;
 };
 
 export type SupabaseCookieAdapter = {
@@ -24,12 +27,19 @@ export function buildSupabaseCookies(request: Request): SupabaseCookieAdapter {
 
   return {
     cookies: {
+      get: (name: string) => parsedCookies[name],
       getAll: () =>
         Object.entries(parsedCookies).map(([name, value]) => ({
           name,
           value,
         })),
-      setAll: async (items) => {
+      set: async (name, value, options) => {
+        pending.push({ name, value, options });
+      },
+      remove: (name, options) => {
+        pending.push({ name, value: '', options: { ...(options ?? {}), maxAge: 0 } });
+      },
+      setAll: (items) => {
         pending.push(...items);
       },
     },

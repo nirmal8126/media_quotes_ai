@@ -17,7 +17,7 @@ const STRIPE_SECRET_KEY = requiredEnv('STRIPE_SECRET_KEY');
 const STRIPE_WEBHOOK_SECRET = requiredEnv('STRIPE_WEBHOOK_SECRET');
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://creator.mediaquotes.ai';
 
-const stripe = new Stripe(STRIPE_SECRET_KEY, { apiVersion: '2025-11-17.clover' });
+const stripe = new Stripe(STRIPE_SECRET_KEY, { apiVersion: '2024-11-20' });
 
 export const planCatalog: Record<PlanTier, { displayName: string; amount: number; summary: string }> = {
   basic: { displayName: 'Basic', amount: 99900, summary: '15 reels / month' },

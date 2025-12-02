@@ -1,41 +1,74 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { createSupabaseClient } from '@/lib/supabase-client';
+import { createServerClient } from '@supabase/ssr';
+import type { Session } from '@supabase/supabase-js';
 
-const PUBLIC_ROUTES = ['/', '/auth', '/auth/signup', '/auth/signin', '/api'];
-
-function extractToken(request: NextRequest) {
-  const header = request.headers.get('Authorization') ?? '';
-  if (header.startsWith('Bearer ')) {
-    return header.slice(7);
-  }
-  const cookieToken = request.cookies.get('sb:token')?.value;
-  return cookieToken ?? null;
-}
+const API_OPEN_PREFIXES = ['/api/auth', '/api/payments/webhook'];
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  if (PUBLIC_ROUTES.some((route) => pathname.startsWith(route))) {
+  // Skip API routes (each API handles its own auth) but allow unauthenticated auth/webhook paths.
+  if (pathname.startsWith('/api')) {
+    if (API_OPEN_PREFIXES.some((prefix) => pathname.startsWith(prefix))) {
+      return NextResponse.next();
+    }
     return NextResponse.next();
   }
 
-  const token = extractToken(request);
-  if (!token) {
+  const response = NextResponse.next();
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+    return response;
+  }
+
+  let session: Session | null = null;
+
+  const supabase = createServerClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    cookies: {
+      getAll() {
+        return request.cookies.getAll().map(({ name, value }) => ({ name, value }));
+      },
+      setAll(cookies) {
+        cookies.forEach(({ name, value, options }) => {
+          if (!value) {
+            response.cookies.delete(name);
+            return;
+          }
+          response.cookies.set(name, value, options);
+        });
+      },
+    },
+  });
+
+  async function getSession() {
+    if (session !== null) return session;
+    const {
+      data: { session: gotSession },
+    } = await supabase.auth.getSession();
+    session = gotSession;
+    return session;
+  }
+
+  // Redirect authenticated users away from auth pages or the landing page.
+  if (pathname.startsWith('/auth') || pathname === '/') {
+    const current = await getSession();
+    if (current) {
+      return NextResponse.redirect(new URL('/dashboard', request.url));
+    }
+    return response;
+  }
+
+  const current = await getSession();
+  if (!current) {
     const signInUrl = new URL('/auth/signin', request.url);
     return NextResponse.redirect(signInUrl);
   }
 
-  const supabase = createSupabaseClient(token);
-  const { data, error } = await supabase.auth.getUser();
-  if (error || !data.user) {
-    const signInUrl = new URL('/auth/signin', request.url);
-    return NextResponse.redirect(signInUrl);
-  }
-
-  return NextResponse.next();
+  return response;
 }
 
 export const config = {
-  matcher: ['/admin/:path*', '/dashboard/:path*', '/auth/profile', '/auth/logout', '/auth/password'],
+  matcher: ['/', '/auth/:path*', '/dashboard/:path*', '/admin/:path*'],
 };

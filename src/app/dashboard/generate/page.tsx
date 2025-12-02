@@ -1,4 +1,4 @@
-import { createServerClient } from '@supabase/auth-helpers-nextjs';
+import { createServerClient } from '@supabase/ssr';
 import GenerateForm from './GenerateForm';
 import { cookies } from 'next/headers';
 
@@ -14,7 +14,7 @@ export default async function GeneratePage() {
   const supabase = createServerClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
     cookies: {
       getAll: () => cookieStore.getAll().map(({ name, value }) => ({ name, value })),
-      setAll: async () => {},
+      setAll: () => {},
     },
   });
   const {

@@ -2,17 +2,26 @@ import OpenAI from 'openai';
 
 const openaiApiKey = process.env.OPENAI_API_KEY;
 
-if (!openaiApiKey) {
-  throw new Error('Missing OPENAI_API_KEY environment variable in Next.js environment.');
-}
+let openai: OpenAI | null = null;
 
-const openai = new OpenAI({ apiKey: openaiApiKey });
+function getOpenAI(): OpenAI {
+  if (!openaiApiKey) {
+    throw new Error('Missing OPENAI_API_KEY environment variable in Next.js environment.');
+  }
+
+  if (!openai) {
+    openai = new OpenAI({ apiKey: openaiApiKey });
+  }
+
+  return openai;
+}
 
 export async function generateCompletion(
   prompt: string,
   options?: { temperature?: number; maxTokens?: number }
 ): Promise<string> {
-  const response = await openai.chat.completions.create({
+  const client = getOpenAI();
+  const response = await client.chat.completions.create({
     model: 'gpt-4o-mini',
     messages: [{ role: 'user', content: prompt }],
     temperature: options?.temperature ?? 0.7,

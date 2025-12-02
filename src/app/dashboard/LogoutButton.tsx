@@ -17,7 +17,7 @@ export default function LogoutButton() {
     });
 
     if (response.ok) {
-      router.replace('/auth');
+      router.replace('/auth/signin');
       return;
     }
 
