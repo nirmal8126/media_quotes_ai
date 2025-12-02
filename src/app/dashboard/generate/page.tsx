@@ -23,10 +23,15 @@ export default async function GeneratePage() {
 
   return (
     <div className="space-y-4">
-      <div className="rounded-3xl bg-white/80 p-5 shadow ring-1 ring-slate-100">
-        <p className="text-xs uppercase tracking-[0.3em] text-indigo-500">Generate</p>
-        <h1 className="text-2xl font-semibold text-slate-900">Build a new reel script</h1>
-        <p className="text-sm text-slate-500">Pick tone + platform and trigger the AI pipeline.</p>
+      <div className="rounded-3xl bg-white p-5 shadow ring-1 ring-slate-100">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-xs uppercase tracking-[0.3em] text-indigo-500">Caption & Script</p>
+            <h1 className="text-2xl font-semibold text-slate-900">Generate captions and scripts</h1>
+            <p className="text-sm text-slate-500">Choose content type, platform, tone, and variations.</p>
+          </div>
+          <button className="rounded-full bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-700 ring-1 ring-slate-200">⚙️ Settings</button>
+        </div>
       </div>
       <GenerateForm userId={session?.user?.id ?? null} />
     </div>

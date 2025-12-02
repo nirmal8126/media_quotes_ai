@@ -4,11 +4,13 @@ import { createServerClient } from '@supabase/ssr';
 import type { ReactNode } from 'react';
 
 const navItems = [
-  { href: '/dashboard', label: 'Overview' },
-  { href: '/dashboard/generate', label: 'Generate' },
-  { href: '/dashboard/quotes', label: 'Quotes' },
-  { href: '/dashboard/downloads', label: 'Downloads' },
-  { href: '/dashboard/calendar', label: 'Calendar' },
+  { href: '/dashboard', label: 'Home', icon: '🏠' },
+  { href: '/dashboard/quotes', label: 'Quote Generator', icon: '✍️' },
+  { href: '/dashboard/generate', label: 'Caption / Script', icon: '📝' },
+  { href: '/dashboard/calendar', label: 'Planner', icon: '📅' },
+  { href: '/dashboard/downloads', label: 'Gallery', icon: '🖼️' },
+  { href: '/dashboard/settings', label: 'Persona', icon: '⚙️' },
+  { href: '/dashboard/billing', label: 'Billing', icon: '💳' },
 ];
 
 async function getUserEmail() {
@@ -45,7 +47,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
                 href={item.href}
                 className="flex items-center gap-2 rounded-xl px-3 py-2 transition hover:bg-indigo-50 hover:text-slate-900"
               >
-                <span className="h-2 w-2 rounded-full bg-indigo-400" />
+                <span className="text-base">{item.icon}</span>
                 {item.label}
               </Link>
             ))}
