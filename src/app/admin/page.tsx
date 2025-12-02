@@ -1,191 +1,121 @@
 import Link from 'next/link';
-import AdminSidebar from '@/components/admin/AdminSidebar';
 import { getAdminDashboardData } from '@/lib/admin-data';
-
-const analyticsData = [
-  { label: 'Avg. generation time', value: '22s', helper: 'Across all creators' },
-  { label: 'Plan conversion', value: '18%', helper: 'Upgrade rate from free → standard' },
-  { label: 'Email open rate', value: '52%', helper: 'Automation plan digests' },
-];
-
-const moduleLinks = [
-  { label: 'Plans', href: '/admin/plans' },
-  { label: 'Generated reels', href: '/admin/reels' },
-  { label: 'Content calendar', href: '/admin/calendar' },
-  { label: 'Automation runs', href: '/admin/automations' },
-  { label: 'Payments', href: '/admin/payments' },
-  { label: 'Orders', href: '/admin/orders' },
-  { label: 'Reel categories', href: '/admin/reel-categories' },
-  { label: 'Reel platforms', href: '/admin/reel-platforms' },
-  { label: 'Users', href: '/admin/users' },
-];
 
 export default async function AdminPage() {
   const { metrics, logs, paymentSummary, plans } = await getAdminDashboardData();
 
   return (
-    <div className="min-h-screen bg-slate-950 text-white">
-      <div className="grid grid-cols-[240px,1fr]">
-        <aside className="flex flex-col border-r border-slate-800 bg-slate-900/70 p-6">
-          <AdminSidebar
-            title="Superadmin"
-            moduleLinks={moduleLinks}
-            extraLinks={[
-              { label: 'Activity Logs', href: '#logs' },
-              { label: 'Payments', href: '#payments' },
-              { label: 'Membership Plans', href: '#plans' },
-            ]}
-          />
-        </aside>
-        <main className="px-8 py-10">
-          <header className="flex items-center justify-between">
+    <div className="space-y-4">
+      <section className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-slate-900 via-indigo-700 to-purple-600 p-6 text-white shadow-lg">
+        <div className="relative z-10 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div>
+            <p className="text-xs uppercase tracking-[0.4em] text-white/70">Superadmin console</p>
+            <h1 className="text-3xl font-semibold leading-tight">Global health & controls</h1>
+            <p className="text-sm text-white/80">Monitor payments, quotas, and automation in one place.</p>
+          </div>
+          <div className="flex flex-wrap gap-3">
+            <button className="rounded-xl bg-white/15 px-4 py-2 text-sm font-semibold text-white ring-1 ring-white/30 hover:bg-white/20">
+              View logs
+            </button>
+            <button className="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-indigo-700 shadow-md hover:bg-slate-50">
+              Manage plans
+            </button>
+          </div>
+        </div>
+        <div className="absolute inset-y-0 right-0 w-1/3 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.2)_0,_transparent_45%)]" />
+      </section>
+
+      <section className="grid gap-3 md:grid-cols-4">
+        {metrics.map((metric) => (
+          <div key={metric.label} className="rounded-2xl bg-white/80 p-4 shadow ring-1 ring-slate-100">
+            <p className="text-sm text-slate-500">{metric.label}</p>
+            <p className="mt-2 text-2xl font-semibold text-slate-900">{metric.value}</p>
+            <p className="text-xs font-medium text-emerald-500">{metric.change}</p>
+          </div>
+        ))}
+      </section>
+
+      <section className="grid gap-4 lg:grid-cols-[2fr,1fr]">
+        <div className="space-y-4 rounded-3xl bg-white/80 p-5 shadow ring-1 ring-slate-100">
+          <div className="flex items-center justify-between">
             <div>
-              <p className="text-xs uppercase tracking-[0.4em] text-slate-500">Superadmin console</p>
-              <h2 className="text-3xl font-semibold">Global health</h2>
+              <p className="text-xs uppercase tracking-[0.3em] text-indigo-500">Activity logs</p>
+              <p className="text-lg font-semibold text-slate-900">Recent actions</p>
             </div>
-            <div className="text-right text-sm text-slate-300">
-              <p>Today · {new Date().toLocaleDateString()}</p>
-              <p>Active sessions: 312</p>
-            </div>
-          </header>
-
-          <section className="mt-8 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            {metrics.map((metric) => (
-              <article key={metric.label} className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5">
-                <p className="text-sm text-slate-400">{metric.label}</p>
-                <p className="mt-2 text-3xl font-semibold">{metric.value}</p>
-                <p className="text-xs text-slate-500">{metric.change}</p>
-              </article>
-            ))}
-          </section>
-
-          <section className="mt-10 grid gap-6 lg:grid-cols-3">
-            <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5 lg:col-span-2">
-              <div className="flex items-center justify-between">
-                <p className="text-sm uppercase tracking-[0.4em] text-slate-500">Analytics</p>
-                <span className="text-xs text-slate-400">Realtime insights</span>
-              </div>
-              <div className="mt-4 grid gap-4 md:grid-cols-3">
-                {analyticsData.map((item) => (
-                  <div key={item.label} className="rounded-xl border border-slate-800/80 bg-slate-900/50 p-4">
-                    <p className="text-sm text-slate-400">{item.label}</p>
-                    <p className="text-2xl font-semibold">{item.value}</p>
-                    <p className="text-xs text-slate-500">{item.helper}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5">
-              <div className="flex items-center justify-between">
-                <p className="text-sm uppercase tracking-[0.4em] text-slate-500">Payments</p>
-                <span className="text-xs text-slate-400">Overview</span>
-              </div>
-              <div className="mt-4 space-y-3">
-                {paymentSummary.map((item) => (
-                  <div key={item.label} className="rounded-xl border border-slate-800/70 bg-slate-950/60 p-3">
-                    <p className="text-sm text-slate-400">{item.label}</p>
-                    <p className="text-xl font-semibold">{item.amount}</p>
-                    <p className="text-xs text-slate-500">{item.status}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </section>
-
-          <section id="modules" className="mt-10 space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs uppercase tracking-[0.4em] text-slate-500">Module shortcuts</p>
-                <h3 className="text-2xl font-semibold">Jump into any control surface</h3>
-              </div>
-              <p className="text-sm text-slate-400">Direct links to each admin page</p>
-            </div>
-            <div className="grid gap-4 md:grid-cols-3">
-              {moduleLinks.map((module) => (
-                <Link
-                  key={module.label}
-                  href={module.href}
-                  className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5 text-sm font-semibold text-white hover:border-orange-400"
-                >
-                  <p className="text-xs uppercase tracking-[0.3em] text-slate-500">{module.label}</p>
-                  <p className="mt-3 text-lg font-semibold text-white">Open {module.label}</p>
-                </Link>
-              ))}
-            </div>
-          </section>
-
-          <section id="logs" className="mt-10 space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs uppercase tracking-[0.4em] text-slate-500">Activity logs</p>
-                <h3 className="text-2xl font-semibold">Recent actions</h3>
-              </div>
-              <button className="rounded-full border border-orange-500/60 px-4 py-2 text-xs font-semibold text-orange-300">
-                Export logs
-              </button>
-            </div>
-            <div className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/60">
-              <table className="w-full text-sm text-slate-200">
-                <thead className="border-b border-slate-800 bg-slate-950/50 text-xs uppercase tracking-[0.3em] text-slate-500">
-                  <tr>
-                    <th className="px-4 py-3 text-left">User</th>
-                    <th className="px-4 py-3 text-left">Activity</th>
-                    <th className="px-4 py-3">Plan</th>
-                    <th className="px-4 py-3">When</th>
+            <button className="text-sm font-semibold text-indigo-600 hover:text-indigo-500">Export</button>
+          </div>
+          <div className="overflow-hidden rounded-2xl border border-slate-100 bg-white">
+            <table className="w-full text-sm text-slate-700">
+              <thead className="bg-slate-50 text-xs uppercase tracking-[0.3em] text-slate-500">
+                <tr>
+                  <th className="px-4 py-3 text-left">User</th>
+                  <th className="px-4 py-3 text-left">Activity</th>
+                  <th className="px-4 py-3 text-left">Plan</th>
+                  <th className="px-4 py-3 text-left">When</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {logs.map((log) => (
+                  <tr key={log.id} className="bg-white">
+                    <td className="px-4 py-3 font-semibold text-slate-900">{log.user}</td>
+                    <td className="px-4 py-3 text-slate-700">{log.action}</td>
+                    <td className="px-4 py-3 text-indigo-600">{log.plan}</td>
+                    <td className="px-4 py-3 text-slate-500">{log.time}</td>
                   </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-900/40">
-                  {logs.map((log) => (
-                    <tr key={log.id} className="bg-slate-950/50">
-                      <td className="px-4 py-3 font-semibold text-white">{log.user}</td>
-                      <td className="px-4 py-3 text-slate-300">{log.action}</td>
-                      <td className="px-4 py-3 text-center text-sm text-orange-300">{log.plan}</td>
-                      <td className="px-4 py-3 text-slate-400">{log.time}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </section>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
 
-          <section id="plans" className="mt-10">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs uppercase tracking-[0.4em] text-slate-500">Membership plans</p>
-                <h3 className="text-2xl font-semibold">Tier management</h3>
+        <div className="space-y-3 rounded-3xl bg-white/80 p-5 shadow ring-1 ring-slate-100">
+          <p className="text-xs uppercase tracking-[0.3em] text-indigo-500">Payments</p>
+          <div className="space-y-2">
+            {paymentSummary.map((item) => (
+              <div key={item.label} className="rounded-2xl border border-slate-100 bg-white p-3 shadow-sm">
+                <p className="text-sm text-slate-500">{item.label}</p>
+                <p className="text-xl font-semibold text-slate-900">{item.amount}</p>
+                <p className="text-xs text-slate-500">{item.status}</p>
               </div>
-              <Link
-                href="/admin/plans"
-                className="rounded-full border border-orange-500/60 px-4 py-2 text-xs font-semibold text-orange-300"
-              >
-                Manage plans
-              </Link>
-            </div>
-            <div className="mt-5 grid gap-4 md:grid-cols-3">
-              {plans.map((plan) => (
-                <article key={plan.name} className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5">
-                  <div className="flex items-center justify-between">
-                    <p className="text-sm font-semibold uppercase tracking-[0.3em] text-slate-500">{plan.name}</p>
-                    <span className="text-xs text-slate-400">{plan.price}</span>
-                  </div>
-                  <p className="mt-4 text-lg font-semibold">{plan.reels}</p>
-                  <ul className="mt-3 space-y-2 text-sm text-slate-300">
-                    {plan.perks.map((perk) => (
-                      <li key={perk} className="flex items-center gap-2">
-                        <span className="text-xs text-orange-400">•</span>
-                        <span>{perk}</span>
-                      </li>
-                    ))}
-                  </ul>
-                  <button className="mt-5 w-full rounded-full border border-orange-500/40 px-4 py-2 text-xs font-semibold text-orange-300">
-                    Manage
-                  </button>
-                </article>
-              ))}
-            </div>
-          </section>
-        </main>
-      </div>
+            ))}
+          </div>
+          <div className="rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-500 p-4 text-white shadow">
+            <p className="text-sm font-semibold">Quota monitor</p>
+            <p className="text-xs text-white/80">Track usage spikes and automation runs.</p>
+          </div>
+        </div>
+      </section>
+
+      <section className="space-y-3 rounded-3xl bg-white/80 p-5 shadow ring-1 ring-slate-100">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-xs uppercase tracking-[0.3em] text-indigo-500">Plans</p>
+            <p className="text-lg font-semibold text-slate-900">Membership tiers</p>
+          </div>
+          <Link
+            href="/admin/plans"
+            className="rounded-full bg-indigo-50 px-4 py-2 text-xs font-semibold text-indigo-600 ring-1 ring-indigo-100"
+          >
+            Manage
+          </Link>
+        </div>
+        <div className="grid gap-3 md:grid-cols-3">
+          {plans.map((plan) => (
+            <article key={plan.name} className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-semibold text-slate-900">{plan.name}</p>
+                <span className="text-xs text-slate-500">{plan.price}</span>
+              </div>
+              <p className="mt-2 text-lg font-semibold text-indigo-600">{plan.reels}</p>
+              <ul className="mt-2 space-y-1 text-sm text-slate-600">
+                {plan.perks.map((perk) => (
+                  <li key={perk}>• {perk}</li>
+                ))}
+              </ul>
+            </article>
+          ))}
+        </div>
+      </section>
     </div>
   );
 }

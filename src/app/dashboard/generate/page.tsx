@@ -21,5 +21,14 @@ export default async function GeneratePage() {
     data: { session },
   } = await supabase.auth.getSession();
 
-  return <GenerateForm userId={session?.user?.id ?? null} />;
+  return (
+    <div className="space-y-4">
+      <div className="rounded-3xl bg-white/80 p-5 shadow ring-1 ring-slate-100">
+        <p className="text-xs uppercase tracking-[0.3em] text-indigo-500">Generate</p>
+        <h1 className="text-2xl font-semibold text-slate-900">Build a new reel script</h1>
+        <p className="text-sm text-slate-500">Pick tone + platform and trigger the AI pipeline.</p>
+      </div>
+      <GenerateForm userId={session?.user?.id ?? null} />
+    </div>
+  );
 }
