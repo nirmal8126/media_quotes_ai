@@ -1,6 +1,7 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { FormEvent, useEffect, useState } from 'react';
+import Modal from '@/components/ui/Modal';
 
 type ScriptResponse = null | {
   items: string[];
@@ -29,6 +30,7 @@ export default function GenerateForm({ userId }: GenerateFormProps) {
   const [error, setError] = useState<string | null>(null);
   const [meta, setMeta] = useState<MetaDefaults>({ platforms: [], tones: [], formats: [], niches: [] });
   const [metaStatus, setMetaStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
+  const [showModal, setShowModal] = useState(false);
 
   useEffect(() => {
     const loadMeta = async () => {
@@ -114,10 +116,19 @@ export default function GenerateForm({ userId }: GenerateFormProps) {
 
   return (
     <div className="space-y-4">
-      <form onSubmit={handleSubmit} className="space-y-4 rounded-3xl bg-white p-6 shadow ring-1 ring-slate-100">
+      <div className="flex justify-end">
+        <button
+          type="button"
+          onClick={() => setShowModal(true)}
+          className="rounded-xl bg-[#2287ff] px-4 py-2 text-sm font-semibold text-white shadow hover:bg-[#1b74d7]"
+        >
+          Open modal
+        </button>
+      </div>
+      <form onSubmit={handleSubmit} className="space-y-4 rounded-3xl border border-slate-200 bg-white p-6 shadow-lg">
         <div className="flex items-center justify-between text-sm text-slate-600">
           <span>Creator: {userId ? 'Authenticated' : 'Not signed in'}</span>
-          <span className="rounded-full bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-600">
+          <span className="rounded-full bg-[#eef2ff] px-3 py-1 text-xs font-semibold text-[#2287ff]">
             {contentType === 'caption' ? 'Caption wizard' : 'Script wizard'}
           </span>
         </div>
@@ -185,7 +196,7 @@ export default function GenerateForm({ userId }: GenerateFormProps) {
         </div>
         <button
           type="submit"
-          className="w-full rounded-2xl bg-gradient-to-r from-indigo-500 to-purple-500 py-3 text-sm font-semibold text-white shadow-lg disabled:opacity-60"
+          className="w-full rounded-2xl bg-[#2287ff] py-3 text-sm font-semibold text-white shadow-lg disabled:opacity-60"
           disabled={isLoading || !userId}
         >
           {isLoading ? 'Generating...' : userId ? 'Generate script' : 'Sign in to generate'}
@@ -193,11 +204,11 @@ export default function GenerateForm({ userId }: GenerateFormProps) {
       </form>
       {error && <p className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-600">{error}</p>}
       {result && (
-        <section className="space-y-4 rounded-3xl bg-white p-6 shadow ring-1 ring-slate-100">
+        <section className="space-y-4 rounded-3xl border border-slate-200 bg-white p-6 shadow-lg">
           <div className="flex items-center justify-between">
             <p className="text-sm text-slate-600">Results</p>
             {result.quota && (
-              <p className="text-sm font-semibold text-indigo-600">
+              <p className="text-sm font-semibold text-[#2287ff]">
                 {result.quota.used} / {result.quota.limit} used · {result.quota.remaining} remaining
               </p>
             )}
@@ -207,7 +218,7 @@ export default function GenerateForm({ userId }: GenerateFormProps) {
               <div key={idx} className="flex items-start justify-between rounded-2xl border border-slate-100 bg-white p-3 shadow-sm">
                 <p className="text-sm text-slate-800">{item}</p>
                 <div className="ml-3 flex flex-col gap-2 text-xs">
-                  <button className="rounded-full bg-indigo-50 px-3 py-1 font-semibold text-indigo-600 ring-1 ring-indigo-100">Copy</button>
+                  <button className="rounded-full bg-[#eef2ff] px-3 py-1 font-semibold text-[#2287ff] ring-1 ring-[#d8e5ff]">Copy</button>
                   <button className="rounded-full bg-slate-100 px-3 py-1 font-semibold text-slate-700 ring-1 ring-slate-200">Save</button>
                 </div>
               </div>
@@ -215,6 +226,95 @@ export default function GenerateForm({ userId }: GenerateFormProps) {
           </div>
         </section>
       )}
+
+      <Modal
+        open={showModal}
+        onClose={() => setShowModal(false)}
+        title="Generate captions and scripts"
+        description="Set content type, platform, tone, and variations."
+        widthClass="max-w-3xl"
+      >
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-2">
+            <label className="flex flex-col gap-1 text-sm text-slate-600">
+              <div className="flex items-center justify-between text-xs text-slate-500">
+                <span className="text-sm text-slate-600">Content type</span>
+                <span>e.g., caption, short, long</span>
+              </div>
+              <input
+                value={contentType}
+                onChange={(event) => setContentType(event.target.value)}
+                className="rounded-2xl border border-slate-200 bg-white p-3 text-sm shadow-inner focus:border-indigo-400 focus:outline-none"
+                placeholder="caption, short, long"
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-sm text-slate-600">
+              <div className="flex items-center justify-between text-xs text-slate-500">
+                <span className="text-sm text-slate-600">Brand tone</span>
+                <span>e.g., funny, educational, direct</span>
+              </div>
+              <input
+                value={tone}
+                onChange={(event) => setTone(event.target.value)}
+                className="rounded-2xl border border-slate-200 bg-white p-3 text-sm shadow-inner focus:border-indigo-400 focus:outline-none"
+                placeholder="Comma-separated tones (e.g., funny, educational)"
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-sm text-slate-600">
+              <div className="flex items-center justify-between text-xs text-slate-500">
+                <span className="text-sm text-slate-600">Platform</span>
+                <span>e.g., instagram, youtube, linkedin</span>
+              </div>
+              <input
+                value={platform}
+                onChange={(event) => setPlatform(event.target.value)}
+                className="rounded-2xl border border-slate-200 bg-white p-3 text-sm shadow-inner focus:border-indigo-400 focus:outline-none"
+                placeholder="Comma-separated platforms (e.g., instagram, youtube)"
+              />
+            </label>
+          </div>
+          <label className="flex flex-col gap-2 text-sm text-slate-600">
+            Idea / description
+            <textarea
+              className="rounded-2xl border border-slate-200 bg-white p-3 text-sm shadow-inner focus:border-indigo-400 focus:outline-none"
+              rows={4}
+              value={idea}
+              onChange={(e) => setIdea(e.target.value)}
+              placeholder="Describe your idea or hook..."
+            />
+          </label>
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-slate-600">
+              # of variations: {variations}
+              {metaStatus === 'loading' && ' · loading defaults...'}
+            </span>
+            <input
+              type="range"
+              min={1}
+              max={5}
+              value={variations}
+              onChange={(e) => setVariations(Number(e.target.value))}
+              className="h-2 w-64 rounded-full bg-slate-200 accent-indigo-500"
+            />
+          </div>
+          <div className="flex justify-end gap-3">
+            <button
+              type="button"
+              onClick={() => setShowModal(false)}
+              className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="rounded-xl bg-[#2287ff] px-4 py-2 text-sm font-semibold text-white shadow hover:bg-[#1b74d7]"
+              disabled={isLoading || !userId}
+            >
+              {isLoading ? 'Generating...' : userId ? 'Generate script' : 'Sign in to generate'}
+            </button>
+          </div>
+        </form>
+      </Modal>
     </div>
   );
 }

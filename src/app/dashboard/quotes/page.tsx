@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from 'react';
+import Modal from '@/components/ui/Modal';
 
 type QuotePack = {
   id: string;
@@ -34,6 +35,7 @@ export default function QuotesPage() {
   const [status, setStatus] = useState<string | null>(null);
   const [count, setCount] = useState(30);
   const [meta, setMeta] = useState<MetaDefaults>({ platforms: [], niches: [], formats: [], tones: [] });
+  const [showModal, setShowModal] = useState(false);
 
   useEffect(() => {
     const fetchMeta = async () => {
@@ -122,26 +124,145 @@ export default function QuotesPage() {
 
   return (
     <div className="space-y-4">
-      <section className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-400 p-6 text-white shadow-lg">
+      <section className="relative overflow-hidden rounded-3xl border border-slate-200 bg-gradient-to-r from-[#eaf1ff] via-white to-[#eef3ff] p-6 text-slate-900 shadow-lg">
         <div className="relative z-10 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
           <div>
-              <p className="text-xs uppercase tracking-[0.4em] text-white/70">Quote studio</p>
-              <h1 className="text-3xl font-semibold leading-tight">Create custom quote packs</h1>
-              <p className="text-sm text-white/80">Set tone, niche, format every time you generate.</p>
-            </div>
-            <div className="flex flex-wrap gap-3">
-              <a
-                href="#generate"
-                className="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-indigo-600 shadow-md hover:bg-slate-50"
-              >
-                Generate pack
+            <p className="text-xs uppercase tracking-[0.4em] text-[#2287ff]">Quote studio</p>
+            <h1 className="text-3xl font-semibold leading-tight">Create custom quote packs</h1>
+            <p className="text-sm text-slate-600">Set tone, niche, format every time you generate.</p>
+          </div>
+          <div className="flex flex-wrap gap-3">
+            <a
+              href="#generate"
+              className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-[#2287ff] shadow-md hover:bg-slate-50"
+            >
+              Generate pack
             </a>
+            <button
+              type="button"
+              onClick={() => setShowModal(true)}
+              className="rounded-xl bg-[#2287ff] px-4 py-2 text-sm font-semibold text-white shadow-md hover:bg-[#1b74d7]"
+            >
+              Open modal
+            </button>
           </div>
         </div>
-        <div className="absolute inset-y-0 right-0 w-1/3 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.25)_0,_transparent_45%)]" />
+        <div className="absolute inset-y-0 right-0 w-1/3 bg-[radial-gradient(circle_at_top,_rgba(35,135,255,0.18)_0,_transparent_45%)]" />
       </section>
 
-      <section id="generate" className="grid gap-4 rounded-3xl bg-white p-5 shadow ring-1 ring-slate-100 md:grid-cols-2">
+      <Modal
+        open={showModal}
+        onClose={() => setShowModal(false)}
+        title="Generate quote pack"
+        description="Set persona, niche, tone, language, and format for this pack."
+        widthClass="max-w-3xl"
+      >
+        <form className="space-y-3" onSubmit={handleGenerate}>
+          <div className="grid gap-3 md:grid-cols-2">
+            <label className="flex flex-col gap-1 text-sm text-slate-600">
+              <div className="flex items-center justify-between text-xs text-slate-500">
+                <span className="text-sm text-slate-600">Persona(s)</span>
+                <span>e.g., Calm Coach, Startup Mentor</span>
+              </div>
+              <input
+                className="rounded-2xl border border-slate-200 bg-white p-3 text-sm shadow-inner focus:border-indigo-400 focus:outline-none"
+                placeholder="Enter one or more personas (comma-separated)"
+                value={form.persona}
+                onChange={(e) => setForm((f) => ({ ...f, persona: e.target.value }))}
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-sm text-slate-600">
+              <div className="flex items-center justify-between text-xs text-slate-500">
+                <span className="text-sm text-slate-600">Niche</span>
+                <span>e.g., fitness, saas marketing</span>
+              </div>
+              <input
+                className="rounded-2xl border border-slate-200 bg-white p-3 text-sm shadow-inner focus:border-indigo-400 focus:outline-none"
+                placeholder="fitness, business, travel..."
+                value={form.niche}
+                onChange={(e) => setForm((f) => ({ ...f, niche: e.target.value }))}
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-sm text-slate-600">
+              <div className="flex items-center justify-between text-xs text-slate-500">
+                <span className="text-sm text-slate-600">Tone</span>
+                <span>e.g., motivational, playful, direct</span>
+              </div>
+              <input
+                className="rounded-2xl border border-slate-200 bg-white p-3 text-sm shadow-inner focus:border-indigo-400 focus:outline-none"
+                placeholder="Motivational, Dark, Funny..."
+                value={form.tone}
+                onChange={(e) => setForm((f) => ({ ...f, tone: e.target.value }))}
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-sm text-slate-600">
+              <div className="flex items-center justify-between text-xs text-slate-500">
+                <span className="text-sm text-slate-600">Language</span>
+                <span>e.g., en, hi, es</span>
+              </div>
+              <input
+                className="rounded-2xl border border-slate-200 bg-white p-3 text-sm shadow-inner focus:border-indigo-400 focus:outline-none"
+                placeholder="en, hi, es..."
+                value={form.language}
+                onChange={(e) => setForm((f) => ({ ...f, language: e.target.value }))}
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-sm text-slate-600">
+              <div className="flex items-center justify-between text-xs text-slate-500">
+                <span className="text-sm text-slate-600">Format</span>
+                <span>e.g., quote, caption, hook</span>
+              </div>
+              <input
+                className="rounded-2xl border border-slate-200 bg-white p-3 text-sm shadow-inner focus:border-indigo-400 focus:outline-none"
+                placeholder="quote, caption, hook..."
+                value={form.format}
+                onChange={(e) => setForm((f) => ({ ...f, format: e.target.value }))}
+              />
+            </label>
+          </div>
+          <label className="flex flex-col gap-1 text-sm text-slate-600">
+            <div className="flex items-center justify-between text-xs text-slate-500">
+              <span className="text-sm text-slate-600">Tags</span>
+              <span>e.g., morning routine, mindset, founders</span>
+            </div>
+            <input
+              className="rounded-2xl border border-slate-200 bg-white p-3 text-sm shadow-inner focus:border-indigo-400 focus:outline-none"
+              placeholder="comma-separated keywords"
+              value={form.tags}
+              onChange={(e) => setForm((f) => ({ ...f, tags: e.target.value }))}
+            />
+          </label>
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-slate-600"># of quotes: {count}</span>
+            <input
+              type="range"
+              min={1}
+              max={100}
+              value={count}
+              onChange={(e) => setCount(Number(e.target.value))}
+              className="h-2 w-64 rounded-full bg-slate-200 accent-indigo-500"
+            />
+          </div>
+          <div className="flex justify-end gap-3">
+            <button
+              type="button"
+              onClick={() => setShowModal(false)}
+              className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50"
+            >
+              Cancel
+            </button>
+            <button
+              className="rounded-xl bg-[#2287ff] px-4 py-2 text-sm font-semibold text-white shadow hover:bg-[#1b74d7]"
+              disabled={loading.generating}
+              type="submit"
+            >
+              {loading.generating ? 'Generating...' : 'Generate quote pack'}
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      <section id="generate" className="grid gap-4 rounded-3xl border border-slate-200 bg-white p-5 shadow-lg md:grid-cols-2">
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <div>
