@@ -4,12 +4,39 @@ import { generateCompletion, type LlmProvider } from '@/lib/openai';
 export type QuoteRecord = {
   id?: string;
   user_id: string;
+  topic?: string | null;
   persona?: string | null;
   tone?: string | null;
   language?: string | null;
   style?: string | null;
   quotes: string[];
 };
+
+function sanitizeQuoteText(input: unknown) {
+  if (typeof input !== 'string') return '';
+  let text = input
+    .replace(/```[\w-]*\s*/gi, '') // drop code fences like ```json
+    .replace(/^\s*\[\s*|\s*\]\s*$/g, '') // drop stray brackets
+    .replace(/^[\d]+\.\s*/, '') // drop leading numbering
+    .replace(/^[-–]\s*/, '') // drop leading dash
+    .trim();
+
+  // drop surrounding quotes/backticks
+  text = text.replace(/^['"`]+/, '').replace(/['"`]+$/, '').trim();
+
+  if (!text) return '';
+  const lower = text.toLowerCase();
+  if (lower === 'json') return '';
+  if (text === '[' || text === ']') return '';
+  return text;
+}
+
+function cleanQuotes(list: unknown[], limit: number) {
+  return list
+    .map((q) => sanitizeQuoteText(q))
+    .filter((q) => Boolean(q))
+    .slice(0, limit) as string[];
+}
 
 export async function generateQuotesList(options: {
   topic?: string;
@@ -30,22 +57,26 @@ export async function generateQuotesList(options: {
   try {
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed)) {
-      return parsed.map((q) => String(q).trim()).filter(Boolean);
+      return cleanQuotes(parsed, capped);
     }
   } catch {
     // fall through
   }
 
-  return raw
+  const split = raw
     .split(/\n+/)
-    .map((line) => line.replace(/^\d+\.\s*/, '').replace(/^[-–]\s*/, '').trim())
-    .filter((line) => line.length > 0)
-    .slice(0, capped);
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+
+  return cleanQuotes(split, capped);
 }
 
 export async function storeQuotePack(record: QuoteRecord) {
+  const safeTopic = (record.topic ?? '').trim() || 'Untitled';
+
   const payload = {
     user_id: record.user_id,
+    topic: safeTopic,
     persona: record.persona ?? null,
     tone: record.tone ?? null,
     language: record.language ?? null,

@@ -1,80 +1,61 @@
-"use client";
+import { ForgotPasswordForm } from "@/components/Auth/ForgotPasswordForm";
+import Image from "next/image";
+import Link from "next/link";
 
-import Link from 'next/link';
-import { FormEvent, useState } from 'react';
+export const metadata = {
+  title: "Forgot password",
+};
 
 export default function ForgotPasswordPage() {
-  const [email, setEmail] = useState('');
-  const [status, setStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-
-  const handleSubmit = async (event: FormEvent) => {
-    event.preventDefault();
-    if (isSubmitting) return;
-
-    setIsSubmitting(true);
-    setStatus(null);
-
-    try {
-      const response = await fetch('/api/auth/forgot-password', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email.trim() }),
-      });
-
-      const body = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(body?.error || 'Unable to send reset email');
-      }
-
-      setStatus({ type: 'success', message: 'Password reset email sent.' });
-    } catch (error) {
-      setStatus({ type: 'error', message: (error as Error).message || 'Something went wrong' });
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center gap-6 bg-slate-50 px-6 py-12 text-slate-900">
-      <div className="space-y-2 text-center">
-        <p className="text-xs uppercase tracking-[0.5em] text-orange-400">MediaQuotes AI</p>
-        <h1 className="text-3xl font-semibold">Reset your password</h1>
-        <p className="text-sm text-slate-600">Enter your account email and we'll send a reset link.</p>
-      </div>
-      <form
-        onSubmit={handleSubmit}
-        className="w-full max-w-md space-y-4 rounded-3xl border border-slate-200 bg-white p-8 shadow-[0_30px_80px_-40px_rgba(15,23,42,0.35)]"
-      >
-        <label className="flex flex-col gap-1 text-slate-600 text-sm">
-          Email
-          <input
-            className="rounded-2xl border border-slate-200 px-4 py-3 text-base outline-none transition focus:border-orange-400"
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-            placeholder="you@mediaquotes.ai"
-          />
-        </label>
-        <button
-          type="submit"
-          className="w-full rounded-2xl bg-orange-400 px-4 py-3 text-sm font-semibold text-slate-950 disabled:opacity-60"
-          disabled={!email.trim() || isSubmitting}
-        >
-          {isSubmitting ? 'Sending...' : 'Send reset link'}
-        </button>
-        {status && (
-          <p className={`text-center text-xs ${status.type === 'success' ? 'text-green-500' : 'text-rose-500'}`}>
-            {status.message}
-          </p>
-        )}
-      </form>
-      <div className="text-xs text-slate-500">
-        <Link className="underline" href="/auth/signin">
-          Back to sign in
+    <div className="min-h-screen bg-gradient-to-br from-[#f4f6ff] via-white to-[#e9ecff] px-4 py-10 text-dark">
+      <div className="mx-auto flex max-w-6xl items-center justify-between pb-6">
+        <Link href="/" className="flex items-center gap-2 text-lg font-semibold">
+          <Image src="/images/logo/logo-dark.svg" alt="MediaQuotes_AI" width={160} height={34} />
         </Link>
       </div>
-    </main>
+
+      <div className="mx-auto grid w-full max-w-6xl gap-6 rounded-[14px] bg-white/70 p-4 shadow-card-2 backdrop-blur lg:grid-cols-[1.05fr,0.95fr] lg:p-6">
+        <div className="rounded-[12px] border border-gray-3 bg-white p-5 shadow-card-2 sm:p-8">
+          <div className="mb-6">
+            <p className="text-xs font-semibold uppercase tracking-[0.35em] text-primary">Authentication</p>
+            <h1 className="text-2xl font-bold text-dark">Reset your password</h1>
+            <p className="mt-1 text-sm text-gray-6">
+              Enter the email linked to your account. We&apos;ll send a secure reset link.
+            </p>
+          </div>
+          <ForgotPasswordForm />
+        </div>
+
+        <div className="relative overflow-hidden rounded-[12px] bg-gradient-to-br from-[#eff2ff] via-white to-[#dfe6ff] p-8 shadow-card-2">
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(87,80,241,0.16),transparent_35%),radial-gradient(circle_at_80%_0%,rgba(60,80,224,0.12),transparent_40%)]" />
+          <div className="relative flex h-full flex-col justify-between">
+            <div className="flex items-center gap-2 text-dark">
+              <span className="flex h-9 w-9 items-center justify-center rounded-full bg-white shadow-card">
+                <Image src="/images/logo/logo-icon.svg" alt="MediaQuotes_AI" width={24} height={24} />
+              </span>
+              <div>
+                <p className="text-sm font-semibold">MediaQuotes_AI</p>
+                <p className="text-xs text-gray-6">MediaQuotes_AI Admin Dashboard Solution</p>
+              </div>
+            </div>
+
+            <div className="mt-8 space-y-3">
+              <p className="text-sm font-semibold text-primary">Reset securely</p>
+              <h2 className="text-3xl font-bold leading-tight text-dark">We’ll help you get back in.</h2>
+              <p className="max-w-md text-base text-gray-6">
+                Supabase sends a single-use link to your inbox. Follow it to choose a new password and return to your
+                dashboard.
+              </p>
+            </div>
+
+            <div className="mt-auto flex items-center gap-2 rounded-full bg-white/70 px-4 py-2 text-sm font-medium text-primary shadow-card-2 backdrop-blur">
+              <span className="h-2 w-2 rounded-full bg-primary" />
+              Email-based recovery with secure tokens
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }

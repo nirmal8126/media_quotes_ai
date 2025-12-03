@@ -1,9 +1,6 @@
-import { NextResponse } from 'next/server';
-import { requireUser } from '@/lib/api-auth';
-
-function isValidPassword(value: unknown): value is string {
-  return typeof value === 'string' && value.length >= 8;
-}
+import { NextResponse } from "next/server";
+import { requireUser } from "@/lib/api-auth";
+import { validatePasswordStrong } from "@/lib/validation";
 
 export async function PATCH(request: Request) {
   const session = await requireUser(request);
@@ -13,15 +10,18 @@ export async function PATCH(request: Request) {
 
   const { supabase, applyCookies } = session;
   const body = await request.json().catch(() => ({}));
-  const password = body?.password;
+  const passwordResult = validatePasswordStrong(body?.password);
 
-  if (!isValidPassword(password)) {
-    const response = NextResponse.json({ error: 'Password must be at least 8 characters.' }, { status: 422 });
+  if (!passwordResult.valid || !passwordResult.value) {
+    const response = NextResponse.json(
+      { error: passwordResult.message ?? "Password must meet the complexity requirements." },
+      { status: 422 },
+    );
     applyCookies(response);
     return response;
   }
 
-  const { data, error } = await supabase.auth.updateUser({ password });
+  const { data, error } = await supabase.auth.updateUser({ password: passwordResult.value });
 
   if (error) {
     const response = NextResponse.json({ error: error.message }, { status: error.status });

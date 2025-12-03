@@ -23,7 +23,7 @@ export async function POST(request: Request) {
     return response;
   }
 
-  const response = NextResponse.json({ success: true, redirect: '/auth/signin' });
+  const response = NextResponse.json({ success: true, redirect: '/auth/sign-in' });
   supabaseCookies.applyToResponse(response);
   return response;
 }
