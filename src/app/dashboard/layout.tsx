@@ -2,6 +2,13 @@ import Link from 'next/link';
 import { cookies } from 'next/headers';
 import { createServerClient } from '@supabase/ssr';
 import type { ReactNode } from 'react';
+import LogoutButton from '@/app/dashboard/LogoutButton';
+
+type DashboardUserInfo = {
+  email: string | null;
+  plan: string | null;
+  isSuperAdmin: boolean;
+};
 
 const navItems = [
   { href: '/dashboard', label: 'Home', icon: '🏠' },
@@ -13,10 +20,10 @@ const navItems = [
   { href: '/dashboard/billing', label: 'Billing', icon: '💳' },
 ];
 
-async function getUserEmail() {
+async function getUserInfo(): Promise<DashboardUserInfo> {
   const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return null;
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return { email: null, plan: null, isSuperAdmin: false };
   const cookieStore = await cookies();
   const supabase = createServerClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     cookies: {
@@ -27,11 +34,16 @@ async function getUserEmail() {
   const {
     data: { session },
   } = await supabase.auth.getSession();
-  return session?.user?.email ?? null;
+  const user = session?.user;
+  const role = (user?.app_metadata?.role as string | undefined) ?? (user?.user_metadata?.role as string | undefined);
+  const flag = (user?.user_metadata as { is_admin?: boolean; admin?: boolean } | undefined)?.is_admin;
+  const isSuperAdmin = role === 'superadmin' || flag === true || (user?.user_metadata as { admin?: boolean } | undefined)?.admin === true;
+  const plan = (user?.user_metadata as { plan_tier?: string } | undefined)?.plan_tier ?? null;
+  return { email: user?.email ?? null, plan, isSuperAdmin };
 }
 
 export default async function DashboardLayout({ children }: { children: ReactNode }) {
-  const email = await getUserEmail();
+  const user = await getUserInfo();
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-indigo-50 to-white text-slate-900">
@@ -87,9 +99,18 @@ export default async function DashboardLayout({ children }: { children: ReactNod
                   <img src="https://api.dicebear.com/9.x/initials/svg?seed=M" alt="avatar" className="h-full w-full object-cover" />
                 </div>
                 <div className="hidden text-right md:block">
-                  <p className="text-sm font-semibold text-slate-900">{email ?? 'Creator'}</p>
-                  <p className="text-xs text-slate-500">Standard plan</p>
+                  <p className="text-sm font-semibold text-slate-900">{user.email ?? 'Creator'}</p>
+                  <p className="text-xs text-slate-500">{user.plan ? `${user.plan} plan` : 'Standard plan'}</p>
                 </div>
+                {user.isSuperAdmin && (
+                  <Link
+                    href="/admin"
+                    className="rounded-full border border-indigo-200 bg-indigo-50 px-3 py-2 text-[0.65rem] font-semibold uppercase tracking-[0.3em] text-indigo-700 shadow-sm hover:border-indigo-300"
+                  >
+                    Admin
+                  </Link>
+                )}
+                <LogoutButton />
               </div>
             </div>
           </header>

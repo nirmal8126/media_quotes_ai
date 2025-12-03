@@ -20,6 +20,13 @@ type QuotePack = {
   created_at?: string | null;
 };
 
+type MetaDefaults = {
+  platforms: string[];
+  niches: string[];
+  formats: string[];
+  tones: string[];
+};
+
 const defaultPersonas: Persona[] = [
   { id: 'persona-1', name: 'Motivation Coach', tone: 'Energetic', tags: ['fitness', 'mindset'], language: 'en' },
   { id: 'persona-2', name: 'Business Mentor', tone: 'Professional', tags: ['b2b', 'strategy'], language: 'en' },
@@ -33,6 +40,7 @@ export default function QuotesPage() {
   const [form, setForm] = useState({ personaId: '', topic: '', language: 'en', count: '30', tone: '', tags: '', niche: '' });
   const [status, setStatus] = useState<string | null>(null);
   const [count, setCount] = useState(30);
+  const [meta, setMeta] = useState<MetaDefaults>({ platforms: [], niches: [], formats: [], tones: [] });
 
   useEffect(() => {
     const fetchPersonas = async () => {
@@ -50,6 +58,28 @@ export default function QuotesPage() {
         setLoading((s) => ({ ...s, personas: false }));
       }
     };
+    const fetchMeta = async () => {
+      try {
+        const res = await fetch('/api/meta');
+        const payload = await res.json().catch(() => ({}));
+        if (res.ok) {
+          setMeta({
+            platforms: payload.platforms ?? [],
+            niches: payload.niches ?? [],
+            formats: payload.formats ?? [],
+            tones: payload.tones ?? [],
+          });
+          if (!form.tone && payload.tones?.length) {
+            setForm((f) => ({ ...f, tone: payload.tones[0] }));
+          }
+          if (!form.niche && payload.niches?.length) {
+            setForm((f) => ({ ...f, niche: payload.niches[0] }));
+          }
+        }
+      } catch (error) {
+        console.error('Unable to load defaults', error);
+      }
+    };
     const fetchQuotes = async () => {
       setLoading((s) => ({ ...s, quotes: true }));
       try {
@@ -63,6 +93,7 @@ export default function QuotesPage() {
       }
     };
     fetchPersonas();
+    fetchMeta();
     fetchQuotes();
   }, []);
 
@@ -169,20 +200,32 @@ export default function QuotesPage() {
               <label className="flex flex-col gap-2 text-sm text-slate-600">
                 Niche
                 <input
+                  list="niche-options"
                   className="rounded-2xl border border-slate-200 bg-white p-3 text-sm shadow-inner focus:border-indigo-400 focus:outline-none"
                   placeholder="fitness, business, travel..."
                   value={form.niche}
                   onChange={(e) => setForm((f) => ({ ...f, niche: e.target.value }))}
                 />
+                <datalist id="niche-options">
+                  {(meta.niches.length ? meta.niches : ['fitness', 'business', 'travel']).map((niche) => (
+                    <option key={niche} value={niche} />
+                  ))}
+                </datalist>
               </label>
               <label className="flex flex-col gap-2 text-sm text-slate-600">
                 Tone
                 <input
+                  list="tone-options"
                   className="rounded-2xl border border-slate-200 bg-white p-3 text-sm shadow-inner focus:border-indigo-400 focus:outline-none"
                   placeholder="Motivational, Dark, Funny..."
                   value={form.tone}
                   onChange={(e) => setForm((f) => ({ ...f, tone: e.target.value }))}
                 />
+                <datalist id="tone-options">
+                  {(meta.tones.length ? meta.tones : ['motivational', 'professional', 'funny']).map((tone) => (
+                    <option key={tone} value={tone} />
+                  ))}
+                </datalist>
               </label>
               <label className="flex flex-col gap-2 text-sm text-slate-600">
                 Language

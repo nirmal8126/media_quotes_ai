@@ -3,13 +3,13 @@ import { supabaseAdmin } from '@/lib/supabase';
 import { requireUser } from '@/lib/api-auth';
 import type { User } from '@supabase/supabase-js';
 
-type QuotesPayload = {
+type ReelPayload = {
   id?: unknown;
   userId?: unknown;
-  persona?: unknown;
+  platform?: unknown;
   tone?: unknown;
-  language?: unknown;
-  quotes?: unknown;
+  caption?: unknown;
+  script?: unknown;
 };
 
 function isSuperAdmin(user: User) {
@@ -35,20 +35,7 @@ function normalizeString(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
 }
 
-function normalizeQuotes(value: unknown): string[] {
-  if (Array.isArray(value)) {
-    return value.map((item) => String(item).trim()).filter(Boolean);
-  }
-  if (typeof value === 'string') {
-    return value
-      .split('\n')
-      .map((line) => line.trim())
-      .filter(Boolean);
-  }
-  return [];
-}
-
-const BASE_SELECT = 'id, user_id, persona, tone, language, quotes, created_at';
+const BASE_SELECT = 'id, user_id, platform, tone, caption, script, created_at';
 const MAX_LIMIT = 200;
 
 export async function GET(request: Request) {
@@ -60,7 +47,7 @@ export async function GET(request: Request) {
   const limit = Number.isFinite(limitParam) ? Math.min(Math.max(limitParam, 1), MAX_LIMIT) : 50;
 
   const { data, error } = await supabaseAdmin
-    .from('quotes')
+    .from('generated_reels')
     .select(BASE_SELECT)
     .order('created_at', { ascending: false })
     .limit(limit);
@@ -80,29 +67,29 @@ export async function POST(request: Request) {
   const auth = await ensureAdmin(request);
   if ('errorResponse' in auth) return auth.errorResponse;
 
-  const body = (await request.json().catch(() => ({}))) as QuotesPayload;
-  const persona = normalizeString(body.persona);
+  const body = (await request.json().catch(() => ({}))) as ReelPayload;
+  const platform = normalizeString(body.platform);
   const tone = normalizeString(body.tone);
-  const language = normalizeString(body.language);
-  const quotes = normalizeQuotes(body.quotes);
+  const caption = normalizeString(body.caption);
+  const script = normalizeString(body.script);
   const userId = normalizeString(body.userId);
 
-  if (!persona && !tone && !language && !quotes.length) {
-    const response = NextResponse.json({ error: 'Provide persona, tone, language, or quotes to create a pack.' }, { status: 422 });
+  if (!platform && !tone && !script && !caption) {
+    const response = NextResponse.json({ error: 'Provide at least one field to create a reel.' }, { status: 422 });
     auth.applyCookies(response);
     return response;
   }
 
   const payload = {
     user_id: userId || null,
-    persona: persona || null,
+    platform: platform || null,
     tone: tone || null,
-    language: language || null,
-    quotes: quotes.length ? quotes : null,
+    caption: caption || null,
+    script: script || null,
     created_at: new Date().toISOString(),
   };
 
-  const { data, error } = await supabaseAdmin.from('quotes').insert(payload).select(BASE_SELECT).maybeSingle();
+  const { data, error } = await supabaseAdmin.from('generated_reels').insert(payload).select(BASE_SELECT).maybeSingle();
 
   if (error) {
     const response = NextResponse.json({ error: error.message }, { status: 500 });
@@ -119,26 +106,26 @@ export async function PATCH(request: Request) {
   const auth = await ensureAdmin(request);
   if ('errorResponse' in auth) return auth.errorResponse;
 
-  const body = (await request.json().catch(() => ({}))) as QuotesPayload;
+  const body = (await request.json().catch(() => ({}))) as ReelPayload;
   const id = normalizeString(body.id);
   if (!id) {
-    const response = NextResponse.json({ error: 'Quote id is required.' }, { status: 422 });
+    const response = NextResponse.json({ error: 'Reel id is required.' }, { status: 422 });
     auth.applyCookies(response);
     return response;
   }
 
   const updates: Record<string, unknown> = {};
   const userId = normalizeString(body.userId);
-  const persona = normalizeString(body.persona);
+  const platform = normalizeString(body.platform);
   const tone = normalizeString(body.tone);
-  const language = normalizeString(body.language);
-  const quotes = normalizeQuotes(body.quotes);
+  const caption = normalizeString(body.caption);
+  const script = normalizeString(body.script);
 
   if (userId) updates.user_id = userId;
-  if (persona) updates.persona = persona;
+  if (platform) updates.platform = platform;
   if (tone) updates.tone = tone;
-  if (language) updates.language = language;
-  if (quotes.length) updates.quotes = quotes;
+  if (caption) updates.caption = caption;
+  if (script) updates.script = script;
 
   if (!Object.keys(updates).length) {
     const response = NextResponse.json({ error: 'No fields provided to update.' }, { status: 422 });
@@ -147,7 +134,7 @@ export async function PATCH(request: Request) {
   }
 
   const { data, error } = await supabaseAdmin
-    .from('quotes')
+    .from('generated_reels')
     .update(updates)
     .eq('id', id)
     .select(BASE_SELECT)
@@ -168,15 +155,15 @@ export async function DELETE(request: Request) {
   const auth = await ensureAdmin(request);
   if ('errorResponse' in auth) return auth.errorResponse;
 
-  const body = (await request.json().catch(() => ({}))) as QuotesPayload;
+  const body = (await request.json().catch(() => ({}))) as ReelPayload;
   const id = normalizeString(body.id);
   if (!id) {
-    const response = NextResponse.json({ error: 'Quote id is required.' }, { status: 422 });
+    const response = NextResponse.json({ error: 'Reel id is required.' }, { status: 422 });
     auth.applyCookies(response);
     return response;
   }
 
-  const { error } = await supabaseAdmin.from('quotes').delete().eq('id', id);
+  const { error } = await supabaseAdmin.from('generated_reels').delete().eq('id', id);
   if (error) {
     const response = NextResponse.json({ error: error.message }, { status: 500 });
     auth.applyCookies(response);

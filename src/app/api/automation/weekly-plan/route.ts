@@ -10,6 +10,8 @@ import {
   storeGeneratedReel,
 } from '@/lib/reel-service';
 import { requireUser } from '@/lib/api-auth';
+import { pickProvider } from '@/lib/llm-provider';
+import { defaultProvider } from '@/lib/openai';
 
 const bestTimes = ['6:30 PM', '12:00 PM', '8:00 PM', '7:15 PM', '9:45 AM'];
 const tones = ['funny', 'educational', 'emotional'];
@@ -28,6 +30,7 @@ export async function POST(request: Request) {
   const payload = await request.json().catch(() => ({}));
   const requestedUserId = payload.userId;
   const userId = requestedUserId && requestedUserId !== sessionUser.id ? null : sessionUser.id;
+  const provider = pickProvider({ bodyProvider: payload.provider, user: sessionUser, fallback: defaultProvider });
 
   if (!userId) {
     const response = NextResponse.json({ error: 'Unauthorized to run automation for another user' }, { status: 403 });
@@ -65,10 +68,10 @@ export async function POST(request: Request) {
     const tone = pickTone(index);
     const platform = 'instagram';
 
-    const scriptAssets = await generateScriptAssets(tone, platform);
-    const caption = await generateCaptionContent(tone, platform);
-    const thumbnailPrompt = await generateThumbnailPrompt(tone, platform);
-    const hashtags = await generateHashtagList(tone, platform);
+    const scriptAssets = await generateScriptAssets(tone, platform, provider);
+    const caption = await generateCaptionContent(tone, platform, provider);
+    const thumbnailPrompt = await generateThumbnailPrompt(tone, platform, provider);
+    const hashtags = await generateHashtagList(tone, platform, provider);
 
     const record = await storeGeneratedReel({
       userId,

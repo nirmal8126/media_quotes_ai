@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { evaluateQuota } from '@/lib/plan';
 import { fetchUserQuota, generateScriptAssets, incrementUserQuota, storeGeneratedReel } from '@/lib/reel-service';
 import { requireUser } from '@/lib/api-auth';
+import { pickProvider } from '@/lib/llm-provider';
+import { defaultProvider } from '@/lib/openai';
 
 export async function POST(request: Request) {
   try {
@@ -15,6 +17,7 @@ export async function POST(request: Request) {
 
     const tone = body.tone ?? 'educational';
     const platform = body.platform ?? 'instagram';
+    const provider = pickProvider({ bodyProvider: body.provider, user, fallback: defaultProvider });
     const { user: quotaUser } = await fetchUserQuota(user.id);
     const quota = evaluateQuota(quotaUser.plan_tier, quotaUser.quota_used);
 
@@ -22,7 +25,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Quota exceeded for this plan', quota }, { status: 403 });
     }
 
-    const assets = await generateScriptAssets(tone, platform);
+    const assets = await generateScriptAssets(tone, platform, provider);
     await storeGeneratedReel({
       userId: user.id,
       tone,

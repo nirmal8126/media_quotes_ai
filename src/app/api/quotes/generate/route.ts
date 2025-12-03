@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { requireUser } from '@/lib/api-auth';
 import { generateQuotesList, storeQuotePack } from '@/lib/quote-service';
+import { pickProvider } from '@/lib/llm-provider';
+import { defaultProvider } from '@/lib/openai';
 
 type QuotePayload = {
   topic?: string;
@@ -9,6 +11,7 @@ type QuotePayload = {
   language?: string;
   style?: string;
   count?: number;
+  provider?: 'openai' | 'gemini';
 };
 
 export async function POST(request: Request) {
@@ -21,6 +24,7 @@ export async function POST(request: Request) {
   const body = (await request.json().catch(() => ({}))) as QuotePayload;
   const count = Number(body.count ?? 10);
   const safeCount = Number.isFinite(count) ? Math.min(Math.max(count, 1), 100) : 10;
+  const provider = pickProvider({ bodyProvider: body.provider, user, fallback: defaultProvider });
 
   const quotes = await generateQuotesList({
     topic: body.topic,
@@ -28,6 +32,7 @@ export async function POST(request: Request) {
     persona: body.persona,
     language: body.language,
     count: safeCount,
+    provider,
   });
 
   const record = await storeQuotePack({

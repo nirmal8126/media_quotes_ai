@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
 
 type ScriptResponse = null | {
   items: string[];
@@ -11,15 +11,63 @@ interface GenerateFormProps {
   userId: string | null;
 }
 
+type MetaDefaults = {
+  platforms: string[];
+  tones: string[];
+  formats: string[];
+  niches: string[];
+};
+
 export default function GenerateForm({ userId }: GenerateFormProps) {
-  const [tone, setTone] = useState('funny');
-  const [platform, setPlatform] = useState('instagram');
+  const [tone, setTone] = useState('');
+  const [platform, setPlatform] = useState('');
   const [contentType, setContentType] = useState<'caption' | 'short' | 'long'>('caption');
   const [idea, setIdea] = useState('');
   const [variations, setVariations] = useState(3);
   const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState<ScriptResponse>(null);
   const [error, setError] = useState<string | null>(null);
+  const [meta, setMeta] = useState<MetaDefaults>({ platforms: [], tones: [], formats: [], niches: [] });
+  const [metaStatus, setMetaStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
+
+  useEffect(() => {
+    const loadMeta = async () => {
+      setMetaStatus('loading');
+    try {
+      const res = await fetch('/api/meta');
+      const payload = await res.json().catch(() => ({}));
+      if (res.ok) {
+        const next = {
+            platforms: payload.platforms ?? [],
+            tones: payload.tones ?? [],
+            formats: payload.formats ?? [],
+            niches: payload.niches ?? [],
+          };
+          setMeta(next);
+          setMetaStatus('ready');
+        } else {
+          setMetaStatus('error');
+        }
+      } catch (error) {
+        setMetaStatus('error');
+      }
+    };
+    loadMeta();
+  }, []);
+
+  const toneOptions = useMemo(() => (meta.tones.length ? meta.tones : ['funny', 'educational', 'emotional']), [meta.tones]);
+  const platformOptions = useMemo(
+    () => (meta.platforms.length ? meta.platforms : ['instagram', 'youtube', 'tiktok', 'twitter']),
+    [meta.platforms],
+  );
+
+  useEffect(() => {
+    if (!tone && toneOptions[0]) setTone(toneOptions[0]);
+  }, [tone, toneOptions]);
+
+  useEffect(() => {
+    if (!platform && platformOptions[0]) setPlatform(platformOptions[0]);
+  }, [platform, platformOptions]);
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -98,9 +146,11 @@ export default function GenerateForm({ userId }: GenerateFormProps) {
               onChange={(event) => setTone(event.target.value)}
               className="rounded-2xl border border-slate-200 bg-white p-3 text-sm shadow-inner focus:border-indigo-400 focus:outline-none"
             >
-              <option value="funny">Funny</option>
-              <option value="educational">Educational</option>
-              <option value="emotional">Emotional</option>
+              {toneOptions.map((item) => (
+                <option key={item} value={item}>
+                  {item}
+                </option>
+              ))}
             </select>
           </label>
           <label className="flex flex-col gap-2 text-sm text-slate-600">
@@ -110,10 +160,11 @@ export default function GenerateForm({ userId }: GenerateFormProps) {
               onChange={(event) => setPlatform(event.target.value)}
               className="rounded-2xl border border-slate-200 bg-white p-3 text-sm shadow-inner focus:border-indigo-400 focus:outline-none"
             >
-              <option value="instagram">Instagram Reels</option>
-              <option value="youtube">YouTube Shorts</option>
-              <option value="tiktok">TikTok</option>
-              <option value="twitter">X / Twitter</option>
+              {platformOptions.map((item) => (
+                <option key={item} value={item}>
+                  {item}
+                </option>
+              ))}
             </select>
           </label>
         </div>
@@ -128,7 +179,10 @@ export default function GenerateForm({ userId }: GenerateFormProps) {
           />
         </label>
         <div className="flex items-center justify-between">
-          <span className="text-sm text-slate-600"># of variations: {variations}</span>
+          <span className="text-sm text-slate-600">
+            # of variations: {variations}
+            {metaStatus === 'loading' && ' · loading defaults...'}
+          </span>
           <input
             type="range"
             min={1}

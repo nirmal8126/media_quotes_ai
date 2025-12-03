@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { fetchUserQuota, generateCaptionContent, storeGeneratedReel } from '@/lib/reel-service';
 import { requireUser } from '@/lib/api-auth';
+import { pickProvider } from '@/lib/llm-provider';
+import { defaultProvider } from '@/lib/openai';
 
 export async function POST(request: Request) {
   const session = await requireUser(request);
@@ -13,13 +15,14 @@ export async function POST(request: Request) {
 
   const tone = body.tone ?? 'educational';
   const platform = body.platform ?? 'instagram';
+  const provider = pickProvider({ bodyProvider: body.provider, user, fallback: defaultProvider });
   const { quota } = await fetchUserQuota(user.id);
 
   if (!quota.allowsGeneration) {
     return NextResponse.json({ error: 'Quota exceeded for this plan', quota }, { status: 403 });
   }
 
-  const caption = await generateCaptionContent(tone, platform);
+  const caption = await generateCaptionContent(tone, platform, provider);
   await storeGeneratedReel({ userId: user.id, tone, platform, caption: caption.caption });
 
   const response = NextResponse.json({

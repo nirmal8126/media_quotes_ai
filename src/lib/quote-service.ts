@@ -1,5 +1,5 @@
 import { supabaseAdmin } from '@/lib/supabase';
-import { generateCompletion } from '@/lib/openai';
+import { generateCompletion, type LlmProvider } from '@/lib/openai';
 
 export type QuoteRecord = {
   id?: string;
@@ -17,6 +17,7 @@ export async function generateQuotesList(options: {
   persona?: string;
   language?: string;
   count?: number;
+  provider?: LlmProvider;
 }) {
   const { topic = 'general inspiration', tone = 'motivational', persona, language = 'en', count = 10 } = options;
   const capped = Math.max(1, Math.min(count, 100));
@@ -24,7 +25,7 @@ export async function generateQuotesList(options: {
   const personaLine = persona ? `Write in the persona/voice of: ${persona}.` : '';
   const prompt = `Generate ${capped} short, shareable quotes about "${topic}" in a ${tone} tone. ${personaLine} Language: ${language}. Return JSON array of strings only.`;
 
-  const raw = await generateCompletion(prompt, { temperature: 0.8, maxTokens: 400 });
+  const raw = await generateCompletion(prompt, { temperature: 0.8, maxTokens: 400, provider: options.provider });
 
   try {
     const parsed = JSON.parse(raw);

@@ -1,6 +1,6 @@
 import { supabaseAdmin } from '@/lib/supabase';
 import { evaluateQuota, normalizePlanTier, type PlanTier } from '@/lib/plan';
-import { generateCompletion } from '@/lib/openai';
+import { generateCompletion, type LlmProvider } from '@/lib/openai';
 
 export interface GeneratedReelRecord {
   userId: string;
@@ -82,9 +82,9 @@ export async function storeGeneratedReel(record: GeneratedReelRecord) {
   return data;
 }
 
-export async function generateIdeaList(tone: string, platform: string) {
+export async function generateIdeaList(tone: string, platform: string, provider?: LlmProvider) {
   const prompt = `You are a creative copywriter for short-form video. Create 10 Instagram or YouTube Shorts reel ideas in a ${tone} tone for ${platform}. Return a numbered list (1-10) with a short hook or logline.`;
-  const raw = await generateCompletion(prompt, { temperature: 0.8, maxTokens: 300 });
+  const raw = await generateCompletion(prompt, { temperature: 0.8, maxTokens: 300, provider });
   const ideas = raw
     .split(/\n+/)
     .map((line) => line.trim())
@@ -102,9 +102,9 @@ export async function generateIdeaList(tone: string, platform: string) {
   return ideas;
 }
 
-export async function generateScriptAssets(tone: string, platform: string) {
+export async function generateScriptAssets(tone: string, platform: string, provider?: LlmProvider) {
   const prompt = `Write a 45-60 second ${tone} ${platform} reel script with Hook, Intro, Value, and CTA sections. Also list 3 shot directions (Camera, Movement) after the script. Return a JSON object: {"script":string, "shots":string[], "hook":string}.`;
-  const raw = await generateCompletion(prompt, { temperature: 0.65, maxTokens: 450 });
+  const raw = await generateCompletion(prompt, { temperature: 0.65, maxTokens: 450, provider });
 
   let script = raw;
   let shotBreakdown: string[] = [];
@@ -123,9 +123,9 @@ export async function generateScriptAssets(tone: string, platform: string) {
   return { script: script.trim(), shotBreakdown, hook: hook.trim() };
 }
 
-export async function generateCaptionContent(tone: string, platform: string) {
+export async function generateCaptionContent(tone: string, platform: string, provider?: LlmProvider) {
   const prompt = `Generate a single ${platform} caption in a ${tone} tone that teases the video, invites engagement, and includes a clear CTA. Return JSON {"caption":string, "callToAction":string}.`;
-  const raw = await generateCompletion(prompt, { temperature: 0.7, maxTokens: 180 });
+  const raw = await generateCompletion(prompt, { temperature: 0.7, maxTokens: 180, provider });
 
   let caption = raw;
   let callToAction = 'Drop a comment.';
@@ -143,15 +143,15 @@ export async function generateCaptionContent(tone: string, platform: string) {
   return { caption: caption.trim(), callToAction: callToAction.trim() };
 }
 
-export async function generateThumbnailPrompt(tone: string, platform: string) {
+export async function generateThumbnailPrompt(tone: string, platform: string, provider?: LlmProvider) {
   const prompt = `Describe a bold thumbnail idea for a ${platform} reel with a ${tone} tone. Mention key colors, face/pose, text overlay, and energy.`;
-  const raw = await generateCompletion(prompt, { temperature: 0.75, maxTokens: 150 });
+  const raw = await generateCompletion(prompt, { temperature: 0.75, maxTokens: 150, provider });
   return raw;
 }
 
-export async function generateHashtagList(tone: string, platform: string) {
+export async function generateHashtagList(tone: string, platform: string, provider?: LlmProvider) {
   const prompt = `List 12 relevant, high-engagement hashtags for a ${tone} ${platform} reel. Output as a comma-separated list.`;
-  const raw = await generateCompletion(prompt, { temperature: 0.6, maxTokens: 120 });
+  const raw = await generateCompletion(prompt, { temperature: 0.6, maxTokens: 120, provider });
   const tags = raw
     .split(/[,\n]/)
     .map((tag) => tag.trim())
