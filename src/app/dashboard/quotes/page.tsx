@@ -1,15 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from 'react';
-
-type Persona = {
-  id: string;
-  name: string;
-  description?: string | null;
-  tone?: string | null;
-  language?: string | null;
-  tags?: string[] | null;
-};
+import { useEffect, useState } from 'react';
 
 type QuotePack = {
   id: string;
@@ -27,37 +18,24 @@ type MetaDefaults = {
   tones: string[];
 };
 
-const defaultPersonas: Persona[] = [
-  { id: 'persona-1', name: 'Motivation Coach', tone: 'Energetic', tags: ['fitness', 'mindset'], language: 'en' },
-  { id: 'persona-2', name: 'Business Mentor', tone: 'Professional', tags: ['b2b', 'strategy'], language: 'en' },
-  { id: 'persona-3', name: 'Funny Writer', tone: 'Humorous', tags: ['memes'], language: 'en' },
-];
-
 export default function QuotesPage() {
-  const [personas, setPersonas] = useState<Persona[]>(defaultPersonas);
   const [quotePacks, setQuotePacks] = useState<QuotePack[]>([]);
-  const [loading, setLoading] = useState({ personas: false, quotes: false, generating: false, creating: false });
-  const [form, setForm] = useState({ personaId: '', topic: '', language: 'en', count: '30', tone: '', tags: '', niche: '' });
+  const [loading, setLoading] = useState({ quotes: false, generating: false, creating: false });
+  const [form, setForm] = useState({
+    persona: '',
+    topic: '',
+    language: 'en',
+    count: '30',
+    tone: '',
+    tags: '',
+    niche: '',
+    format: '',
+  });
   const [status, setStatus] = useState<string | null>(null);
   const [count, setCount] = useState(30);
   const [meta, setMeta] = useState<MetaDefaults>({ platforms: [], niches: [], formats: [], tones: [] });
 
   useEffect(() => {
-    const fetchPersonas = async () => {
-      setLoading((s) => ({ ...s, personas: true }));
-      try {
-        const res = await fetch('/api/personas', { credentials: 'include' });
-        const payload = await res.json().catch(() => ({}));
-        if (res.ok && Array.isArray(payload.personas)) {
-          setPersonas(payload.personas);
-          if (payload.personas[0]) {
-            setForm((f) => ({ ...f, personaId: payload.personas[0].id }));
-          }
-        }
-      } finally {
-        setLoading((s) => ({ ...s, personas: false }));
-      }
-    };
     const fetchMeta = async () => {
       try {
         const res = await fetch('/api/meta');
@@ -74,6 +52,9 @@ export default function QuotesPage() {
           }
           if (!form.niche && payload.niches?.length) {
             setForm((f) => ({ ...f, niche: payload.niches[0] }));
+          }
+          if (!form.format && payload.formats?.length) {
+            setForm((f) => ({ ...f, format: payload.formats[0] }));
           }
         }
       } catch (error) {
@@ -92,12 +73,9 @@ export default function QuotesPage() {
         setLoading((s) => ({ ...s, quotes: false }));
       }
     };
-    fetchPersonas();
     fetchMeta();
     fetchQuotes();
-  }, []);
-
-  const selectedPersona = useMemo(() => personas.find((p) => p.id === form.personaId) ?? personas[0] ?? null, [personas, form.personaId]);
+  }, [form.format, form.niche, form.tone]);
 
   const handleGenerate = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -111,8 +89,8 @@ export default function QuotesPage() {
         credentials: 'include',
         body: JSON.stringify({
           topic: form.topic || form.niche,
-          tone: form.tone || selectedPersona?.tone,
-          persona: selectedPersona?.description || selectedPersona?.name,
+          tone: form.tone,
+          persona: form.persona,
           language: form.language,
           count,
           tags: form.tags,
@@ -127,9 +105,9 @@ export default function QuotesPage() {
       setQuotePacks((prev) => [
         {
           id: payload.packId ?? `local-${Date.now()}`,
-          persona: selectedPersona?.name,
+          persona: form.persona,
           language: form.language,
-          tone: selectedPersona?.tone,
+          tone: form.tone,
           quotes: payload.quotes ?? [],
           created_at: new Date().toISOString(),
         },
@@ -147,22 +125,16 @@ export default function QuotesPage() {
       <section className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-400 p-6 text-white shadow-lg">
         <div className="relative z-10 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
           <div>
-            <p className="text-xs uppercase tracking-[0.4em] text-white/70">Quote studio</p>
-            <h1 className="text-3xl font-semibold leading-tight">Create persona-based quote packs</h1>
-            <p className="text-sm text-white/80">Generate 30–100 quotes aligned to your brand voice.</p>
-          </div>
-          <div className="flex flex-wrap gap-3">
-            <a
-              href="#personas"
-              className="rounded-xl bg-white/20 px-4 py-2 text-sm font-semibold text-white ring-1 ring-white/30 hover:bg-white/30"
-            >
-              View personas
-            </a>
-            <a
-              href="#generate"
-              className="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-indigo-600 shadow-md hover:bg-slate-50"
-            >
-              Generate pack
+              <p className="text-xs uppercase tracking-[0.4em] text-white/70">Quote studio</p>
+              <h1 className="text-3xl font-semibold leading-tight">Create custom quote packs</h1>
+              <p className="text-sm text-white/80">Set tone, niche, format every time you generate.</p>
+            </div>
+            <div className="flex flex-wrap gap-3">
+              <a
+                href="#generate"
+                className="rounded-xl bg-white px-4 py-2 text-sm font-semibold text-indigo-600 shadow-md hover:bg-slate-50"
+              >
+                Generate pack
             </a>
           </div>
         </div>
@@ -183,66 +155,72 @@ export default function QuotesPage() {
           </div>
           <form className="space-y-3" onSubmit={handleGenerate}>
             <div className="grid gap-3 md:grid-cols-2">
-              <label className="flex flex-col gap-2 text-sm text-slate-600">
-                Persona
-                <select
-                  className="rounded-2xl border border-slate-200 bg-white p-3 text-sm shadow-inner focus:border-indigo-400 focus:outline-none"
-                  value={form.personaId || selectedPersona?.id || ''}
-                  onChange={(e) => setForm((f) => ({ ...f, personaId: e.target.value }))}
-                >
-                  {personas.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name} · {p.tone}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="flex flex-col gap-2 text-sm text-slate-600">
-                Niche
+              <label className="flex flex-col gap-1 text-sm text-slate-600">
+                <div className="flex items-center justify-between text-xs text-slate-500">
+                  <span className="text-sm text-slate-600">Persona(s)</span>
+                  <span>e.g., Calm Coach, Startup Mentor</span>
+                </div>
                 <input
-                  list="niche-options"
+                  className="rounded-2xl border border-slate-200 bg-white p-3 text-sm shadow-inner focus:border-indigo-400 focus:outline-none"
+                  placeholder="Enter one or more personas (comma-separated)"
+                  value={form.persona}
+                  onChange={(e) => setForm((f) => ({ ...f, persona: e.target.value }))}
+                />
+              </label>
+              <label className="flex flex-col gap-1 text-sm text-slate-600">
+                <div className="flex items-center justify-between text-xs text-slate-500">
+                  <span className="text-sm text-slate-600">Niche</span>
+                  <span>e.g., fitness, saas marketing</span>
+                </div>
+                <input
                   className="rounded-2xl border border-slate-200 bg-white p-3 text-sm shadow-inner focus:border-indigo-400 focus:outline-none"
                   placeholder="fitness, business, travel..."
                   value={form.niche}
                   onChange={(e) => setForm((f) => ({ ...f, niche: e.target.value }))}
                 />
-                <datalist id="niche-options">
-                  {(meta.niches.length ? meta.niches : ['fitness', 'business', 'travel']).map((niche) => (
-                    <option key={niche} value={niche} />
-                  ))}
-                </datalist>
               </label>
-              <label className="flex flex-col gap-2 text-sm text-slate-600">
-                Tone
+              <label className="flex flex-col gap-1 text-sm text-slate-600">
+                <div className="flex items-center justify-between text-xs text-slate-500">
+                  <span className="text-sm text-slate-600">Tone</span>
+                  <span>e.g., motivational, playful, direct</span>
+                </div>
                 <input
-                  list="tone-options"
                   className="rounded-2xl border border-slate-200 bg-white p-3 text-sm shadow-inner focus:border-indigo-400 focus:outline-none"
                   placeholder="Motivational, Dark, Funny..."
                   value={form.tone}
                   onChange={(e) => setForm((f) => ({ ...f, tone: e.target.value }))}
                 />
-                <datalist id="tone-options">
-                  {(meta.tones.length ? meta.tones : ['motivational', 'professional', 'funny']).map((tone) => (
-                    <option key={tone} value={tone} />
-                  ))}
-                </datalist>
               </label>
-              <label className="flex flex-col gap-2 text-sm text-slate-600">
-                Language
-                <select
+              <label className="flex flex-col gap-1 text-sm text-slate-600">
+                <div className="flex items-center justify-between text-xs text-slate-500">
+                  <span className="text-sm text-slate-600">Language</span>
+                  <span>e.g., en, hi, es</span>
+                </div>
+                <input
                   className="rounded-2xl border border-slate-200 bg-white p-3 text-sm shadow-inner focus:border-indigo-400 focus:outline-none"
+                  placeholder="en, hi, es..."
                   value={form.language}
                   onChange={(e) => setForm((f) => ({ ...f, language: e.target.value }))}
-                >
-                  <option value="en">English</option>
-                  <option value="hi">Hindi</option>
-                  <option value="es">Spanish</option>
-                  <option value="ar">Arabic</option>
-                </select>
+                />
+              </label>
+              <label className="flex flex-col gap-1 text-sm text-slate-600">
+                <div className="flex items-center justify-between text-xs text-slate-500">
+                  <span className="text-sm text-slate-600">Format</span>
+                  <span>e.g., quote, caption, hook</span>
+                </div>
+                <input
+                  className="rounded-2xl border border-slate-200 bg-white p-3 text-sm shadow-inner focus:border-indigo-400 focus:outline-none"
+                  placeholder="quote, caption, hook..."
+                  value={form.format}
+                  onChange={(e) => setForm((f) => ({ ...f, format: e.target.value }))}
+                />
               </label>
             </div>
-            <label className="flex flex-col gap-2 text-sm text-slate-600">
-              Tags
+            <label className="flex flex-col gap-1 text-sm text-slate-600">
+              <div className="flex items-center justify-between text-xs text-slate-500">
+                <span className="text-sm text-slate-600">Tags</span>
+                <span>e.g., morning routine, mindset, founders</span>
+              </div>
               <input
                 className="rounded-2xl border border-slate-200 bg-white p-3 text-sm shadow-inner focus:border-indigo-400 focus:outline-none"
                 placeholder="comma-separated keywords"
@@ -328,36 +306,6 @@ export default function QuotesPage() {
           </div>
         </div>
 
-        <div id="personas" className="space-y-4 rounded-3xl bg-white p-5 shadow ring-1 ring-slate-100">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-xs uppercase tracking-[0.3em] text-indigo-500">Personas</p>
-              <p className="text-lg font-semibold text-slate-900">Saved voices</p>
-            </div>
-            <span className="rounded-full bg-slate-900 px-3 py-1 text-xs font-semibold text-slate-200">
-              {loading.personas ? 'Loading...' : `${personas.length} total`}
-            </span>
-          </div>
-          <div className="space-y-2">
-            {personas.map((persona) => (
-              <div key={persona.id} className="rounded-2xl border border-slate-100 bg-white p-3 shadow-sm">
-                <div className="flex items-center justify-between text-sm text-slate-900">
-                  <span className="font-semibold text-slate-900">{persona.name}</span>
-                  <span className="rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-600">{persona.language ?? 'en'}</span>
-                </div>
-                <p className="text-xs text-slate-500">Tone: {persona.tone || 'default'}</p>
-                <p className="text-xs text-slate-500">
-                  Tags: {(persona.tags ?? []).length ? persona.tags?.join(', ') : '—'}
-                </p>
-              </div>
-            ))}
-            {!loading.personas && !personas.length && <p className="text-sm text-slate-500">No personas yet.</p>}
-          </div>
-          <div className="rounded-2xl border border-slate-100 bg-slate-50 p-3 text-sm text-slate-600">
-            Manage persona details in <a className="font-semibold text-indigo-600" href="/dashboard/settings">Settings & Persona</a>.
-            {status && <span className="ml-2 text-xs text-slate-500">{status}</span>}
-          </div>
-        </div>
       </section>
     </div>
   );

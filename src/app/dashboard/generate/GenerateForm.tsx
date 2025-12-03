@@ -21,7 +21,7 @@ type MetaDefaults = {
 export default function GenerateForm({ userId }: GenerateFormProps) {
   const [tone, setTone] = useState('');
   const [platform, setPlatform] = useState('');
-  const [contentType, setContentType] = useState<'caption' | 'short' | 'long'>('caption');
+  const [contentType, setContentType] = useState('caption');
   const [idea, setIdea] = useState('');
   const [variations, setVariations] = useState(3);
   const [isLoading, setIsLoading] = useState(false);
@@ -55,19 +55,13 @@ export default function GenerateForm({ userId }: GenerateFormProps) {
     loadMeta();
   }, []);
 
-  const toneOptions = useMemo(() => (meta.tones.length ? meta.tones : ['funny', 'educational', 'emotional']), [meta.tones]);
-  const platformOptions = useMemo(
-    () => (meta.platforms.length ? meta.platforms : ['instagram', 'youtube', 'tiktok', 'twitter']),
-    [meta.platforms],
-  );
+  useEffect(() => {
+    if (!tone && meta.tones[0]) setTone(meta.tones[0]);
+  }, [tone, meta.tones]);
 
   useEffect(() => {
-    if (!tone && toneOptions[0]) setTone(toneOptions[0]);
-  }, [tone, toneOptions]);
-
-  useEffect(() => {
-    if (!platform && platformOptions[0]) setPlatform(platformOptions[0]);
-  }, [platform, platformOptions]);
+    if (!platform && meta.platforms[0]) setPlatform(meta.platforms[0]);
+  }, [platform, meta.platforms]);
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -81,7 +75,8 @@ export default function GenerateForm({ userId }: GenerateFormProps) {
     setIsLoading(true);
 
     try {
-      const endpoint = contentType === 'caption' ? '/api/reels/caption' : '/api/reels/script';
+      const normalizedType = contentType.trim().toLowerCase();
+      const endpoint = normalizedType === 'caption' ? '/api/reels/caption' : '/api/reels/script';
       const response = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -127,45 +122,41 @@ export default function GenerateForm({ userId }: GenerateFormProps) {
           </span>
         </div>
         <div className="grid gap-4 md:grid-cols-2">
-          <label className="flex flex-col gap-2 text-sm text-slate-600">
-            Content type
-            <select
+          <label className="flex flex-col gap-1 text-sm text-slate-600">
+            <div className="flex items-center justify-between text-xs text-slate-500">
+              <span className="text-sm text-slate-600">Content type</span>
+              <span>e.g., caption, short, long</span>
+            </div>
+            <input
               value={contentType}
-              onChange={(event) => setContentType(event.target.value as 'caption' | 'short' | 'long')}
+              onChange={(event) => setContentType(event.target.value)}
               className="rounded-2xl border border-slate-200 bg-white p-3 text-sm shadow-inner focus:border-indigo-400 focus:outline-none"
-            >
-              <option value="caption">Caption</option>
-              <option value="short">Short Script</option>
-              <option value="long">Long Script</option>
-            </select>
+              placeholder="caption, short, long"
+            />
           </label>
-          <label className="flex flex-col gap-2 text-sm text-slate-600">
-            Brand tone
-            <select
+          <label className="flex flex-col gap-1 text-sm text-slate-600">
+            <div className="flex items-center justify-between text-xs text-slate-500">
+              <span className="text-sm text-slate-600">Brand tone</span>
+              <span>e.g., funny, educational, direct</span>
+            </div>
+            <input
               value={tone}
               onChange={(event) => setTone(event.target.value)}
               className="rounded-2xl border border-slate-200 bg-white p-3 text-sm shadow-inner focus:border-indigo-400 focus:outline-none"
-            >
-              {toneOptions.map((item) => (
-                <option key={item} value={item}>
-                  {item}
-                </option>
-              ))}
-            </select>
+              placeholder="Comma-separated tones (e.g., funny, educational)"
+            />
           </label>
-          <label className="flex flex-col gap-2 text-sm text-slate-600">
-            Platform
-            <select
+          <label className="flex flex-col gap-1 text-sm text-slate-600">
+            <div className="flex items-center justify-between text-xs text-slate-500">
+              <span className="text-sm text-slate-600">Platform</span>
+              <span>e.g., instagram, youtube, linkedin</span>
+            </div>
+            <input
               value={platform}
               onChange={(event) => setPlatform(event.target.value)}
               className="rounded-2xl border border-slate-200 bg-white p-3 text-sm shadow-inner focus:border-indigo-400 focus:outline-none"
-            >
-              {platformOptions.map((item) => (
-                <option key={item} value={item}>
-                  {item}
-                </option>
-              ))}
-            </select>
+              placeholder="Comma-separated platforms (e.g., instagram, youtube)"
+            />
           </label>
         </div>
         <label className="flex flex-col gap-2 text-sm text-slate-600">
