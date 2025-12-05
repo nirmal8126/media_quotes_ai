@@ -249,7 +249,8 @@ async function generateImageQuotePng(options: {
   style: ImageStyle;
   fileName?: string;
   dimensions?: { width: number; height: number };
-}) {
+  returnFile?: boolean;
+}): Promise<void | File> {
   const { text, background, fileName = "quote.png", dimensions } = options;
   const canvas = document.createElement("canvas");
   canvas.width = dimensions?.width ?? 1080;
@@ -307,10 +308,26 @@ async function generateImageQuotePng(options: {
     ctx.fillText(line, canvas.width / 2, startY + index * lineHeight);
   });
 
+  const dataUrl = canvas.toDataURL("image/png");
+
+  if (options.returnFile) {
+    const blob = await (await fetch(dataUrl)).blob();
+    return new File([blob], fileName, { type: "image/png" });
+  }
+
   const link = document.createElement("a");
   link.download = fileName;
-  link.href = canvas.toDataURL("image/png");
+  link.href = dataUrl;
   link.click();
+}
+
+function fileToDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
 }
 
 function toHashtagTokens(value?: string | null) {
@@ -352,6 +369,10 @@ export default function QuotesPage() {
   const [deleteStatus, setDeleteStatus] = useState<Status>({ type: "idle" });
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
   const [downloadIdx, setDownloadIdx] = useState<number | null>(null);
+  const [shareIdx, setShareIdx] = useState<number | null>(null);
+  const [fbStatus, setFbStatus] = useState<{ connected: boolean; pageId?: string | null }>({ connected: false, pageId: null });
+  const [fbPostingIdx, setFbPostingIdx] = useState<number | null>(null);
+  const [fbConnecting, setFbConnecting] = useState(false);
   const [search, setSearch] = useState("");
   const [pageSize, setPageSize] = useState(5);
   const [page, setPage] = useState(1);
@@ -421,6 +442,155 @@ export default function QuotesPage() {
   }, []);
 
   const previewDims = selectedDimensions();
+
+  useEffect(() => {
+    if (!detailRow) return;
+    const fetchStatus = async () => {
+      try {
+        const res = await fetch("/api/social/facebook/status");
+        const data = await res.json().catch(() => ({}));
+        if (res.ok) {
+          setFbStatus({ connected: Boolean(data.connected), pageId: data.pageId ?? null });
+        }
+      } catch (err) {
+        console.error("Failed to load Facebook status", err);
+      }
+    };
+    fetchStatus();
+  }, [detailRow]);
+
+  const handleShareText = async (text: string) => {
+    try {
+      if (typeof navigator !== "undefined" && navigator.share) {
+        await navigator.share({ text });
+        pushToast("Share sheet opened");
+        return;
+      }
+      await navigator.clipboard.writeText(text);
+      pushToast("Copied for sharing");
+    } catch (err) {
+      console.error("Failed to share text", err);
+      pushToast("Share failed", "error");
+    }
+  };
+
+  const startFacebookConnect = async () => {
+    setFbConnecting(true);
+    try {
+      const res = await fetch("/api/social/facebook/start");
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.url) {
+        throw new Error(data?.error || "Failed to start Facebook connect");
+      }
+      window.location.href = data.url;
+    } catch (err) {
+      console.error("Failed to start Facebook connect", err);
+      pushToast("Facebook connect failed", "error");
+    } finally {
+      setFbConnecting(false);
+    }
+  };
+
+  const postTextToFacebook = async (text: string, idx: number) => {
+    if (!fbStatus.connected) {
+      pushToast("Connect Facebook first", "error");
+      return;
+    }
+    setFbPostingIdx(idx);
+    try {
+      const res = await fetch("/api/social/facebook/publish", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: text }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(body?.error || "Post failed");
+      }
+      pushToast("Posted to Facebook");
+    } catch (err) {
+      console.error("Failed to post to Facebook", err);
+      pushToast("Facebook post failed", "error");
+    } finally {
+      setFbPostingIdx((prev) => (prev === idx ? null : prev));
+    }
+  };
+
+  const postImageToFacebook = async (text: string, idx: number, rowId: string | number) => {
+    if (!fbStatus.connected) {
+      pushToast("Connect Facebook first", "error");
+      return;
+    }
+    setFbPostingIdx(idx);
+    try {
+      const dims = selectedDimensions();
+      const fileOrVoid = await generateImageQuotePng({
+        text,
+        background: resolveBackground(imageStyle, rowId),
+        style: imageStyle,
+        dimensions: dims,
+        fileName: `quote-${idx + 1}.png`,
+        returnFile: true,
+      });
+      const file = fileOrVoid instanceof File ? fileOrVoid : null;
+      const dataUrl = file ? await fileToDataUrl(file) : undefined;
+      const res = await fetch("/api/social/facebook/publish", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: text, imageDataUrl: dataUrl }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(body?.error || "Post failed");
+      }
+      pushToast("Posted to Facebook");
+    } catch (err) {
+      console.error("Failed to post image to Facebook", err);
+      pushToast("Facebook post failed", "error");
+    } finally {
+      setFbPostingIdx((prev) => (prev === idx ? null : prev));
+    }
+  };
+
+  const handleShareImage = async (text: string, idx: number, rowId: string | number) => {
+    setShareIdx(idx);
+    try {
+      const dims = selectedDimensions();
+      const fileOrVoid = await generateImageQuotePng({
+        text,
+        background: resolveBackground(imageStyle, rowId),
+        style: imageStyle,
+        dimensions: dims,
+        fileName: `quote-${idx + 1}.png`,
+        returnFile: true,
+      });
+
+      const file = fileOrVoid instanceof File ? fileOrVoid : null;
+      if (file && typeof navigator !== "undefined" && navigator.canShare?.({ files: [file] })) {
+        await navigator.share({
+          files: [file],
+          title: detailRow?.topic || "Quote",
+          text,
+        });
+        pushToast("Share sheet opened");
+        return;
+      }
+
+      await generateImageQuotePng({
+        text,
+        background: resolveBackground(imageStyle, rowId),
+        style: imageStyle,
+        dimensions: dims,
+        fileName: `quote-${idx + 1}.png`,
+      });
+      pushToast("Downloaded image (share not supported)");
+    } catch (err) {
+      console.error("Failed to share image", err);
+      pushToast("Share failed", "error");
+    } finally {
+      setShareIdx((prev) => (prev === idx ? null : prev));
+    }
+  };
 
   const rows = useMemo(() => quotes ?? [], [quotes]);
 
@@ -1192,6 +1362,27 @@ export default function QuotesPage() {
                   Tone: {detailRow.tone || "—"} · Persona: {detailRow.persona || "—"} · Language:{" "}
                   {detailRow.language || "—"}
                 </p>
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <span
+                    className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                      fbStatus.connected
+                        ? "bg-green-100 text-green-700 dark:bg-green-500/20 dark:text-green-100"
+                        : "bg-gray-2 text-gray-7 dark:bg-dark-3 dark:text-dark-7"
+                    }`}
+                  >
+                    Facebook: {fbStatus.connected ? "Connected" : "Not connected"}
+                  </span>
+                  {!fbStatus.connected && (
+                    <button
+                      type="button"
+                      className="inline-flex items-center gap-2 rounded-md border border-primary/40 bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary transition hover:bg-primary/20"
+                      onClick={startFacebookConnect}
+                      disabled={fbConnecting}
+                    >
+                      {fbConnecting ? "Starting..." : "Connect Facebook"}
+                    </button>
+                  )}
+                </div>
               </div>
               <button
                 type="button"
@@ -1542,6 +1733,30 @@ export default function QuotesPage() {
                                     </button>
                                     <button
                                       type="button"
+                                      aria-label="Share quote image"
+                                      onClick={() => handleShareImage(q, idx, detailRow.id)}
+                                      className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-white/60 bg-white/20 text-white transition hover:bg-white/30"
+                                    >
+                                      {shareIdx === idx ? (
+                                        <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                                      ) : (
+                                        "⇪"
+                                      )}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      aria-label="Post to Facebook"
+                                      onClick={() => postImageToFacebook(q, idx, detailRow.id)}
+                                      className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-white/60 bg-white/20 text-white transition hover:bg-white/30"
+                                    >
+                                      {fbPostingIdx === idx ? (
+                                        <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                                      ) : (
+                                        "f"
+                                      )}
+                                    </button>
+                                    <button
+                                      type="button"
                                       aria-label="Download quote image"
                                       onClick={async () => {
                                         setDownloadIdx(idx);
@@ -1604,28 +1819,50 @@ export default function QuotesPage() {
                                 <span className="mt-[2px] text-xs font-semibold text-primary">{idx + 1}.</span>
                                 <p className="whitespace-pre-wrap break-words text-dark dark:text-dark-8">{q}</p>
                               </div>
-                              <button
-                                type="button"
-                                aria-label="Copy quote"
-                                onClick={async () => {
-                                  try {
-                                    await navigator.clipboard.writeText(q);
-                                    setCopiedIdx(idx);
-                                    setTimeout(() => setCopiedIdx((prev) => (prev === idx ? null : prev)), 1200);
-                                    pushToast("Quote copied");
-                                  } catch (err) {
-                                    console.error("Failed to copy quote", err);
-                                    pushToast("Failed to copy quote", "error");
-                                  }
-                                }}
-                                className="mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-gray-3 bg-white text-gray-6 transition hover:bg-gray-2 dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-7 dark:hover:bg-dark-4"
-                              >
-                                {copiedIdx === idx ? (
-                                  <CheckIcon className="h-4 w-4 text-green-600" />
-                                ) : (
-                                  <CopyIcon className="h-4 w-4" />
-                                )}
-                              </button>
+                              <div className="flex gap-2">
+                                <button
+                                  type="button"
+                                  aria-label="Share quote"
+                                  onClick={() => handleShareText(q)}
+                                  className="mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-gray-3 bg-white text-gray-6 transition hover:bg-gray-2 dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-7 dark:hover:bg-dark-4"
+                                >
+                                  ⇪
+                                </button>
+                                <button
+                                  type="button"
+                                  aria-label="Post to Facebook"
+                                  onClick={() => postTextToFacebook(q, idx)}
+                                  className="mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-gray-3 bg-white text-gray-6 transition hover:bg-gray-2 dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-7 dark:hover:bg-dark-4"
+                                >
+                                  {fbPostingIdx === idx ? (
+                                    <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                                  ) : (
+                                    "f"
+                                  )}
+                                </button>
+                                <button
+                                  type="button"
+                                  aria-label="Copy quote"
+                                  onClick={async () => {
+                                    try {
+                                      await navigator.clipboard.writeText(q);
+                                      setCopiedIdx(idx);
+                                      setTimeout(() => setCopiedIdx((prev) => (prev === idx ? null : prev)), 1200);
+                                      pushToast("Quote copied");
+                                    } catch (err) {
+                                      console.error("Failed to copy quote", err);
+                                      pushToast("Failed to copy quote", "error");
+                                    }
+                                  }}
+                                  className="mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-gray-3 bg-white text-gray-6 transition hover:bg-gray-2 dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-7 dark:hover:bg-dark-4"
+                                >
+                                  {copiedIdx === idx ? (
+                                    <CheckIcon className="h-4 w-4 text-green-600" />
+                                  ) : (
+                                    <CopyIcon className="h-4 w-4" />
+                                  )}
+                                </button>
+                              </div>
                             </li>
                           ))}
                       </ol>
