@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 
@@ -168,6 +168,32 @@ const gradientOptions: Array<{ label: string; colors: [string, string] }> = [
   { label: "Rose", colors: ["#ec4899", "#f59e0b"] },
 ];
 
+type ImageSizeKey =
+  | "instagram_square"
+  | "instagram_story"
+  | "facebook"
+  | "twitter"
+  | "linkedin"
+  | "mobile_portrait"
+  | "custom";
+
+const imageSizePresets: Record<
+  ImageSizeKey,
+  {
+    label: string;
+    width: number;
+    height: number;
+  }
+> = {
+  instagram_square: { label: "Instagram Square (1080×1080)", width: 1080, height: 1080 },
+  instagram_story: { label: "Instagram Story (1080×1920)", width: 1080, height: 1920 },
+  facebook: { label: "Facebook Feed (1200×630)", width: 1200, height: 630 },
+  twitter: { label: "Twitter/X (1600×900)", width: 1600, height: 900 },
+  linkedin: { label: "LinkedIn (1200×627)", width: 1200, height: 627 },
+  mobile_portrait: { label: "Mobile Portrait (1080×1920)", width: 1080, height: 1920 },
+  custom: { label: "Custom size", width: 1080, height: 1920 },
+};
+
 const solidOptions = ["#0f172a", "#111827", "#f5f5f5", "#f97316", "#22c55e", "#0ea5e9"];
 
 function resolveBackground(style: ImageStyle, rowId: string | number): BackgroundChoice {
@@ -222,11 +248,12 @@ async function generateImageQuotePng(options: {
   background: BackgroundChoice;
   style: ImageStyle;
   fileName?: string;
+  dimensions?: { width: number; height: number };
 }) {
-  const { text, background, fileName = "quote.png" } = options;
+  const { text, background, fileName = "quote.png", dimensions } = options;
   const canvas = document.createElement("canvas");
-  canvas.width = 1080;
-  canvas.height = 1350;
+  canvas.width = dimensions?.width ?? 1080;
+  canvas.height = dimensions?.height ?? 1350;
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("Unable to create canvas context");
 
@@ -331,6 +358,8 @@ export default function QuotesPage() {
   const [languageQuery, setLanguageQuery] = useState(labelForLanguage(defaultForm.language));
   const [showLanguageList, setShowLanguageList] = useState(false);
   const [toast, setToast] = useState<{ type: "success" | "error"; message: string } | null>(null);
+  const [imageSizeKey, setImageSizeKey] = useState<ImageSizeKey>("instagram_square");
+  const [customSize, setCustomSize] = useState<{ width: number; height: number }>({ width: 1080, height: 1350 });
   const [imageStyle, setImageStyle] = useState<ImageStyle>({
     fontFamily: "Arial",
     fontSize: 24,
@@ -361,6 +390,16 @@ export default function QuotesPage() {
     }
   }, [showModal, editRow]);
 
+  const selectedDimensions = useCallback(() => {
+    const preset = imageSizePresets[imageSizeKey];
+    if (!preset || imageSizeKey === "custom") {
+      const safeWidth = Math.max(320, Math.min(4000, Math.round(customSize.width || 0)));
+      const safeHeight = Math.max(320, Math.min(4000, Math.round(customSize.height || 0)));
+      return { width: safeWidth || 1080, height: safeHeight || 1350 };
+    }
+    return { width: preset.width, height: preset.height };
+  }, [customSize.height, customSize.width, imageSizeKey]);
+
   useEffect(() => {
     const fetchQuotes = async () => {
       setLoading(true);
@@ -380,6 +419,8 @@ export default function QuotesPage() {
     };
     fetchQuotes();
   }, []);
+
+  const previewDims = selectedDimensions();
 
   const rows = useMemo(() => quotes ?? [], [quotes]);
 
@@ -1205,6 +1246,61 @@ export default function QuotesPage() {
                           </div>
 
                           <div className="space-y-1.5">
+                            <p className="text-[11px] uppercase tracking-wide text-gray-6 dark:text-dark-6">Canvas Size</p>
+                            <select
+                              className="w-full rounded-lg border border-gray-3 bg-white px-3 py-2 text-sm font-semibold text-dark dark:border-stroke-dark dark:bg-dark-2 dark:text-dark-8"
+                              value={imageSizeKey}
+                              onChange={(e) => setImageSizeKey(e.target.value as ImageSizeKey)}
+                              >
+                                {Object.entries(imageSizePresets).map(([key, val]) => (
+                                  <option key={key} value={key}>
+                                    {val.label}
+                                  </option>
+                                ))}
+                              </select>
+                            <p className="text-[11px] text-gray-6 dark:text-dark-6">
+                              Tip: use <span className="font-semibold text-primary">Mobile Portrait</span> for phones or{" "}
+                              <span className="font-semibold text-primary">Instagram Square</span> for feed posts.
+                            </p>
+                            {imageSizeKey === "custom" && (
+                              <div className="mt-2 grid grid-cols-2 gap-2">
+                                <label className="flex items-center gap-2 text-[11px] font-semibold text-gray-7 dark:text-dark-7">
+                                  <span className="min-w-[36px] text-right">W</span>
+                                  <input
+                                    type="number"
+                                    min={320}
+                                    max={4000}
+                                    value={customSize.width}
+                                    onChange={(e) =>
+                                      setCustomSize((prev) => ({
+                                        ...prev,
+                                        width: Number(e.target.value),
+                                      }))
+                                    }
+                                    className="w-full rounded-md border border-gray-3 bg-white px-2 py-1 text-sm font-semibold text-dark outline-none dark:border-stroke-dark dark:bg-dark-2 dark:text-dark-8"
+                                  />
+                                </label>
+                                <label className="flex items-center gap-2 text-[11px] font-semibold text-gray-7 dark:text-dark-7">
+                                  <span className="min-w-[36px] text-right">H</span>
+                                  <input
+                                    type="number"
+                                    min={320}
+                                    max={4000}
+                                    value={customSize.height}
+                                    onChange={(e) =>
+                                      setCustomSize((prev) => ({
+                                        ...prev,
+                                        height: Number(e.target.value),
+                                      }))
+                                    }
+                                    className="w-full rounded-md border border-gray-3 bg-white px-2 py-1 text-sm font-semibold text-dark outline-none dark:border-stroke-dark dark:bg-dark-2 dark:text-dark-8"
+                                  />
+                                </label>
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="space-y-1.5">
                             <p className="text-[11px] uppercase tracking-wide text-gray-6 dark:text-dark-6">Text Align</p>
                             <div className="flex gap-2">
                               {(["left", "center", "right"] as CanvasTextAlign[]).map((align) => (
@@ -1415,7 +1511,11 @@ export default function QuotesPage() {
                                 <div
                                   key={`${idx}-${q.slice(0, 12)}`}
                                   className="relative overflow-hidden rounded-xl border border-gray-3 bg-gray-1 shadow-sm dark:border-stroke-dark dark:bg-dark-3"
-                                  style={backgroundCss(imageStyle, detailRow.id)}
+                                  style={{
+                                    ...backgroundCss(imageStyle, detailRow.id),
+                                    aspectRatio: `${previewDims.width}/${previewDims.height}`,
+                                    minHeight: "260px",
+                                  }}
                                 >
                                   <div className="absolute right-2 top-2 flex gap-1">
                                     <button
@@ -1446,10 +1546,12 @@ export default function QuotesPage() {
                                       onClick={async () => {
                                         setDownloadIdx(idx);
                                         try {
+                                          const dims = selectedDimensions();
                                           await generateImageQuotePng({
                                             text: q,
                                             background: resolveBackground(imageStyle, detailRow.id),
                                             style: imageStyle,
+                                            dimensions: dims,
                                             fileName: `quote-${idx + 1}.png`,
                                           });
                                         } catch (err) {
