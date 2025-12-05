@@ -1164,13 +1164,13 @@ export default function QuotesPage() {
                 <div className="space-y-3 text-sm text-dark dark:text-dark-8">
                   {detailRow.quotes && detailRow.quotes.length > 0 ? (
                     detailRow.quote_type === "image" ? (
-                      <>
-                      <div className="mb-3 grid gap-3 rounded-xl border border-gray-3 bg-gray-1 p-3 text-xs font-semibold text-dark dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8 md:grid-cols-2">
-                        <div className="space-y-1.5">
-                          <p className="text-[11px] uppercase tracking-wide text-gray-6 dark:text-dark-6">Font</p>
-                          <select
-                            className="w-full rounded-lg border border-gray-3 bg-white px-3 py-2 text-sm font-semibold text-dark dark:border-stroke-dark dark:bg-dark-2 dark:text-dark-8"
-                            value={imageStyle.fontFamily}
+                      <div className="grid gap-4 md:grid-cols-[minmax(280px,320px)_1fr]">
+                        <div className="space-y-3 rounded-xl border border-gray-3 bg-gray-1 p-3 text-xs font-semibold text-dark shadow-sm dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8">
+                          <div className="space-y-1.5">
+                            <p className="text-[11px] uppercase tracking-wide text-gray-6 dark:text-dark-6">Font</p>
+                            <select
+                              className="w-full rounded-lg border border-gray-3 bg-white px-3 py-2 text-sm font-semibold text-dark dark:border-stroke-dark dark:bg-dark-2 dark:text-dark-8"
+                              value={imageStyle.fontFamily}
                               onChange={(e) =>
                                 setImageStyle((prev) => ({
                                   ...prev,
@@ -1246,119 +1246,119 @@ export default function QuotesPage() {
                               className="w-full accent-primary"
                             />
                             <div className="text-[11px] text-gray-6 dark:text-dark-6">
-                            Darkness: {(imageStyle.overlayOpacity * 100).toFixed(0)}%
-                          </div>
-                        </div>
-
-                        <div className="space-y-1.5">
-                          <p className="text-[11px] uppercase tracking-wide text-gray-6 dark:text-dark-6">Background</p>
-                          <div className="flex gap-2">
-                            {[
-                              { value: "texture", label: "Texture" },
-                              { value: "solid", label: "Solid" },
-                              { value: "gradient", label: "Gradient" },
-                            ].map((bg) => (
-                              <button
-                                key={bg.value}
-                                type="button"
-                                onClick={() =>
-                                  setImageStyle((prev) => ({
-                                    ...prev,
-                                    backgroundType: bg.value as ImageStyle["backgroundType"],
-                                  }))
-                                }
-                                className={`flex-1 rounded-lg border px-3 py-2 text-sm font-semibold transition ${
-                                  imageStyle.backgroundType === bg.value
-                                    ? "border-primary bg-primary/10 text-primary"
-                                    : "border-gray-3 bg-white text-gray-7 hover:bg-gray-1 dark:border-stroke-dark dark:bg-dark-2 dark:text-dark-7 dark:hover:bg-dark-4"
-                                }`}
-                              >
-                                {bg.label}
-                              </button>
-                            ))}
+                              Darkness: {(imageStyle.overlayOpacity * 100).toFixed(0)}%
+                            </div>
                           </div>
 
-                          {imageStyle.backgroundType === "texture" && (
-                            <div className="mt-2 flex flex-wrap gap-2">
-                              {imageBackgrounds.map((src) => (
+                          <div className="space-y-1.5">
+                            <p className="text-[11px] uppercase tracking-wide text-gray-6 dark:text-dark-6">Background</p>
+                            <div className="flex gap-2">
+                              {[
+                                { value: "texture", label: "Texture" },
+                                { value: "solid", label: "Solid" },
+                                { value: "gradient", label: "Gradient" },
+                              ].map((bg) => (
                                 <button
-                                  key={src}
+                                  key={bg.value}
                                   type="button"
                                   onClick={() =>
                                     setImageStyle((prev) => ({
                                       ...prev,
-                                      backgroundValue: src,
+                                      backgroundType: bg.value as ImageStyle["backgroundType"],
                                     }))
                                   }
-                                  className={`h-12 w-16 overflow-hidden rounded-md border ${
-                                    imageStyle.backgroundValue === src ? "border-primary ring-2 ring-primary/30" : "border-gray-3"
+                                  className={`flex-1 rounded-lg border px-3 py-2 text-sm font-semibold transition ${
+                                    imageStyle.backgroundType === bg.value
+                                      ? "border-primary bg-primary/10 text-primary"
+                                      : "border-gray-3 bg-white text-gray-7 hover:bg-gray-1 dark:border-stroke-dark dark:bg-dark-2 dark:text-dark-7 dark:hover:bg-dark-4"
                                   }`}
-                                  style={{
-                                    backgroundImage: `url(${src})`,
-                                    backgroundSize: "cover",
-                                    backgroundPosition: "center",
-                                  }}
-                                />
-                              ))}
-                            </div>
-                          )}
-
-                          {imageStyle.backgroundType === "solid" && (
-                            <div className="mt-2 flex flex-wrap gap-2">
-                              {solidOptions.map((color) => (
-                                <button
-                                  key={color}
-                                  type="button"
-                                  onClick={() =>
-                                    setImageStyle((prev) => ({
-                                      ...prev,
-                                      backgroundValue: color,
-                                    }))
-                                  }
-                                  className={`h-10 w-10 rounded-md border ${
-                                    imageStyle.backgroundValue === color ? "border-primary ring-2 ring-primary/40" : "border-gray-3"
-                                  }`}
-                                  style={{ backgroundColor: color }}
-                                />
-                              ))}
-                            </div>
-                          )}
-
-                          {imageStyle.backgroundType === "gradient" && (
-                            <div className="mt-2 grid grid-cols-2 gap-2">
-                              {gradientOptions.map((grad) => (
-                                <button
-                                  key={grad.label}
-                                  type="button"
-                                  onClick={() =>
-                                    setImageStyle((prev) => ({
-                                      ...prev,
-                                      gradientColors: grad.colors,
-                                    }))
-                                  }
-                                  className={`h-14 rounded-md border ${
-                                    imageStyle.gradientColors?.[0] === grad.colors[0] &&
-                                    imageStyle.gradientColors?.[1] === grad.colors[1]
-                                      ? "border-primary ring-2 ring-primary/30"
-                                      : "border-gray-3"
-                                  }`}
-                                  style={{
-                                    backgroundImage: `linear-gradient(135deg, ${grad.colors[0]}, ${grad.colors[1]})`,
-                                  }}
                                 >
-                                  <span className="text-xs font-semibold text-white drop-shadow">{grad.label}</span>
+                                  {bg.label}
                                 </button>
                               ))}
                             </div>
-                          )}
-                        </div>
 
-                        <div className="space-y-1.5 md:col-span-2">
-                          <p className="text-[11px] uppercase tracking-wide text-gray-6 dark:text-dark-6">Text Color</p>
-                          <div className="flex flex-wrap gap-2">
-                            {["#fdfdfd", "#000000", "#f7c948", "#f472b6", "#38bdf8", "#22c55e", "#f97316", "#e5e7eb"].map((color) => (
-                              <button
-                                key={color}
+                            {imageStyle.backgroundType === "texture" && (
+                              <div className="mt-2 flex flex-wrap gap-2">
+                                {imageBackgrounds.map((src) => (
+                                  <button
+                                    key={src}
+                                    type="button"
+                                    onClick={() =>
+                                      setImageStyle((prev) => ({
+                                        ...prev,
+                                        backgroundValue: src,
+                                      }))
+                                    }
+                                    className={`h-12 w-16 overflow-hidden rounded-md border ${
+                                      imageStyle.backgroundValue === src ? "border-primary ring-2 ring-primary/30" : "border-gray-3"
+                                    }`}
+                                    style={{
+                                      backgroundImage: `url(${src})`,
+                                      backgroundSize: "cover",
+                                      backgroundPosition: "center",
+                                    }}
+                                  />
+                                ))}
+                              </div>
+                            )}
+
+                            {imageStyle.backgroundType === "solid" && (
+                              <div className="mt-2 flex flex-wrap gap-2">
+                                {solidOptions.map((color) => (
+                                  <button
+                                    key={color}
+                                    type="button"
+                                    onClick={() =>
+                                      setImageStyle((prev) => ({
+                                        ...prev,
+                                        backgroundValue: color,
+                                      }))
+                                    }
+                                    className={`h-10 w-10 rounded-md border ${
+                                      imageStyle.backgroundValue === color ? "border-primary ring-2 ring-primary/40" : "border-gray-3"
+                                    }`}
+                                    style={{ backgroundColor: color }}
+                                  />
+                                ))}
+                              </div>
+                            )}
+
+                            {imageStyle.backgroundType === "gradient" && (
+                              <div className="mt-2 grid grid-cols-2 gap-2">
+                                {gradientOptions.map((grad) => (
+                                  <button
+                                    key={grad.label}
+                                    type="button"
+                                    onClick={() =>
+                                      setImageStyle((prev) => ({
+                                        ...prev,
+                                        gradientColors: grad.colors,
+                                      }))
+                                    }
+                                    className={`h-14 rounded-md border ${
+                                      imageStyle.gradientColors?.[0] === grad.colors[0] &&
+                                      imageStyle.gradientColors?.[1] === grad.colors[1]
+                                        ? "border-primary ring-2 ring-primary/30"
+                                        : "border-gray-3"
+                                    }`}
+                                    style={{
+                                      backgroundImage: `linear-gradient(135deg, ${grad.colors[0]}, ${grad.colors[1]})`,
+                                    }}
+                                  >
+                                    <span className="text-xs font-semibold text-white drop-shadow">{grad.label}</span>
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="space-y-1.5">
+                            <p className="text-[11px] uppercase tracking-wide text-gray-6 dark:text-dark-6">Text Color</p>
+                            <div className="flex flex-wrap gap-2">
+                              {["#fdfdfd", "#000000", "#f7c948", "#f472b6", "#38bdf8", "#22c55e", "#f97316", "#e5e7eb"].map((color) => (
+                                <button
+                                  key={color}
                                   type="button"
                                   onClick={() =>
                                     setImageStyle((prev) => ({
@@ -1376,86 +1376,119 @@ export default function QuotesPage() {
                           </div>
                         </div>
 
-                        <div className="grid gap-3 md:grid-cols-2">
-                          {extractQuoteList(detailRow)
-                            .filter(Boolean)
-                            .map((q, idx) => (
-                              <div
-                                key={`${idx}-${q.slice(0, 12)}`}
-                                className="relative overflow-hidden rounded-xl border border-gray-3 bg-gray-1 shadow-sm dark:border-stroke-dark dark:bg-dark-3"
-                                style={backgroundCss(imageStyle, detailRow.id)}
-                              >
-                                <div className="absolute right-2 top-2 flex gap-1">
-                                  <button
-                                    type="button"
-                                    aria-label="Copy quote"
-                                    onClick={async () => {
-                                      try {
-                                        await navigator.clipboard.writeText(q);
-                                        setCopiedIdx(idx);
-                                        setTimeout(() => setCopiedIdx((prev) => (prev === idx ? null : prev)), 1200);
-                                        pushToast("Quote copied");
-                                      } catch (err) {
-                                        console.error("Failed to copy quote", err);
-                                        pushToast("Failed to copy quote", "error");
-                                      }
-                                    }}
-                                    className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-white/60 bg-white/20 text-white transition hover:bg-white/30"
+                        <div className="space-y-3">
+                          {buildHashtags(detailRow).length > 0 && (
+                            <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-gray-3 bg-white px-3 py-2 text-xs font-semibold text-gray-7 dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-7">
+                              <div className="flex flex-wrap gap-2">
+                                {buildHashtags(detailRow).map((tag) => (
+                                  <span
+                                    key={tag}
+                                    className="rounded-full bg-primary/10 px-3 py-1 text-[11px] font-semibold uppercase text-primary dark:bg-primary/20"
                                   >
-                                    {copiedIdx === idx ? (
-                                      <CheckIcon className="h-4 w-4 text-green-200" />
-                                    ) : (
-                                      <CopyIcon className="h-4 w-4" />
-                                    )}
-                                  </button>
-                                  <button
-                                    type="button"
-                                    aria-label="Download quote image"
-                                    onClick={async () => {
-                                      setDownloadIdx(idx);
-                                    try {
-                                      await generateImageQuotePng({
-                                        text: q,
-                                        background: resolveBackground(imageStyle, detailRow.id),
-                                        style: imageStyle,
-                                        fileName: `quote-${idx + 1}.png`,
-                                      });
-                                      } catch (err) {
-                                        console.error("Failed to download quote image", err);
-                                        setSubmitStatus({
-                                          type: "error",
-                                          message: "Could not download quote image.",
-                                        });
-                                      } finally {
-                                        setDownloadIdx((prev) => (prev === idx ? null : prev));
-                                      }
-                                    }}
-                                    className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-white/60 bg-white/20 text-white transition hover:bg-white/30"
-                                  >
-                                    {downloadIdx === idx ? (
-                                      <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                                    ) : (
-                                      "⬇"
-                                    )}
-                                  </button>
-                                </div>
-                                <div className="flex h-full items-center justify-center px-4 py-6 text-center">
-                                  <p
-                                    className="whitespace-pre-line break-words text-base font-semibold leading-snug drop-shadow"
-                                    style={{
-                                      color: imageStyle.color,
-                                      fontFamily: imageStyle.fontFamily,
-                                      fontSize: imageStyle.fontSize,
-                                      textAlign: imageStyle.textAlign,
-                                    }}
-                                  >
-                                    {q}
-                                  </p>
-                                </div>
+                                    {tag}
+                                  </span>
+                                ))}
                               </div>
-                            ))}
+                              <button
+                                type="button"
+                                className="inline-flex items-center gap-2 rounded-md border border-gray-3 px-3 py-2 text-xs font-semibold text-gray-7 transition hover:bg-gray-1 dark:border-stroke-dark dark:bg-dark-2 dark:text-dark-7 dark:hover:bg-dark-4"
+                                onClick={async () => {
+                                  const tags = buildHashtags(detailRow).join(" ");
+                                  try {
+                                    await navigator.clipboard.writeText(tags);
+                                    pushToast("Hashtags copied");
+                                  } catch (err) {
+                                    console.error("Failed to copy hashtags", err);
+                                    pushToast("Failed to copy hashtags", "error");
+                                  }
+                                }}
+                              >
+                                Copy hashtags
+                              </button>
+                            </div>
+                          )}
+
+                          <div className="grid gap-3 md:grid-cols-2">
+                            {extractQuoteList(detailRow)
+                              .filter(Boolean)
+                              .map((q, idx) => (
+                                <div
+                                  key={`${idx}-${q.slice(0, 12)}`}
+                                  className="relative overflow-hidden rounded-xl border border-gray-3 bg-gray-1 shadow-sm dark:border-stroke-dark dark:bg-dark-3"
+                                  style={backgroundCss(imageStyle, detailRow.id)}
+                                >
+                                  <div className="absolute right-2 top-2 flex gap-1">
+                                    <button
+                                      type="button"
+                                      aria-label="Copy quote"
+                                      onClick={async () => {
+                                        try {
+                                          await navigator.clipboard.writeText(q);
+                                          setCopiedIdx(idx);
+                                          setTimeout(() => setCopiedIdx((prev) => (prev === idx ? null : prev)), 1200);
+                                          pushToast("Quote copied");
+                                        } catch (err) {
+                                          console.error("Failed to copy quote", err);
+                                          pushToast("Failed to copy quote", "error");
+                                        }
+                                      }}
+                                      className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-white/60 bg-white/20 text-white transition hover:bg-white/30"
+                                    >
+                                      {copiedIdx === idx ? (
+                                        <CheckIcon className="h-4 w-4 text-green-200" />
+                                      ) : (
+                                        <CopyIcon className="h-4 w-4" />
+                                      )}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      aria-label="Download quote image"
+                                      onClick={async () => {
+                                        setDownloadIdx(idx);
+                                        try {
+                                          await generateImageQuotePng({
+                                            text: q,
+                                            background: resolveBackground(imageStyle, detailRow.id),
+                                            style: imageStyle,
+                                            fileName: `quote-${idx + 1}.png`,
+                                          });
+                                        } catch (err) {
+                                          console.error("Failed to download quote image", err);
+                                          setSubmitStatus({
+                                            type: "error",
+                                            message: "Could not download quote image.",
+                                          });
+                                        } finally {
+                                          setDownloadIdx((prev) => (prev === idx ? null : prev));
+                                        }
+                                      }}
+                                      className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-white/60 bg-white/20 text-white transition hover:bg-white/30"
+                                    >
+                                      {downloadIdx === idx ? (
+                                        <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                                      ) : (
+                                        "⬇"
+                                      )}
+                                    </button>
+                                  </div>
+                                  <div className="flex h-full items-center justify-center px-4 py-6 text-center">
+                                    <p
+                                      className="whitespace-pre-line break-words text-base font-semibold leading-snug drop-shadow"
+                                      style={{
+                                        color: imageStyle.color,
+                                        fontFamily: imageStyle.fontFamily,
+                                        fontSize: imageStyle.fontSize,
+                                        textAlign: imageStyle.textAlign,
+                                      }}
+                                    >
+                                      {q}
+                                    </p>
+                                  </div>
+                                </div>
+                              ))}
+                          </div>
                         </div>
-                      </>
+                      </div>
                     ) : (
                       <ol className="space-y-2">
                         {extractQuoteList(detailRow)
@@ -1498,7 +1531,7 @@ export default function QuotesPage() {
                   ) : (
                     <p className="text-gray-6 dark:text-dark-6">No quotes available.</p>
                   )}
-                  {buildHashtags(detailRow).length > 0 && (
+                  {detailRow.quote_type !== "image" && buildHashtags(detailRow).length > 0 && (
                     <div className="mt-3 space-y-2">
                       <div className="flex flex-wrap gap-2">
                         {buildHashtags(detailRow).map((tag) => (
