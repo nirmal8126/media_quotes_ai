@@ -13,6 +13,7 @@ type QuotePayload = {
   count?: number;
   wordLimit?: number;
   hook?: string;
+  quoteType?: 'text' | 'image';
   provider?: 'openai' | 'gemini';
 };
 
@@ -30,6 +31,7 @@ export async function POST(request: Request) {
   const wordLimit = Number(body.wordLimit);
   const safeWordLimit = Number.isFinite(wordLimit) ? Math.min(Math.max(Math.round(wordLimit), 4), 100) : undefined;
   const safeHook = (body.hook ?? "").trim() || undefined;
+  const safeQuoteType = body.quoteType === 'image' ? 'image' : 'text';
   const provider = pickProvider({ bodyProvider: body.provider, user, fallback: defaultProvider });
 
   const quotes = await generateQuotesList({
@@ -40,8 +42,10 @@ export async function POST(request: Request) {
     count: safeCount,
     wordLimit: safeWordLimit,
     hook: safeHook,
+    quoteType: safeQuoteType,
     provider,
   });
+  const imageQuotes = safeQuoteType === 'image' ? quotes.map((text: string) => ({ text })) : null;
 
   try {
     const record = await storeQuotePack({
@@ -51,8 +55,10 @@ export async function POST(request: Request) {
       tone: body.tone ?? null,
       language: body.language ?? "en",
       style: body.style ?? null,
+      quote_type: safeQuoteType,
       hook: safeHook ?? null,
       word_limit: safeWordLimit ?? null,
+      image_quotes: imageQuotes,
       quotes,
     });
 

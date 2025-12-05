@@ -47,6 +47,8 @@ type QuoteRow = {
   tone: string | null;
   language: string | null;
   style: string | null;
+  quote_type?: "text" | "image" | null;
+  image_quotes?: Array<{ text: string }> | null;
   hook?: string | null;
   word_limit?: number | null;
   quotes: string[];
@@ -68,6 +70,7 @@ const defaultForm = {
   count: 5,
   wordLimit: 40,
   hook: "",
+  quoteType: "text" as "text" | "image",
 };
 
 const languageOptions = [
@@ -130,6 +133,106 @@ const normalizeQuote = (input: unknown) => {
   return text;
 };
 
+const extractQuoteList = (row: QuoteRow) => {
+  if (row.image_quotes && row.image_quotes.length > 0) {
+    return row.image_quotes.map((q) => normalizeQuote(q.text));
+  }
+  return (row.quotes || []).map((q) => normalizeQuote(q));
+};
+
+const imageBackgrounds = [
+  "/images/cover/cover-01.png",
+  "/images/cover/cover-02.jpg",
+  "/images/cover/cover-03.jpg",
+  "/images/cover/cover-04.jpg",
+  "/images/cover/cover-05.jpg",
+];
+
+function backgroundForRow(id: string | number) {
+  const idx = Math.abs(typeof id === "string" ? id.split("").reduce((a, c) => a + c.charCodeAt(0), 0) : Number(id)) % imageBackgrounds.length;
+  return imageBackgrounds[idx];
+}
+
+async function generateImageQuotePng(options: { text: string; backgroundUrl: string; fileName?: string }) {
+  const { text, backgroundUrl, fileName = "quote.png" } = options;
+  const canvas = document.createElement("canvas");
+  canvas.width = 1080;
+  canvas.height = 1350;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("Unable to create canvas context");
+
+  const bg = await new Promise<HTMLImageElement>((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = backgroundUrl;
+  });
+
+  // Draw background cover
+  const scale = Math.max(canvas.width / bg.width, canvas.height / bg.height);
+  const dw = bg.width * scale;
+  const dh = bg.height * scale;
+  const dx = (canvas.width - dw) / 2;
+  const dy = (canvas.height - dh) / 2;
+  ctx.drawImage(bg, dx, dy, dw, dh);
+
+  // Overlay gradient
+  const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+  gradient.addColorStop(0, "rgba(0,0,0,0.55)");
+  gradient.addColorStop(1, "rgba(0,0,0,0.55)");
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  // Text styling
+  ctx.fillStyle = "#fdfdfd";
+  ctx.font = "700 48px 'Arial'";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+
+  const lines = text
+    .split(/\n+/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+
+  const lineHeight = 68;
+  const startY = canvas.height / 2 - ((lines.length - 1) * lineHeight) / 2;
+  lines.forEach((line, index) => {
+    ctx.fillText(line, canvas.width / 2, startY + index * lineHeight);
+  });
+
+  const link = document.createElement("a");
+  link.download = fileName;
+  link.href = canvas.toDataURL("image/png");
+  link.click();
+}
+
+function toHashtagTokens(value?: string | null) {
+  if (!value) return [];
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/gi, " ")
+    .split(/\s+/)
+    .filter(Boolean);
+}
+
+function buildHashtags(row: QuoteRow) {
+  const tokens = [
+    ...toHashtagTokens(row.topic),
+    ...toHashtagTokens(row.persona),
+    ...toHashtagTokens(row.tone),
+    ...toHashtagTokens(row.style),
+    ...toHashtagTokens(row.language),
+  ];
+  const unique = Array.from(new Set(tokens)).filter(Boolean);
+  if (!unique.length) return [];
+  const base = unique.slice(0, 8).map((word) => {
+    const clean = word.replace(/[^a-z0-9]/gi, "");
+    return `#${clean || "quote"}`;
+  });
+  return base;
+}
+
 export default function QuotesPage() {
   const [quotes, setQuotes] = useState<QuoteRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -142,11 +245,13 @@ export default function QuotesPage() {
   const [deleteRow, setDeleteRow] = useState<QuoteRow | null>(null);
   const [deleteStatus, setDeleteStatus] = useState<Status>({ type: "idle" });
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
+  const [downloadIdx, setDownloadIdx] = useState<number | null>(null);
   const [search, setSearch] = useState("");
   const [pageSize, setPageSize] = useState(5);
   const [page, setPage] = useState(1);
   const [languageQuery, setLanguageQuery] = useState(labelForLanguage(defaultForm.language));
   const [showLanguageList, setShowLanguageList] = useState(false);
+  const [toast, setToast] = useState<{ type: "success" | "error"; message: string } | null>(null);
   const topicInputRef = useRef<HTMLInputElement | null>(null);
   const anyModalOpen = showModal || Boolean(detailRow) || Boolean(deleteRow);
 
@@ -220,12 +325,24 @@ export default function QuotesPage() {
   }, [pageSize, search]);
 
   const filteredLanguages = useMemo(() => {
+    if (!showLanguageList) return [];
     const term = (languageQuery || "").trim().toLowerCase();
     if (!term || term === "choose a language...") return languageOptions;
+
+    const exactMatch = languageOptions.some(
+      (lang) => lang.label.toLowerCase() === term || lang.code.toLowerCase() === term,
+    );
+    if (exactMatch) return languageOptions;
+
     return languageOptions.filter(
       (lang) => lang.label.toLowerCase().includes(term) || lang.code.toLowerCase().includes(term),
     );
-  }, [languageQuery]);
+  }, [languageQuery, showLanguageList]);
+
+  const pushToast = (message: string, type: "success" | "error" = "success") => {
+    setToast({ type, message });
+    setTimeout(() => setToast((prev) => (prev?.message === message ? null : prev)), 1500);
+  };
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -242,6 +359,7 @@ export default function QuotesPage() {
     const safeWordLimit = Number.isFinite(Number(form.wordLimit))
       ? Math.max(4, Math.min(Number(form.wordLimit), 100))
       : undefined;
+    const safeQuoteType = form.quoteType === "image" ? "image" : "text";
 
     setSubmitStatus({ type: "loading", message: "Generating quotes..." });
     try {
@@ -258,6 +376,7 @@ export default function QuotesPage() {
           count: safeCount,
           wordLimit: safeWordLimit,
           hook: trimmedHook || null,
+          quoteType: safeQuoteType,
         }),
       });
       const body = await res.json().catch(() => ({}));
@@ -272,8 +391,10 @@ export default function QuotesPage() {
             tone: form.tone || null,
             language: form.language || null,
             style: form.style || null,
+            quote_type: safeQuoteType,
             hook: trimmedHook || null,
             word_limit: safeWordLimit ?? null,
+            image_quotes: safeQuoteType === "image" ? (body.quotes || []).map((q: string) => ({ text: q })) : null,
             quotes: body.quotes || [],
             created_at: new Date().toISOString(),
           },
@@ -324,13 +445,16 @@ export default function QuotesPage() {
     }
     const resolvedLanguage = resolveLanguageCode(form.language || "");
     const requestedCount = Math.max(1, Math.min(Number(form.count) || 1, 5));
-    const currentCount = editRow.quotes?.length ?? 0;
+    const currentCount = extractQuoteList(editRow).length || 0;
     const rawWordLimit = Number(form.wordLimit);
-    const safeWordLimit = Number.isFinite(rawWordLimit) ? Math.max(4, Math.min(rawWordLimit, 100)) : undefined;
+    const safeWordLimit =
+      Number.isFinite(rawWordLimit) && rawWordLimit > 0 ? Math.max(4, Math.min(rawWordLimit, 100)) : undefined;
     const baselineWordLimit = editRow.word_limit ?? defaultForm.wordLimit;
-    const wordLimitChanged = Number.isFinite(rawWordLimit) && rawWordLimit !== baselineWordLimit;
+    const wordLimitChanged = typeof safeWordLimit === "number" && safeWordLimit !== baselineWordLimit;
+    const safeQuoteType = form.quoteType === "image" ? "image" : "text";
+    const quoteTypeChanged = (editRow.quote_type ?? "text") !== safeQuoteType;
     const shouldRegenerate =
-      requestedCount !== currentCount || Boolean(trimmedHook) || wordLimitChanged;
+      requestedCount !== currentCount || Boolean(trimmedHook) || wordLimitChanged || quoteTypeChanged;
     setSubmitStatus({ type: "loading", message: "Saving..." });
     try {
       const res = await fetch("/api/quotes/update", {
@@ -345,8 +469,9 @@ export default function QuotesPage() {
           language: resolvedLanguage || "en",
           style: form.style || null,
           count: shouldRegenerate ? requestedCount : undefined,
-          wordLimit: safeWordLimit,
+          wordLimit: typeof safeWordLimit === "number" ? safeWordLimit : undefined,
           hook: trimmedHook || null,
+          quoteType: safeQuoteType,
         }),
       });
       const body = await res.json().catch(() => ({}));
@@ -362,9 +487,14 @@ export default function QuotesPage() {
           persona: form.persona || null,
           language: form.language || null,
           style: form.style || null,
+          quote_type: safeQuoteType,
           hook: trimmedHook || null,
-          word_limit: safeWordLimit ?? editRow.word_limit ?? null,
+          word_limit: typeof safeWordLimit === "number" ? safeWordLimit : editRow.word_limit ?? null,
           quotes: editRow.quotes,
+          image_quotes:
+            safeQuoteType === "image"
+              ? (body.quote?.image_quotes as Array<{ text: string }> | undefined) ?? extractQuoteList(editRow).map((text) => ({ text }))
+              : null,
         };
       setQuotes((prev) =>
         prev.map((q) =>
@@ -377,8 +507,10 @@ export default function QuotesPage() {
                 persona: form.persona || null,
                 language: form.language || null,
                 style: form.style || null,
+                quote_type: safeQuoteType,
                 hook: trimmedHook || updated.hook || null,
                 word_limit: safeWordLimit ?? updated.word_limit ?? null,
+                image_quotes: updated.image_quotes ?? null,
               }
             : q,
         ),
@@ -482,7 +614,9 @@ export default function QuotesPage() {
                   pagedRows.map((row) => (
                     <tr key={row.id} className="hover:bg-gray-1/60 align-top dark:hover:bg-dark-3/70">
                       <td className="px-4 py-3 text-sm text-gray-7 dark:text-dark-7">
-                        <div className="line-clamp-2 font-medium text-dark dark:text-dark-8">{row.quotes?.[0] ?? "—"}</div>
+                        <div className="line-clamp-2 font-medium text-dark dark:text-dark-8">
+                          {extractQuoteList(row)[0] || "—"}
+                        </div>
                         <div className="mt-2 flex flex-wrap gap-2 text-[11px] font-semibold uppercase">
                           <span className="rounded-full bg-primary/10 px-2.5 py-1 text-primary dark:bg-primary/20">
                             {row.persona || "Persona —"}
@@ -493,11 +627,14 @@ export default function QuotesPage() {
                           <span className="rounded-full bg-gray-2 px-2.5 py-1 text-gray-7 dark:bg-dark-3 dark:text-dark-8">
                             {row.style || "Style —"}
                           </span>
+                          <span className="rounded-full bg-gray-2 px-2.5 py-1 text-gray-7 dark:bg-dark-3 dark:text-dark-8">
+                            {row.quote_type === "image" ? "Image" : "Text"}
+                          </span>
                         </div>
                       </td>
                       <td className="px-4 py-3 font-medium text-dark dark:text-dark-8">{row.topic || "—"}</td>
                       <td className="px-4 py-3 text-gray-7 dark:text-dark-7">{row.tone || "—"}</td>
-                      <td className="px-4 py-3 text-gray-7 dark:text-dark-7">{row.quotes?.length ?? 0}</td>
+                      <td className="px-4 py-3 text-gray-7 dark:text-dark-7">{extractQuoteList(row).length}</td>
                       <td className="px-4 py-3 text-gray-6 dark:text-dark-6">
                         {new Date(row.created_at).toLocaleString(undefined, {
                           month: "short",
@@ -524,9 +661,10 @@ export default function QuotesPage() {
                                 persona: row.persona ?? "",
                                 language: labelForLanguage(row.language) || "English",
                                 style: row.style ?? "",
-                                count: row.quotes?.length ?? 8,
+                                count: extractQuoteList(row).length || row.quotes?.length || 5,
                                 wordLimit: row.word_limit ?? defaultForm.wordLimit,
                                 hook: row.hook ?? "",
+                                quoteType: row.quote_type ?? "text",
                               });
                               setLanguageQuery(labelForLanguage(row.language) || "English");
                               setShowModal(true);
@@ -616,7 +754,7 @@ export default function QuotesPage() {
             role="dialog"
             aria-modal="true"
           >
-            <div className="mt-4 max-h-[85vh] w-full max-w-xl overflow-y-auto rounded-2xl bg-white p-6 shadow-card-2 dark:bg-dark-2 dark:border dark:border-stroke-dark">
+            <div className="mt-4 max-h-[85vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white p-6 shadow-card-2 dark:bg-dark-2 dark:border dark:border-stroke-dark">
               <div className="mb-4 flex items-start justify-between gap-3">
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-[0.35em] text-primary">Generate</p>
@@ -827,6 +965,32 @@ export default function QuotesPage() {
 
               <label className="block text-sm font-semibold text-dark dark:text-dark-7">
                 <div className="flex items-center gap-2">
+                  <span>Quote format</span>
+                  <span className="text-xs font-normal text-gray-6 dark:text-dark-6">(text or image overlay)</span>
+                </div>
+                <div className="mt-2 flex gap-2">
+                  {[
+                    { value: "text", label: "Text" },
+                    { value: "image", label: "Image" },
+                  ].map((option) => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      className={`flex-1 rounded-lg border px-4 py-2 text-sm font-semibold transition ${
+                        form.quoteType === option.value
+                          ? "border-primary bg-primary/10 text-primary"
+                          : "border-gray-3 bg-white text-gray-7 hover:bg-gray-1 dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-7 dark:hover:bg-dark-4"
+                      }`}
+                      onClick={() => setForm((prev) => ({ ...prev, quoteType: option.value as "text" | "image" }))}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+              </label>
+
+              <label className="block text-sm font-semibold text-dark dark:text-dark-7">
+                <div className="flex items-center gap-2">
                   <span>Hook / angle</span>
                   <span className="text-xs font-normal text-gray-6 dark:text-dark-6">(e.g., from 0→1K followers)</span>
                 </div>
@@ -889,7 +1053,7 @@ export default function QuotesPage() {
             role="dialog"
             aria-modal="true"
           >
-            <div className="mt-4 max-h-[85vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white p-6 shadow-card-2 dark:border dark:border-stroke-dark dark:bg-dark-2">
+            <div className="mt-4 max-h-[85vh] w-full max-w-5xl overflow-y-auto rounded-2xl bg-white p-6 shadow-card-2 dark:border dark:border-stroke-dark dark:bg-dark-2">
               <div className="mb-4 flex items-start justify-between gap-3">
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-[0.35em] text-primary">Quote pack</p>
@@ -908,50 +1072,160 @@ export default function QuotesPage() {
               </button>
             </div>
 
-                <div className="space-y-3 text-sm text-dark dark:text-dark-8">
-                  {detailRow.quotes && detailRow.quotes.length > 0 ? (
-                    <ol className="space-y-2">
-                      {detailRow.quotes
-                        .map((q) => normalizeQuote(q))
-                        .filter(Boolean)
-                        .map((q, idx) => (
-                          <li
-                            key={`${idx}-${q.slice(0, 12)}`}
-                            className="flex items-start justify-between gap-3 rounded-lg border border-gray-3 bg-gray-1 px-4 py-3 text-sm text-gray-7 dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
-                          >
-                            <div className="flex min-w-0 items-start gap-2">
-                              <span className="mt-[2px] text-xs font-semibold text-primary">{idx + 1}.</span>
-                              <p className="whitespace-pre-wrap break-words text-dark dark:text-dark-8">{q}</p>
+              <div className="space-y-3 text-sm text-dark dark:text-dark-8">
+                {detailRow.quotes && detailRow.quotes.length > 0 ? (
+                  detailRow.quote_type === "image" ? (
+                    <div className="grid gap-3 md:grid-cols-2">
+                      {extractQuoteList(detailRow)
+                          .filter(Boolean)
+                          .map((q, idx) => (
+                            <div
+                              key={`${idx}-${q.slice(0, 12)}`}
+                              className="relative overflow-hidden rounded-xl border border-gray-3 bg-gray-1 shadow-sm dark:border-stroke-dark dark:bg-dark-3"
+                              style={{
+                                backgroundImage: `linear-gradient(rgba(0,0,0,0.45), rgba(0,0,0,0.45)), url(${backgroundForRow(
+                                  detailRow.id,
+                                )})`,
+                                backgroundSize: "cover",
+                                backgroundPosition: "center",
+                              }}
+                            >
+                              <div className="absolute right-2 top-2 flex gap-1">
+                                <button
+                                  type="button"
+                                  aria-label="Copy quote"
+                                  onClick={async () => {
+                                    try {
+                                      await navigator.clipboard.writeText(q);
+                                      setCopiedIdx(idx);
+                                      setTimeout(() => setCopiedIdx((prev) => (prev === idx ? null : prev)), 1200);
+                                      pushToast("Quote copied");
+                                    } catch (err) {
+                                      console.error("Failed to copy quote", err);
+                                      pushToast("Failed to copy quote", "error");
+                                    }
+                                  }}
+                                  className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-white/60 bg-white/20 text-white transition hover:bg-white/30"
+                                >
+                                  {copiedIdx === idx ? (
+                                    <CheckIcon className="h-4 w-4 text-green-200" />
+                                  ) : (
+                                    <CopyIcon className="h-4 w-4" />
+                                  )}
+                                </button>
+                                <button
+                                  type="button"
+                                  aria-label="Download quote image"
+                                  onClick={async () => {
+                                    setDownloadIdx(idx);
+                                    try {
+                                      await generateImageQuotePng({
+                                        text: q,
+                                        backgroundUrl: backgroundForRow(detailRow.id),
+                                        fileName: `quote-${idx + 1}.png`,
+                                      });
+                                    } catch (err) {
+                                      console.error("Failed to download quote image", err);
+                                      setSubmitStatus({
+                                        type: "error",
+                                        message: "Could not download quote image.",
+                                      });
+                                    } finally {
+                                      setDownloadIdx((prev) => (prev === idx ? null : prev));
+                                    }
+                                  }}
+                                  className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-white/60 bg-white/20 text-white transition hover:bg-white/30"
+                                >
+                                  {downloadIdx === idx ? (
+                                    <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                                  ) : (
+                                    "⬇"
+                                  )}
+                                </button>
+                              </div>
+                              <div className="flex h-full items-center justify-center px-4 py-6 text-center">
+                                <p className="whitespace-pre-line break-words text-base font-semibold leading-snug text-white drop-shadow">
+                                  {q}
+                                </p>
+                              </div>
                             </div>
-                            <button
-                          type="button"
-                          aria-label="Copy quote"
-                          onClick={async () => {
-                            try {
-                              await navigator.clipboard.writeText(q);
-                              setCopiedIdx(idx);
-                              setTimeout(() => setCopiedIdx((prev) => (prev === idx ? null : prev)), 1200);
-                            } catch (err) {
-                              console.error("Failed to copy quote", err);
-                            }
-                          }}
-                        className="mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-gray-3 bg-white text-gray-6 transition hover:bg-gray-2 dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-7 dark:hover:bg-dark-4"
+                          ))}
+                      </div>
+                    ) : (
+                      <ol className="space-y-2">
+                        {extractQuoteList(detailRow)
+                          .filter(Boolean)
+                          .map((q, idx) => (
+                            <li
+                              key={`${idx}-${q.slice(0, 12)}`}
+                              className="flex items-start justify-between gap-3 rounded-lg border border-gray-3 bg-gray-1 px-4 py-3 text-sm text-gray-7 dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+                            >
+                              <div className="flex min-w-0 items-start gap-2">
+                                <span className="mt-[2px] text-xs font-semibold text-primary">{idx + 1}.</span>
+                                <p className="whitespace-pre-wrap break-words text-dark dark:text-dark-8">{q}</p>
+                              </div>
+                              <button
+                                type="button"
+                                aria-label="Copy quote"
+                                onClick={async () => {
+                                  try {
+                                    await navigator.clipboard.writeText(q);
+                                    setCopiedIdx(idx);
+                                    setTimeout(() => setCopiedIdx((prev) => (prev === idx ? null : prev)), 1200);
+                                    pushToast("Quote copied");
+                                  } catch (err) {
+                                    console.error("Failed to copy quote", err);
+                                    pushToast("Failed to copy quote", "error");
+                                  }
+                                }}
+                                className="mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-gray-3 bg-white text-gray-6 transition hover:bg-gray-2 dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-7 dark:hover:bg-dark-4"
+                              >
+                                {copiedIdx === idx ? (
+                                  <CheckIcon className="h-4 w-4 text-green-600" />
+                                ) : (
+                                  <CopyIcon className="h-4 w-4" />
+                                )}
+                              </button>
+                            </li>
+                          ))}
+                      </ol>
+                    )
+                  ) : (
+                    <p className="text-gray-6 dark:text-dark-6">No quotes available.</p>
+                  )}
+                  {buildHashtags(detailRow).length > 0 && (
+                    <div className="mt-3 space-y-2">
+                      <div className="flex flex-wrap gap-2">
+                        {buildHashtags(detailRow).map((tag) => (
+                          <span
+                            key={tag}
+                            className="rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold uppercase text-primary dark:bg-primary/20"
+                          >
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
+                      <button
+                        type="button"
+                        className="inline-flex items-center gap-2 rounded-md border border-gray-3 px-3 py-2 text-xs font-semibold text-gray-7 transition hover:bg-gray-1 dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-7 dark:hover:bg-dark-4"
+                        onClick={async () => {
+                          const tags = buildHashtags(detailRow).join(" ");
+                          try {
+                            await navigator.clipboard.writeText(tags);
+                            pushToast("Hashtags copied");
+                          } catch (err) {
+                            console.error("Failed to copy hashtags", err);
+                            pushToast("Failed to copy hashtags", "error");
+                          }
+                        }}
                       >
-                          {copiedIdx === idx ? (
-                            <CheckIcon className="h-4 w-4 text-green-600" />
-                          ) : (
-                            <CopyIcon className="h-4 w-4" />
-                          )}
-                        </button>
-                      </li>
-                    ))}
-                </ol>
-              ) : (
-                <p className="text-gray-6 dark:text-dark-6">No quotes available.</p>
-              )}
+                        Copy hashtags
+                      </button>
+                    </div>
+                  )}
+              </div>
             </div>
           </div>
-        </div>
         </ModalPortal>
       )}
 
@@ -962,7 +1236,7 @@ export default function QuotesPage() {
             role="dialog"
             aria-modal="true"
           >
-            <div className="mt-4 w-full max-w-md rounded-2xl bg-white p-6 shadow-card-2 dark:border dark:border-stroke-dark dark:bg-dark-2">
+            <div className="mt-4 w-full max-w-xl rounded-2xl bg-white p-6 shadow-card-2 dark:border dark:border-stroke-dark dark:bg-dark-2">
               <h3 className="text-lg font-semibold text-dark dark:text-dark-8">Delete this quote pack?</h3>
               <p className="mt-2 text-sm text-gray-6 dark:text-dark-6">
                 This will remove the pack for this user. This action cannot be undone.
@@ -999,8 +1273,24 @@ export default function QuotesPage() {
                 {deleteStatus.type === "loading" ? "Deleting..." : "Delete"}
               </button>
             </div>
+            </div>
           </div>
-        </div>
+        </ModalPortal>
+      )}
+
+      {toast && (
+        <ModalPortal>
+          <div
+            className={`fixed top-4 right-4 z-[50000] rounded-lg border px-4 py-3 text-sm shadow-lg transition dark:border-stroke-dark ${
+              toast.type === "success"
+                ? "border-green-200 bg-white text-green-800 dark:bg-dark-2 dark:text-green-200 dark:border-green-500/40"
+                : "border-red-200 bg-white text-red-700 dark:bg-dark-2 dark:text-red-200 dark:border-red-500/40"
+            }`}
+            role="status"
+            aria-live="polite"
+          >
+            {toast.message}
+          </div>
         </ModalPortal>
       )}
     </div>

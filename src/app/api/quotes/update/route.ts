@@ -16,6 +16,7 @@ type UpdatePayload = {
   count?: number;
   wordLimit?: number;
   hook?: string;
+  quoteType?: 'text' | 'image';
   provider?: "openai" | "gemini";
 };
 
@@ -51,12 +52,14 @@ export async function PATCH(request: Request) {
   const safeWordLimit =
     Number.isFinite(wordLimitNum) && wordLimitNum > 0 ? Math.min(Math.max(Math.round(wordLimitNum), 4), 100) : undefined;
   const safeHook = typeof body.hook === "string" && body.hook.trim().length > 0 ? body.hook.trim() : undefined;
+  const safeQuoteType = body.quoteType === "image" ? "image" : undefined;
   if (typeof safeHook === "string") updates.hook = safeHook;
   if (typeof safeWordLimit === "number") updates.word_limit = safeWordLimit;
+  if (safeQuoteType) updates.quote_type = safeQuoteType;
 
   const requestedCount =
     typeof body.count === "number" && Number.isFinite(body.count) ? Math.max(1, Math.min(body.count, 5)) : null;
-  const shouldRegenerate = Boolean(requestedCount) || Boolean(safeHook) || typeof safeWordLimit === "number";
+  const shouldRegenerate = Boolean(requestedCount) || Boolean(safeHook) || typeof safeWordLimit === "number" || Boolean(safeQuoteType);
 
   if (shouldRegenerate) {
     const countToUse = requestedCount ?? 5;
@@ -75,9 +78,15 @@ export async function PATCH(request: Request) {
         count: countToUse,
         wordLimit: safeWordLimit,
         hook: safeHook,
+        quoteType: safeQuoteType || (body.quoteType as "text" | "image" | undefined),
         provider,
       });
       updates.quotes = generated;
+      if (safeQuoteType === "image") {
+        updates.image_quotes = generated.map((text: string) => ({ text }));
+      } else if (typeof updates.quote_type === "string" && updates.quote_type !== "image") {
+        updates.image_quotes = null;
+      }
     } catch (err) {
       console.error("Failed to regenerate quotes during update", err);
       const response = NextResponse.json({ error: "Unable to regenerate quotes." }, { status: 500 });
@@ -97,12 +106,20 @@ export async function PATCH(request: Request) {
     .update(updates)
     .eq("id", id)
     .eq("user_id", user.id)
-    .select("id, topic, persona, tone, language, style, quotes, hook, word_limit, created_at")
+    .select("id, topic, persona, tone, language, style, quote_type, image_quotes, quotes, hook, word_limit, created_at")
     .maybeSingle();
 
   if (error) {
+    const needsMigration = String(error.message).toLowerCase().includes("quote_type");
     console.error("Failed to update quote pack", error);
-    const response = NextResponse.json({ error: "Unable to update quote pack." }, { status: 500 });
+    const response = NextResponse.json(
+      {
+        error: needsMigration
+          ? "Database missing quote_type column on quotes table. Please run ALTER TABLE to add it."
+          : "Unable to update quote pack.",
+      },
+      { status: 500 },
+    );
     applyCookies(response);
     return response;
   }

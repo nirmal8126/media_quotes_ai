@@ -9,6 +9,7 @@ type QuotesPayload = {
   persona?: unknown;
   tone?: unknown;
   language?: unknown;
+  quoteType?: unknown;
   hook?: unknown;
   wordLimit?: unknown;
   quotes?: unknown;
@@ -56,7 +57,7 @@ function normalizeQuotes(value: unknown): string[] {
   return [];
 }
 
-const BASE_SELECT = 'id, user_id, persona, tone, language, hook, word_limit, quotes, created_at';
+const BASE_SELECT = 'id, user_id, persona, tone, language, quote_type, image_quotes, hook, word_limit, quotes, created_at';
 const MAX_LIMIT = 200;
 
 export async function GET(request: Request) {
@@ -67,11 +68,15 @@ export async function GET(request: Request) {
   const limitParam = Number(searchParams.get('limit'));
   const limit = Number.isFinite(limitParam) ? Math.min(Math.max(limitParam, 1), MAX_LIMIT) : 50;
 
-  const { data, error } = await supabaseAdmin
-    .from('quotes')
-    .select(BASE_SELECT)
-    .order('created_at', { ascending: false })
-    .limit(limit);
+const selectLegacy = 'id, user_id, persona, tone, language, hook, word_limit, quotes, created_at';
+
+  let query = supabaseAdmin.from('quotes').select(BASE_SELECT).order('created_at', { ascending: false }).limit(limit);
+  let { data, error } = await query;
+
+  if (error && String(error.message).toLowerCase().includes('quote_type')) {
+    query = supabaseAdmin.from('quotes').select(selectLegacy).order('created_at', { ascending: false }).limit(limit);
+    ({ data, error } = await query);
+  }
 
   if (error) {
     const response = NextResponse.json({ error: error.message }, { status: 500 });
@@ -92,12 +97,13 @@ export async function POST(request: Request) {
   const persona = normalizeString(body.persona);
   const tone = normalizeString(body.tone);
   const language = normalizeString(body.language);
+  const quoteType = normalizeString(body.quoteType);
   const hook = normalizeString(body.hook);
   const wordLimit = normalizeNumber(body.wordLimit);
   const quotes = normalizeQuotes(body.quotes);
   const userId = normalizeString(body.userId);
 
-  if (!persona && !tone && !language && !hook && !quotes.length) {
+  if (!persona && !tone && !language && !hook && !quoteType && !quotes.length) {
     const response = NextResponse.json(
       { error: 'Provide persona, tone, language, hook, or quotes to create a pack.' },
       { status: 422 },
@@ -111,13 +117,23 @@ export async function POST(request: Request) {
     persona: persona || null,
     tone: tone || null,
     language: language || null,
+    quote_type: quoteType || null,
+    image_quotes: quoteType === 'image' && quotes.length ? quotes.map((q) => ({ text: q })) : null,
     hook: hook || null,
     word_limit: wordLimit ?? null,
     quotes: quotes.length ? quotes : null,
     created_at: new Date().toISOString(),
   };
 
-  const { data, error } = await supabaseAdmin.from('quotes').insert(payload).select(BASE_SELECT).maybeSingle();
+  let { data, error } = await supabaseAdmin.from('quotes').insert(payload).select(BASE_SELECT).maybeSingle();
+
+  if (error && String(error.message).toLowerCase().includes('quote_type')) {
+    const { quote_type, ...legacyPayload } = payload;
+    ({ data, error } = await supabaseAdmin.from('quotes').insert(legacyPayload).select(selectLegacy).maybeSingle());
+    if (error) {
+      error.message = 'Database missing quote_type column on quotes table. Please run ALTER TABLE to add it.';
+    }
+  }
 
   if (error) {
     const response = NextResponse.json({ error: error.message }, { status: 500 });
@@ -147,6 +163,7 @@ export async function PATCH(request: Request) {
   const persona = normalizeString(body.persona);
   const tone = normalizeString(body.tone);
   const language = normalizeString(body.language);
+  const quoteType = normalizeString(body.quoteType);
   const hook = normalizeString(body.hook);
   const wordLimit = normalizeNumber(body.wordLimit);
   const quotes = normalizeQuotes(body.quotes);
@@ -155,6 +172,7 @@ export async function PATCH(request: Request) {
   if (persona) updates.persona = persona;
   if (tone) updates.tone = tone;
   if (language) updates.language = language;
+  if (quoteType) updates.quote_type = quoteType;
   if (hook) updates.hook = hook;
   if (typeof wordLimit === 'number') updates.word_limit = wordLimit;
   if (quotes.length) updates.quotes = quotes;
@@ -165,12 +183,26 @@ export async function PATCH(request: Request) {
     return response;
   }
 
-  const { data, error } = await supabaseAdmin
+  const { quote_type, ...legacyUpdates } = updates;
+
+  let { data, error } = await supabaseAdmin
     .from('quotes')
     .update(updates)
     .eq('id', id)
     .select(BASE_SELECT)
     .maybeSingle();
+
+  if (error && String(error.message).toLowerCase().includes('quote_type')) {
+    ({ data, error } = await supabaseAdmin
+      .from('quotes')
+      .update(legacyUpdates)
+      .eq('id', id)
+      .select(selectLegacy)
+      .maybeSingle());
+    if (error) {
+      error.message = 'Database missing quote_type column on quotes table. Please run ALTER TABLE to add it.';
+    }
+  }
 
   if (error) {
     const response = NextResponse.json({ error: error.message }, { status: 500 });

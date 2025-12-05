@@ -15,22 +15,27 @@ export const metadata: Metadata = {
 
 export default async function SignIn() {
   if (SUPABASE_URL && SUPABASE_ANON_KEY) {
-    const getAllCookies = () => {
-      try {
-        const cookieStore = cookies() as unknown as { getAll?: () => Array<{ name: string; value?: string }> };
-        if (typeof cookieStore.getAll === "function") {
-          return cookieStore.getAll();
-        }
-      } catch {
-        // ignore and return empty below
-      }
-      return [];
-    };
+    const cookieStore = await cookies();
 
     const supabase = createServerClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
       cookies: {
-        getAll: getAllCookies,
-        setAll: () => {},
+        getAll: () => {
+          try {
+            return typeof cookieStore.getAll === "function" ? cookieStore.getAll() : [];
+          } catch {
+            return [];
+          }
+        },
+        setAll: (allCookies) => {
+          try {
+            if (typeof (cookieStore as unknown as { set?: typeof cookieStore.set }).set !== "function") return;
+            allCookies.forEach(({ name, value, options }) => {
+              (cookieStore as unknown as { set: typeof cookieStore.set }).set(name, value, options);
+            });
+          } catch {
+            // ignore
+          }
+        },
       },
     });
 

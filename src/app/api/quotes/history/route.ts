@@ -11,13 +11,21 @@ export async function GET(request: Request) {
   const { user, applyCookies } = session;
   const { data, error } = await supabaseAdmin
     .from('quotes')
-    .select('id, topic, persona, tone, language, style, hook, word_limit, quotes, created_at')
+    .select('id, topic, persona, tone, language, style, quote_type, image_quotes, hook, word_limit, quotes, created_at')
     .eq('user_id', user.id)
     .order('created_at', { ascending: false })
     .limit(20);
 
   if (error) {
-    const response = NextResponse.json({ error: 'Unable to load quotes' }, { status: 500 });
+    const needsMigration = String(error.message).toLowerCase().includes('quote_type');
+    const response = NextResponse.json(
+      {
+        error: needsMigration
+          ? 'Database missing quote_type column on quotes table. Please run ALTER TABLE to add it.'
+          : 'Unable to load quotes',
+      },
+      { status: 500 },
+    );
     applyCookies(response);
     return response;
   }
