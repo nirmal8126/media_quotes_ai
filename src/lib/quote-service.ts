@@ -10,6 +10,8 @@ export type QuoteRecord = {
   language?: string | null;
   style?: string | null;
   quotes: string[];
+  hook?: string | null;
+  word_limit?: number | null;
 };
 
 function sanitizeQuoteText(input: unknown) {
@@ -44,13 +46,27 @@ export async function generateQuotesList(options: {
   persona?: string;
   language?: string;
   count?: number;
+  hook?: string;
+  wordLimit?: number;
   provider?: LlmProvider;
 }) {
-  const { topic = 'general inspiration', tone = 'motivational', persona, language = 'en', count = 10 } = options;
+  const {
+    topic = 'general inspiration',
+    tone = 'motivational',
+    persona,
+    language = 'en',
+    count = 10,
+    hook,
+    wordLimit,
+  } = options;
   const capped = Math.max(1, Math.min(count, 100));
+  const maxWords = Number.isFinite(wordLimit) ? Math.min(Math.max(Number(wordLimit), 4), 100) : null;
 
   const personaLine = persona ? `Write in the persona/voice of: ${persona}.` : '';
-  const prompt = `Generate ${capped} short, shareable quotes about "${topic}" in a ${tone} tone. ${personaLine} Language: ${language}. Return JSON array of strings only.`;
+  const hookLine = hook ? `Anchor the ideas to this hook/angle: ${hook}.` : '';
+  const wordLimitLine = maxWords ? `Cap each quote at ${maxWords} words.` : 'Keep each quote concise.';
+
+  const prompt = `Generate ${capped} short, shareable quotes about "${topic}" in a ${tone} tone. ${personaLine} ${hookLine} ${wordLimitLine} Language: ${language}. Return JSON array of strings only.`;
 
   const raw = await generateCompletion(prompt, { temperature: 0.8, maxTokens: 400, provider: options.provider });
 
@@ -81,6 +97,8 @@ export async function storeQuotePack(record: QuoteRecord) {
     tone: record.tone ?? null,
     language: record.language ?? null,
     style: record.style ?? null,
+    hook: record.hook ?? null,
+    word_limit: record.word_limit ?? null,
     quotes: record.quotes,
     created_at: new Date().toISOString(),
   };

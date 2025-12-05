@@ -14,6 +14,8 @@ type UpdatePayload = {
   style?: string | null;
   quotes?: string[];
   count?: number;
+  wordLimit?: number;
+  hook?: string;
   provider?: "openai" | "gemini";
 };
 
@@ -45,9 +47,19 @@ export async function PATCH(request: Request) {
   if (typeof body.style === "string") updates.style = body.style || null;
   if (Array.isArray(body.quotes)) updates.quotes = body.quotes;
 
+  const wordLimitNum = Number(body.wordLimit);
+  const safeWordLimit =
+    Number.isFinite(wordLimitNum) && wordLimitNum > 0 ? Math.min(Math.max(Math.round(wordLimitNum), 4), 100) : undefined;
+  const safeHook = typeof body.hook === "string" && body.hook.trim().length > 0 ? body.hook.trim() : undefined;
+  if (typeof safeHook === "string") updates.hook = safeHook;
+  if (typeof safeWordLimit === "number") updates.word_limit = safeWordLimit;
+
   const requestedCount =
     typeof body.count === "number" && Number.isFinite(body.count) ? Math.max(1, Math.min(body.count, 5)) : null;
-  if (requestedCount) {
+  const shouldRegenerate = Boolean(requestedCount) || Boolean(safeHook) || typeof safeWordLimit === "number";
+
+  if (shouldRegenerate) {
+    const countToUse = requestedCount ?? 5;
     try {
       const topicText =
         typeof updates.topic === "string"
@@ -60,7 +72,9 @@ export async function PATCH(request: Request) {
         tone: (typeof body.tone === "string" && body.tone) || undefined,
         persona: (typeof body.persona === "string" && body.persona) || undefined,
         language: (typeof body.language === "string" && body.language) || "en",
-        count: requestedCount,
+        count: countToUse,
+        wordLimit: safeWordLimit,
+        hook: safeHook,
         provider,
       });
       updates.quotes = generated;
@@ -83,7 +97,7 @@ export async function PATCH(request: Request) {
     .update(updates)
     .eq("id", id)
     .eq("user_id", user.id)
-    .select("id, topic, persona, tone, language, style, quotes, created_at")
+    .select("id, topic, persona, tone, language, style, quotes, hook, word_limit, created_at")
     .maybeSingle();
 
   if (error) {

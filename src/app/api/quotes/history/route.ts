@@ -11,7 +11,7 @@ export async function GET(request: Request) {
   const { user, applyCookies } = session;
   const { data, error } = await supabaseAdmin
     .from('quotes')
-    .select('id, topic, persona, tone, language, style, quotes, created_at')
+    .select('id, topic, persona, tone, language, style, hook, word_limit, quotes, created_at')
     .eq('user_id', user.id)
     .order('created_at', { ascending: false })
     .limit(20);

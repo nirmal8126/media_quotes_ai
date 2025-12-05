@@ -9,6 +9,8 @@ type QuotesPayload = {
   persona?: unknown;
   tone?: unknown;
   language?: unknown;
+  hook?: unknown;
+  wordLimit?: unknown;
   quotes?: unknown;
 };
 
@@ -35,6 +37,12 @@ function normalizeString(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
 }
 
+function normalizeNumber(value: unknown): number | null {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return null;
+  return Math.max(4, Math.min(Math.round(num), 100));
+}
+
 function normalizeQuotes(value: unknown): string[] {
   if (Array.isArray(value)) {
     return value.map((item) => String(item).trim()).filter(Boolean);
@@ -48,7 +56,7 @@ function normalizeQuotes(value: unknown): string[] {
   return [];
 }
 
-const BASE_SELECT = 'id, user_id, persona, tone, language, quotes, created_at';
+const BASE_SELECT = 'id, user_id, persona, tone, language, hook, word_limit, quotes, created_at';
 const MAX_LIMIT = 200;
 
 export async function GET(request: Request) {
@@ -84,11 +92,16 @@ export async function POST(request: Request) {
   const persona = normalizeString(body.persona);
   const tone = normalizeString(body.tone);
   const language = normalizeString(body.language);
+  const hook = normalizeString(body.hook);
+  const wordLimit = normalizeNumber(body.wordLimit);
   const quotes = normalizeQuotes(body.quotes);
   const userId = normalizeString(body.userId);
 
-  if (!persona && !tone && !language && !quotes.length) {
-    const response = NextResponse.json({ error: 'Provide persona, tone, language, or quotes to create a pack.' }, { status: 422 });
+  if (!persona && !tone && !language && !hook && !quotes.length) {
+    const response = NextResponse.json(
+      { error: 'Provide persona, tone, language, hook, or quotes to create a pack.' },
+      { status: 422 },
+    );
     auth.applyCookies(response);
     return response;
   }
@@ -98,6 +111,8 @@ export async function POST(request: Request) {
     persona: persona || null,
     tone: tone || null,
     language: language || null,
+    hook: hook || null,
+    word_limit: wordLimit ?? null,
     quotes: quotes.length ? quotes : null,
     created_at: new Date().toISOString(),
   };
@@ -132,12 +147,16 @@ export async function PATCH(request: Request) {
   const persona = normalizeString(body.persona);
   const tone = normalizeString(body.tone);
   const language = normalizeString(body.language);
+  const hook = normalizeString(body.hook);
+  const wordLimit = normalizeNumber(body.wordLimit);
   const quotes = normalizeQuotes(body.quotes);
 
   if (userId) updates.user_id = userId;
   if (persona) updates.persona = persona;
   if (tone) updates.tone = tone;
   if (language) updates.language = language;
+  if (hook) updates.hook = hook;
+  if (typeof wordLimit === 'number') updates.word_limit = wordLimit;
   if (quotes.length) updates.quotes = quotes;
 
   if (!Object.keys(updates).length) {

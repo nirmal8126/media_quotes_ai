@@ -18,7 +18,8 @@ export async function GET(request: Request) {
   const { data, error } = await supabase.auth.getUser();
 
   if (error) {
-    const response = NextResponse.json({ error: error.message }, { status: error.status ?? 500 });
+    const fallbackStatus = typeof error.status === 'number' && error.status >= 400 && error.status <= 599 ? error.status : 500;
+    const response = NextResponse.json({ error: error.message }, { status: fallbackStatus });
     supabaseCookies.applyToResponse(response);
     return response;
   }

@@ -11,6 +11,8 @@ type QuotePayload = {
   language?: string;
   style?: string;
   count?: number;
+  wordLimit?: number;
+  hook?: string;
   provider?: 'openai' | 'gemini';
 };
 
@@ -25,6 +27,9 @@ export async function POST(request: Request) {
   const { user, applyCookies } = session;
   const count = Number(body.count ?? 5);
   const safeCount = Number.isFinite(count) ? Math.min(Math.max(count, 1), 5) : 5;
+  const wordLimit = Number(body.wordLimit);
+  const safeWordLimit = Number.isFinite(wordLimit) ? Math.min(Math.max(Math.round(wordLimit), 4), 100) : undefined;
+  const safeHook = (body.hook ?? "").trim() || undefined;
   const provider = pickProvider({ bodyProvider: body.provider, user, fallback: defaultProvider });
 
   const quotes = await generateQuotesList({
@@ -33,6 +38,8 @@ export async function POST(request: Request) {
     persona: body.persona,
     language: body.language,
     count: safeCount,
+    wordLimit: safeWordLimit,
+    hook: safeHook,
     provider,
   });
 
@@ -44,6 +51,8 @@ export async function POST(request: Request) {
       tone: body.tone ?? null,
       language: body.language ?? "en",
       style: body.style ?? null,
+      hook: safeHook ?? null,
+      word_limit: safeWordLimit ?? null,
       quotes,
     });
 

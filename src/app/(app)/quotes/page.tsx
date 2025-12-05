@@ -47,6 +47,8 @@ type QuoteRow = {
   tone: string | null;
   language: string | null;
   style: string | null;
+  hook?: string | null;
+  word_limit?: number | null;
   quotes: string[];
   created_at: string;
 };
@@ -61,10 +63,56 @@ const defaultForm = {
   topic: "",
   tone: "motivational",
   persona: "",
-  language: "en",
+  language: "",
   style: "",
   count: 5,
+  wordLimit: 40,
+  hook: "",
 };
+
+const languageOptions = [
+  { code: "en", label: "English" },
+  { code: "hi", label: "Hindi" },
+  { code: "pa", label: "Punjabi" },
+  { code: "bn", label: "Bengali" },
+  { code: "te", label: "Telugu" },
+  { code: "ta", label: "Tamil" },
+  { code: "mr", label: "Marathi" },
+  { code: "gu", label: "Gujarati" },
+  { code: "kn", label: "Kannada" },
+  { code: "ml", label: "Malayalam" },
+  { code: "or", label: "Odia" },
+  { code: "as", label: "Assamese" },
+  { code: "ur", label: "Urdu" },
+  { code: "mai", label: "Maithili" },
+  { code: "sat", label: "Santali" },
+  { code: "ks", label: "Kashmiri" },
+  { code: "ne", label: "Nepali" },
+  { code: "sa", label: "Sanskrit" },
+  { code: "sd", label: "Sindhi" },
+  { code: "kok", label: "Konkani" },
+  { code: "mni", label: "Manipuri" },
+  { code: "brx", label: "Bodo" },
+  { code: "doi", label: "Dogri" },
+];
+
+function resolveLanguageCode(input: string) {
+  const normalized = input.trim().toLowerCase();
+  if (!normalized || normalized === "choose a language...") return "en";
+  const direct = languageOptions.find((lang) => lang.code.toLowerCase() === normalized);
+  if (direct) return direct.code;
+  const byLabel = languageOptions.find((lang) => lang.label.toLowerCase() === normalized);
+  return byLabel?.code ?? "en";
+}
+
+function labelForLanguage(input?: string | null) {
+  if (!input) return "";
+  const normalized = input.trim().toLowerCase();
+  const found = languageOptions.find(
+    (lang) => lang.code.toLowerCase() === normalized || lang.label.toLowerCase() === normalized,
+  );
+  return found?.label ?? input;
+}
 
 const normalizeQuote = (input: unknown) => {
   if (typeof input !== "string") return "";
@@ -97,6 +145,8 @@ export default function QuotesPage() {
   const [search, setSearch] = useState("");
   const [pageSize, setPageSize] = useState(5);
   const [page, setPage] = useState(1);
+  const [languageQuery, setLanguageQuery] = useState(labelForLanguage(defaultForm.language));
+  const [showLanguageList, setShowLanguageList] = useState(false);
   const topicInputRef = useRef<HTMLInputElement | null>(null);
   const anyModalOpen = showModal || Boolean(detailRow) || Boolean(deleteRow);
 
@@ -169,16 +219,29 @@ export default function QuotesPage() {
     setPage(1);
   }, [pageSize, search]);
 
+  const filteredLanguages = useMemo(() => {
+    const term = (languageQuery || "").trim().toLowerCase();
+    if (!term || term === "choose a language...") return languageOptions;
+    return languageOptions.filter(
+      (lang) => lang.label.toLowerCase().includes(term) || lang.code.toLowerCase().includes(term),
+    );
+  }, [languageQuery]);
+
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (submitStatus.type === "loading") return;
 
     const trimmedTopic = form.topic.trim();
+    const trimmedHook = form.hook.trim();
     if (!trimmedTopic) {
       setSubmitStatus({ type: "error", message: "Topic is required." });
       return;
     }
+    const resolvedLanguage = resolveLanguageCode(form.language || "");
     const safeCount = Math.max(1, Math.min(Number(form.count) || 1, 5));
+    const safeWordLimit = Number.isFinite(Number(form.wordLimit))
+      ? Math.max(4, Math.min(Number(form.wordLimit), 100))
+      : undefined;
 
     setSubmitStatus({ type: "loading", message: "Generating quotes..." });
     try {
@@ -190,9 +253,11 @@ export default function QuotesPage() {
           topic: trimmedTopic,
           tone: form.tone || null,
           persona: form.persona.trim() || null,
-          language: form.language || "en",
+          language: resolvedLanguage || "en",
           style: form.style.trim() || null,
           count: safeCount,
+          wordLimit: safeWordLimit,
+          hook: trimmedHook || null,
         }),
       });
       const body = await res.json().catch(() => ({}));
@@ -207,6 +272,8 @@ export default function QuotesPage() {
             tone: form.tone || null,
             language: form.language || null,
             style: form.style || null,
+            hook: trimmedHook || null,
+            word_limit: safeWordLimit ?? null,
             quotes: body.quotes || [],
             created_at: new Date().toISOString(),
           },
@@ -214,6 +281,7 @@ export default function QuotesPage() {
         ]);
       setSubmitStatus({ type: "success", message: "Quotes generated." });
       setForm({ ...defaultForm });
+      setLanguageQuery(labelForLanguage(defaultForm.language));
       setShowModal(false);
     } catch (err) {
       setSubmitStatus({
@@ -249,13 +317,20 @@ export default function QuotesPage() {
   const handleUpdate = async () => {
     if (!editRow) return;
     const trimmedTopic = form.topic.trim();
+    const trimmedHook = form.hook.trim();
     if (!trimmedTopic) {
       setSubmitStatus({ type: "error", message: "Topic is required." });
       return;
     }
+    const resolvedLanguage = resolveLanguageCode(form.language || "");
     const requestedCount = Math.max(1, Math.min(Number(form.count) || 1, 5));
     const currentCount = editRow.quotes?.length ?? 0;
-    const shouldRegenerate = requestedCount > 0 && requestedCount !== currentCount;
+    const rawWordLimit = Number(form.wordLimit);
+    const safeWordLimit = Number.isFinite(rawWordLimit) ? Math.max(4, Math.min(rawWordLimit, 100)) : undefined;
+    const baselineWordLimit = editRow.word_limit ?? defaultForm.wordLimit;
+    const wordLimitChanged = Number.isFinite(rawWordLimit) && rawWordLimit !== baselineWordLimit;
+    const shouldRegenerate =
+      requestedCount !== currentCount || Boolean(trimmedHook) || wordLimitChanged;
     setSubmitStatus({ type: "loading", message: "Saving..." });
     try {
       const res = await fetch("/api/quotes/update", {
@@ -267,9 +342,11 @@ export default function QuotesPage() {
           topic: trimmedTopic,
           tone: form.tone || null,
           persona: form.persona || null,
-          language: form.language || "en",
+          language: resolvedLanguage || "en",
           style: form.style || null,
           count: shouldRegenerate ? requestedCount : undefined,
+          wordLimit: safeWordLimit,
+          hook: trimmedHook || null,
         }),
       });
       const body = await res.json().catch(() => ({}));
@@ -285,6 +362,8 @@ export default function QuotesPage() {
           persona: form.persona || null,
           language: form.language || null,
           style: form.style || null,
+          hook: trimmedHook || null,
+          word_limit: safeWordLimit ?? editRow.word_limit ?? null,
           quotes: editRow.quotes,
         };
       setQuotes((prev) =>
@@ -298,12 +377,15 @@ export default function QuotesPage() {
                 persona: form.persona || null,
                 language: form.language || null,
                 style: form.style || null,
+                hook: trimmedHook || updated.hook || null,
+                word_limit: safeWordLimit ?? updated.word_limit ?? null,
               }
             : q,
         ),
       );
       setSubmitStatus({ type: "success", message: "Updated." });
       setEditRow(null);
+      setLanguageQuery(labelForLanguage(defaultForm.language));
       setShowModal(false);
     } catch (err) {
       setSubmitStatus({
@@ -326,6 +408,7 @@ export default function QuotesPage() {
             setSubmitStatus({ type: "idle" });
             setEditRow(null);
             setForm({ ...defaultForm });
+            setLanguageQuery(labelForLanguage(defaultForm.language));
             setShowModal(true);
           }}
           className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-primary/90"
@@ -359,14 +442,20 @@ export default function QuotesPage() {
               </div>
 
               <div className="flex items-center gap-2">
-                <div className="relative">
+                <div className="flex flex-col gap-1">
+                  <div className="text-xs font-semibold text-gray-6 dark:text-dark-6">
+                    Search <span className="font-normal">(topic, tone, persona)</span>
+                  </div>
+                  <div className="relative">
                   <input
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
-                    placeholder="Search..."
+                    placeholder="Search (topic, tone, persona)"
                     className="h-10 w-56 rounded-lg border border-gray-3 bg-white px-3 pl-9 text-sm text-dark outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+                    aria-label="Search quotes by topic, tone, or persona"
                   />
                   <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-5">🔍</span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -399,7 +488,7 @@ export default function QuotesPage() {
                             {row.persona || "Persona —"}
                           </span>
                           <span className="rounded-full bg-gray-2 px-2.5 py-1 text-gray-7 dark:bg-dark-3 dark:text-dark-8">
-                            {row.language?.toUpperCase?.() || "Lang —"}
+                            {labelForLanguage(row.language) || "Language —"}
                           </span>
                           <span className="rounded-full bg-gray-2 px-2.5 py-1 text-gray-7 dark:bg-dark-3 dark:text-dark-8">
                             {row.style || "Style —"}
@@ -433,10 +522,13 @@ export default function QuotesPage() {
                                 topic: row.topic ?? "",
                                 tone: row.tone ?? "",
                                 persona: row.persona ?? "",
-                                language: row.language ?? "en",
+                                language: labelForLanguage(row.language) || "English",
                                 style: row.style ?? "",
                                 count: row.quotes?.length ?? 8,
+                                wordLimit: row.word_limit ?? defaultForm.wordLimit,
+                                hook: row.hook ?? "",
                               });
+                              setLanguageQuery(labelForLanguage(row.language) || "English");
                               setShowModal(true);
                               setSubmitStatus({ type: "idle" });
                             }}
@@ -459,12 +551,12 @@ export default function QuotesPage() {
                 )}
               </tbody>
             </table>
-              <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-gray-6 dark:text-dark-6">
-                <div>
-                  Showing{" "}
-                  <span className="font-semibold text-dark dark:text-dark-8">
-                    {filteredRows.length === 0 ? 0 : (currentPage - 1) * pageSize + 1}
-                  </span>{" "}
+            <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-gray-6 dark:text-dark-6">
+              <div>
+                Showing{" "}
+                <span className="font-semibold text-dark dark:text-dark-8">
+                  {filteredRows.length === 0 ? 0 : (currentPage - 1) * pageSize + 1}
+                </span>{" "}
                   to{" "}
                   <span className="font-semibold text-dark dark:text-dark-8">
                     {filteredRows.length === 0 ? 0 : Math.min(currentPage * pageSize, filteredRows.length)}
@@ -534,16 +626,17 @@ export default function QuotesPage() {
                 </div>
               <button
                 type="button"
-                onClick={() => {
-                  setShowModal(false);
-                  setEditRow(null);
-                  setForm({ ...defaultForm });
-                  setSubmitStatus({ type: "idle" });
-                }}
-                className="rounded-full bg-gray-1 px-3 py-1 text-sm font-semibold text-gray-7 hover:bg-gray-2 dark:bg-dark-3 dark:text-dark-7 dark:hover:bg-dark-4"
-              >
-                Close
-              </button>
+            onClick={() => {
+              setShowModal(false);
+              setEditRow(null);
+              setForm({ ...defaultForm });
+              setSubmitStatus({ type: "idle" });
+              setLanguageQuery(labelForLanguage(defaultForm.language));
+            }}
+            className="rounded-full bg-gray-1 px-3 py-1 text-sm font-semibold text-gray-7 hover:bg-gray-2 dark:bg-dark-3 dark:text-dark-7 dark:hover:bg-dark-4"
+          >
+            Close
+          </button>
             </div>
 
             <form
@@ -558,84 +651,191 @@ export default function QuotesPage() {
               }}
             >
               <label className="block text-sm font-semibold text-dark dark:text-dark-7">
-                Topic *
+                <div className="flex items-center gap-2">
+                  <span>Topic *</span>
+                  <span className="text-xs font-normal text-gray-6 dark:text-dark-6">(morning motivation, startup mindset)</span>
+                </div>
                 <input
                   ref={topicInputRef}
                   className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
                   name="topic"
                   value={form.topic}
                   onChange={(e) => setForm((prev) => ({ ...prev, topic: e.target.value }))}
-                  placeholder="e.g., morning motivation, startup mindset"
+                  placeholder="Topic (morning motivation, startup mindset)"
                   required
                 />
               </label>
 
               <div className="grid gap-3 md:grid-cols-2">
                 <label className="block text-sm font-semibold text-dark dark:text-dark-7">
-                  Tone
+                  <div className="flex items-center gap-2">
+                    <span>Tone</span>
+                    <span className="text-xs font-normal text-gray-6 dark:text-dark-6">(motivational, witty, calm)</span>
+                  </div>
                   <input
                     className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
                     name="tone"
                     value={form.tone}
                     onChange={(e) => setForm((prev) => ({ ...prev, tone: e.target.value }))}
-                    placeholder="motivational, witty, calm"
+                    placeholder="Tone (motivational, witty, calm)"
                   />
                 </label>
                 <label className="block text-sm font-semibold text-dark dark:text-dark-7">
-                  Persona
+                  <div className="flex items-center gap-2">
+                    <span>Persona</span>
+                    <span className="text-xs font-normal text-gray-6 dark:text-dark-6">(coach, founder, creator)</span>
+                  </div>
                   <input
                     className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
                     name="persona"
                     value={form.persona}
                     onChange={(e) => setForm((prev) => ({ ...prev, persona: e.target.value }))}
-                    placeholder="coach, founder, creator"
+                    placeholder="Persona (coach, founder, creator)"
+                  />
+                </label>
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-2">
+                <label className="relative block text-sm font-semibold text-dark dark:text-dark-7">
+                  <div className="flex items-center gap-2">
+                    <span>Language</span>
+                    <span className="text-xs font-normal text-gray-6 dark:text-dark-6">(English, Hindi, Punjabi, etc.)</span>
+                  </div>
+                  <div className="relative mt-2">
+                    <input
+                      className="w-full rounded-lg border border-gray-3 bg-white px-4 pr-10 py-3 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+                      name="language"
+                      value={languageQuery}
+                      onFocus={() => setShowLanguageList(true)}
+                      onClick={() => setShowLanguageList(true)}
+                      onChange={(e) => {
+                        const next = e.target.value;
+                        setLanguageQuery(next);
+                        setForm((prev) => ({ ...prev, language: next }));
+                        setShowLanguageList(true);
+                      }}
+                      placeholder="Choose a language..."
+                      autoComplete="off"
+                      onBlur={() => {
+                        // Delay to allow click selection
+                        setTimeout(() => setShowLanguageList(false), 120);
+                      }}
+                    />
+                    <button
+                      type="button"
+                      aria-label="Show languages"
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        setShowLanguageList((prev) => !prev);
+                      }}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 flex h-8 w-8 items-center justify-center rounded-md text-gray-6 transition hover:bg-gray-2 dark:text-dark-6 dark:hover:bg-dark-4"
+                    >
+                      ▼
+                    </button>
+                  </div>
+                  {showLanguageList && (
+                    <div className="absolute z-20 mt-1 max-h-56 w-full overflow-auto rounded-lg border border-gray-3 bg-white shadow-card-2 dark:border-stroke-dark dark:bg-dark-3">
+                      {filteredLanguages.length === 0 && (
+                        <div className="px-3 py-2 text-sm text-gray-6 dark:text-dark-6">No matches</div>
+                      )}
+                      {filteredLanguages.map((lang) => (
+                        <button
+                          type="button"
+                          key={`${lang.code}-${lang.label}`}
+                          className="flex w-full items-center justify-between px-3 py-2 text-left text-sm text-dark hover:bg-gray-1 dark:text-dark-8 dark:hover:bg-dark-4"
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            setLanguageQuery(lang.label);
+                            setForm((prev) => ({ ...prev, language: lang.label }));
+                            setShowLanguageList(false);
+                          }}
+                        >
+                          <span>{lang.label}</span>
+                          <span className="text-xs text-gray-5 dark:text-dark-6">{lang.code.toUpperCase()}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </label>
+                <label className="block text-sm font-semibold text-dark dark:text-dark-7">
+                  <div className="flex items-center gap-2">
+                    <span>Style</span>
+                    <span className="text-xs font-normal text-gray-6 dark:text-dark-6">(short lines, poetic, punchy)</span>
+                  </div>
+                  <input
+                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+                    name="style"
+                    value={form.style}
+                    onChange={(e) => setForm((prev) => ({ ...prev, style: e.target.value }))}
+                    placeholder="Style (short lines, poetic, punchy)"
                   />
                 </label>
               </div>
 
               <div className="grid gap-3 md:grid-cols-2">
                 <label className="block text-sm font-semibold text-dark dark:text-dark-7">
-                  Language
+                  <div className="flex items-center gap-2">
+                    <span>Count</span>
+                    <span className="text-xs font-normal text-gray-6 dark:text-dark-6">(1-5 quotes)</span>
+                  </div>
                   <input
-                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm uppercase outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
-                    name="language"
-                    value={form.language}
-                    onChange={(e) => setForm((prev) => ({ ...prev, language: e.target.value }))}
-                    placeholder="en, es, fr"
+                    type="number"
+                    min={1}
+                    max={5}
+                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+                    name="count"
+                    value={form.count}
+                    onChange={(e) => {
+                      const next = Math.max(1, Math.min(Number(e.target.value) || 1, 5));
+                      setForm((prev) => ({ ...prev, count: next }));
+                    }}
+                    onBlur={(e) => {
+                      const next = Math.max(1, Math.min(Number(e.target.value) || 1, 5));
+                      if (next !== form.count) {
+                        setForm((prev) => ({ ...prev, count: next }));
+                      }
+                    }}
+                    placeholder="Count (1-5)"
                   />
                 </label>
                 <label className="block text-sm font-semibold text-dark dark:text-dark-7">
-                  Style
+                  <div className="flex items-center gap-2">
+                    <span>Max words per quote</span>
+                    <span className="text-xs font-normal text-gray-6 dark:text-dark-6">(4–100 words)</span>
+                  </div>
                   <input
+                    type="number"
+                    min={4}
+                    max={100}
                     className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
-                    name="style"
-                    value={form.style}
-                    onChange={(e) => setForm((prev) => ({ ...prev, style: e.target.value }))}
-                    placeholder="short lines, poetic, punchy"
+                    name="wordLimit"
+                    value={form.wordLimit}
+                    onChange={(e) => {
+                      const next = Math.max(4, Math.min(Number(e.target.value) || 4, 100));
+                      setForm((prev) => ({ ...prev, wordLimit: next }));
+                    }}
+                    onBlur={(e) => {
+                      const next = Math.max(4, Math.min(Number(e.target.value) || 4, 100));
+                      if (next !== form.wordLimit) {
+                        setForm((prev) => ({ ...prev, wordLimit: next }));
+                      }
+                    }}
+                    placeholder="Words limit per quote"
                   />
                 </label>
               </div>
 
               <label className="block text-sm font-semibold text-dark dark:text-dark-7">
-                Count (1-5)
+                <div className="flex items-center gap-2">
+                  <span>Hook / angle</span>
+                  <span className="text-xs font-normal text-gray-6 dark:text-dark-6">(e.g., from 0→1K followers)</span>
+                </div>
                 <input
-                  type="number"
-                  min={1}
-                  max={5}
                   className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
-                  name="count"
-                  value={form.count}
-                  onChange={(e) => {
-                    const next = Math.max(1, Math.min(Number(e.target.value) || 1, 5));
-                    setForm((prev) => ({ ...prev, count: next }));
-                  }}
-                  onBlur={(e) => {
-                    const next = Math.max(1, Math.min(Number(e.target.value) || 1, 5));
-                    if (next !== form.count) {
-                      setForm((prev) => ({ ...prev, count: next }));
-                    }
-                  }}
-                  placeholder="5"
+                  name="hook"
+                  value={form.hook}
+                  onChange={(e) => setForm((prev) => ({ ...prev, hook: e.target.value }))}
+                  placeholder="Hook or angle to guide the quotes"
                 />
               </label>
 
