@@ -161,37 +161,100 @@ function backgroundForRow(id: string | number) {
   return imageBackgrounds[idx];
 }
 
+const gradientOptions: Array<{ label: string; colors: [string, string] }> = [
+  { label: "Sunset", colors: ["#f97316", "#f43f5e"] },
+  { label: "Ocean", colors: ["#0ea5e9", "#6366f1"] },
+  { label: "Forest", colors: ["#22c55e", "#14532d"] },
+  { label: "Rose", colors: ["#ec4899", "#f59e0b"] },
+];
+
+const solidOptions = ["#0f172a", "#111827", "#f5f5f5", "#f97316", "#22c55e", "#0ea5e9"];
+
+function resolveBackground(style: ImageStyle, rowId: string | number): BackgroundChoice {
+  if (style.backgroundType === "solid" && style.backgroundValue) {
+    return { type: "solid", value: style.backgroundValue };
+  }
+  if (style.backgroundType === "gradient" && style.gradientColors) {
+    return { type: "gradient", value: style.gradientColors };
+  }
+  const texture = style.backgroundValue || backgroundForRow(rowId);
+  return { type: "texture", value: texture };
+}
+
+function backgroundCss(style: ImageStyle, rowId: string | number) {
+  const overlay = `rgba(0,0,0,${style.overlayOpacity})`;
+  if (style.backgroundType === "solid" && style.backgroundValue) {
+    return {
+      backgroundImage: `linear-gradient(${overlay}, ${overlay}), linear-gradient(${style.backgroundValue}, ${style.backgroundValue})`,
+    };
+  }
+  if (style.backgroundType === "gradient" && style.gradientColors) {
+    return {
+      backgroundImage: `linear-gradient(${overlay}, ${overlay}), linear-gradient(135deg, ${style.gradientColors[0]}, ${style.gradientColors[1]})`,
+    };
+  }
+  const texture = style.backgroundValue || backgroundForRow(rowId);
+  return {
+    backgroundImage: `linear-gradient(${overlay}, ${overlay}), url(${texture})`,
+    backgroundSize: "cover",
+    backgroundPosition: "center",
+  };
+}
+
 type ImageStyle = {
   fontFamily: string;
   fontSize: number;
   color: string;
   overlayOpacity: number;
   textAlign: CanvasTextAlign;
+  backgroundType: "texture" | "solid" | "gradient";
+  backgroundValue?: string;
+  gradientColors?: [string, string];
 };
 
-async function generateImageQuotePng(options: { text: string; backgroundUrl: string; style: ImageStyle; fileName?: string }) {
-  const { text, backgroundUrl, fileName = "quote.png" } = options;
+type BackgroundChoice =
+  | { type: "texture"; value?: string }
+  | { type: "solid"; value: string }
+  | { type: "gradient"; value: [string, string] };
+
+async function generateImageQuotePng(options: {
+  text: string;
+  background: BackgroundChoice;
+  style: ImageStyle;
+  fileName?: string;
+}) {
+  const { text, background, fileName = "quote.png" } = options;
   const canvas = document.createElement("canvas");
   canvas.width = 1080;
   canvas.height = 1350;
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("Unable to create canvas context");
 
-  const bg = await new Promise<HTMLImageElement>((resolve, reject) => {
-    const img = new Image();
-    img.crossOrigin = "anonymous";
-    img.onload = () => resolve(img);
-    img.onerror = reject;
-    img.src = backgroundUrl;
-  });
-
-  // Draw background cover
-  const scale = Math.max(canvas.width / bg.width, canvas.height / bg.height);
-  const dw = bg.width * scale;
-  const dh = bg.height * scale;
-  const dx = (canvas.width - dw) / 2;
-  const dy = (canvas.height - dh) / 2;
-  ctx.drawImage(bg, dx, dy, dw, dh);
+  if (background.type === "texture") {
+    const src = background.value || imageBackgrounds[0];
+    const bg = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.onload = () => resolve(img);
+      img.onerror = reject;
+      img.src = src;
+    });
+    const scale = Math.max(canvas.width / bg.width, canvas.height / bg.height);
+    const dw = bg.width * scale;
+    const dh = bg.height * scale;
+    const dx = (canvas.width - dw) / 2;
+    const dy = (canvas.height - dh) / 2;
+    ctx.drawImage(bg, dx, dy, dw, dh);
+  } else if (background.type === "solid") {
+    ctx.fillStyle = background.value;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  } else if (background.type === "gradient") {
+    const grad = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
+    grad.addColorStop(0, background.value[0]);
+    grad.addColorStop(1, background.value[1]);
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  }
 
   // Overlay gradient
   const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
@@ -270,10 +333,13 @@ export default function QuotesPage() {
   const [toast, setToast] = useState<{ type: "success" | "error"; message: string } | null>(null);
   const [imageStyle, setImageStyle] = useState<ImageStyle>({
     fontFamily: "Arial",
-    fontSize: 48,
+    fontSize: 24,
     color: "#fdfdfd",
     overlayOpacity: 0.55,
     textAlign: "center",
+    backgroundType: "texture",
+    backgroundValue: "",
+    gradientColors: ["#f97316", "#f43f5e"],
   });
   const topicInputRef = useRef<HTMLInputElement | null>(null);
   const anyModalOpen = showModal || Boolean(detailRow) || Boolean(deleteRow);
@@ -1099,12 +1165,12 @@ export default function QuotesPage() {
                   {detailRow.quotes && detailRow.quotes.length > 0 ? (
                     detailRow.quote_type === "image" ? (
                       <>
-                        <div className="mb-3 grid gap-3 rounded-xl border border-gray-3 bg-gray-1 p-3 text-xs font-semibold text-dark dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8 md:grid-cols-2">
-                          <div className="space-y-1.5">
-                            <p className="text-[11px] uppercase tracking-wide text-gray-6 dark:text-dark-6">Font</p>
-                            <select
-                              className="w-full rounded-lg border border-gray-3 bg-white px-3 py-2 text-sm font-semibold text-dark dark:border-stroke-dark dark:bg-dark-2 dark:text-dark-8"
-                              value={imageStyle.fontFamily}
+                      <div className="mb-3 grid gap-3 rounded-xl border border-gray-3 bg-gray-1 p-3 text-xs font-semibold text-dark dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8 md:grid-cols-2">
+                        <div className="space-y-1.5">
+                          <p className="text-[11px] uppercase tracking-wide text-gray-6 dark:text-dark-6">Font</p>
+                          <select
+                            className="w-full rounded-lg border border-gray-3 bg-white px-3 py-2 text-sm font-semibold text-dark dark:border-stroke-dark dark:bg-dark-2 dark:text-dark-8"
+                            value={imageStyle.fontFamily}
                               onChange={(e) =>
                                 setImageStyle((prev) => ({
                                   ...prev,
@@ -1180,16 +1246,119 @@ export default function QuotesPage() {
                               className="w-full accent-primary"
                             />
                             <div className="text-[11px] text-gray-6 dark:text-dark-6">
-                              Darkness: {(imageStyle.overlayOpacity * 100).toFixed(0)}%
-                            </div>
+                            Darkness: {(imageStyle.overlayOpacity * 100).toFixed(0)}%
+                          </div>
+                        </div>
+
+                        <div className="space-y-1.5">
+                          <p className="text-[11px] uppercase tracking-wide text-gray-6 dark:text-dark-6">Background</p>
+                          <div className="flex gap-2">
+                            {[
+                              { value: "texture", label: "Texture" },
+                              { value: "solid", label: "Solid" },
+                              { value: "gradient", label: "Gradient" },
+                            ].map((bg) => (
+                              <button
+                                key={bg.value}
+                                type="button"
+                                onClick={() =>
+                                  setImageStyle((prev) => ({
+                                    ...prev,
+                                    backgroundType: bg.value as ImageStyle["backgroundType"],
+                                  }))
+                                }
+                                className={`flex-1 rounded-lg border px-3 py-2 text-sm font-semibold transition ${
+                                  imageStyle.backgroundType === bg.value
+                                    ? "border-primary bg-primary/10 text-primary"
+                                    : "border-gray-3 bg-white text-gray-7 hover:bg-gray-1 dark:border-stroke-dark dark:bg-dark-2 dark:text-dark-7 dark:hover:bg-dark-4"
+                                }`}
+                              >
+                                {bg.label}
+                              </button>
+                            ))}
                           </div>
 
-                          <div className="space-y-1.5 md:col-span-2">
-                            <p className="text-[11px] uppercase tracking-wide text-gray-6 dark:text-dark-6">Text Color</p>
-                            <div className="flex flex-wrap gap-2">
-                              {["#fdfdfd", "#f7c948", "#f472b6", "#38bdf8", "#22c55e", "#f97316", "#e5e7eb"].map((color) => (
+                          {imageStyle.backgroundType === "texture" && (
+                            <div className="mt-2 flex flex-wrap gap-2">
+                              {imageBackgrounds.map((src) => (
+                                <button
+                                  key={src}
+                                  type="button"
+                                  onClick={() =>
+                                    setImageStyle((prev) => ({
+                                      ...prev,
+                                      backgroundValue: src,
+                                    }))
+                                  }
+                                  className={`h-12 w-16 overflow-hidden rounded-md border ${
+                                    imageStyle.backgroundValue === src ? "border-primary ring-2 ring-primary/30" : "border-gray-3"
+                                  }`}
+                                  style={{
+                                    backgroundImage: `url(${src})`,
+                                    backgroundSize: "cover",
+                                    backgroundPosition: "center",
+                                  }}
+                                />
+                              ))}
+                            </div>
+                          )}
+
+                          {imageStyle.backgroundType === "solid" && (
+                            <div className="mt-2 flex flex-wrap gap-2">
+                              {solidOptions.map((color) => (
                                 <button
                                   key={color}
+                                  type="button"
+                                  onClick={() =>
+                                    setImageStyle((prev) => ({
+                                      ...prev,
+                                      backgroundValue: color,
+                                    }))
+                                  }
+                                  className={`h-10 w-10 rounded-md border ${
+                                    imageStyle.backgroundValue === color ? "border-primary ring-2 ring-primary/40" : "border-gray-3"
+                                  }`}
+                                  style={{ backgroundColor: color }}
+                                />
+                              ))}
+                            </div>
+                          )}
+
+                          {imageStyle.backgroundType === "gradient" && (
+                            <div className="mt-2 grid grid-cols-2 gap-2">
+                              {gradientOptions.map((grad) => (
+                                <button
+                                  key={grad.label}
+                                  type="button"
+                                  onClick={() =>
+                                    setImageStyle((prev) => ({
+                                      ...prev,
+                                      gradientColors: grad.colors,
+                                    }))
+                                  }
+                                  className={`h-14 rounded-md border ${
+                                    imageStyle.gradientColors?.[0] === grad.colors[0] &&
+                                    imageStyle.gradientColors?.[1] === grad.colors[1]
+                                      ? "border-primary ring-2 ring-primary/30"
+                                      : "border-gray-3"
+                                  }`}
+                                  style={{
+                                    backgroundImage: `linear-gradient(135deg, ${grad.colors[0]}, ${grad.colors[1]})`,
+                                  }}
+                                >
+                                  <span className="text-xs font-semibold text-white drop-shadow">{grad.label}</span>
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="space-y-1.5 md:col-span-2">
+                          <p className="text-[11px] uppercase tracking-wide text-gray-6 dark:text-dark-6">Text Color</p>
+                          <div className="flex flex-wrap gap-2">
+                            {["#fdfdfd", "#000000", "#f7c948", "#f472b6", "#38bdf8", "#22c55e", "#f97316", "#e5e7eb"].map((color) => (
+                              <button
+                                key={color}
                                   type="button"
                                   onClick={() =>
                                     setImageStyle((prev) => ({
@@ -1214,13 +1383,7 @@ export default function QuotesPage() {
                               <div
                                 key={`${idx}-${q.slice(0, 12)}`}
                                 className="relative overflow-hidden rounded-xl border border-gray-3 bg-gray-1 shadow-sm dark:border-stroke-dark dark:bg-dark-3"
-                                style={{
-                                  backgroundImage: `linear-gradient(rgba(0,0,0,${imageStyle.overlayOpacity}), rgba(0,0,0,${imageStyle.overlayOpacity})), url(${backgroundForRow(
-                                    detailRow.id,
-                                  )})`,
-                                  backgroundSize: "cover",
-                                  backgroundPosition: "center",
-                                }}
+                                style={backgroundCss(imageStyle, detailRow.id)}
                               >
                                 <div className="absolute right-2 top-2 flex gap-1">
                                   <button
@@ -1250,13 +1413,13 @@ export default function QuotesPage() {
                                     aria-label="Download quote image"
                                     onClick={async () => {
                                       setDownloadIdx(idx);
-                                      try {
-                                        await generateImageQuotePng({
-                                          text: q,
-                                          backgroundUrl: backgroundForRow(detailRow.id),
-                                          style: imageStyle,
-                                          fileName: `quote-${idx + 1}.png`,
-                                        });
+                                    try {
+                                      await generateImageQuotePng({
+                                        text: q,
+                                        background: resolveBackground(imageStyle, detailRow.id),
+                                        style: imageStyle,
+                                        fileName: `quote-${idx + 1}.png`,
+                                      });
                                       } catch (err) {
                                         console.error("Failed to download quote image", err);
                                         setSubmitStatus({
