@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/api-auth";
 import { supabaseAdmin } from "@/lib/supabase";
-import { generateQuotesList } from "@/lib/quote-service";
+import { enforceQuoteLimits, generateQuotesList } from "@/lib/quote-service";
 import { pickProvider } from "@/lib/llm-provider";
 import { defaultProvider } from "@/lib/openai";
 
@@ -18,6 +18,7 @@ type UpdatePayload = {
   hook?: string;
   quoteType?: 'text' | 'image';
   provider?: "openai" | "gemini";
+  regenerate?: boolean;
 };
 
 export async function PATCH(request: Request) {
@@ -52,14 +53,15 @@ export async function PATCH(request: Request) {
   const safeWordLimit =
     Number.isFinite(wordLimitNum) && wordLimitNum > 0 ? Math.min(Math.max(Math.round(wordLimitNum), 4), 100) : undefined;
   const safeHook = typeof body.hook === "string" && body.hook.trim().length > 0 ? body.hook.trim() : undefined;
-  const safeQuoteType = body.quoteType === "image" ? "image" : undefined;
+  const safeQuoteType = body.quoteType === "image" ? "image" : "text";
   if (typeof safeHook === "string") updates.hook = safeHook;
   if (typeof safeWordLimit === "number") updates.word_limit = safeWordLimit;
-  if (safeQuoteType) updates.quote_type = safeQuoteType;
+  updates.quote_type = safeQuoteType;
 
   const requestedCount =
-    typeof body.count === "number" && Number.isFinite(body.count) ? Math.max(1, Math.min(body.count, 5)) : null;
-  const shouldRegenerate = Boolean(requestedCount) || Boolean(safeHook) || typeof safeWordLimit === "number" || Boolean(safeQuoteType);
+    typeof body.count === "number" && Number.isFinite(body.count) ? Math.max(1, Math.min(Math.round(body.count), 5)) : null;
+  const shouldRegenerate =
+    Boolean(body.regenerate) || requestedCount !== null || Boolean(safeHook) || typeof safeWordLimit === "number";
 
   if (shouldRegenerate) {
     const countToUse = requestedCount ?? 5;
@@ -81,9 +83,14 @@ export async function PATCH(request: Request) {
         quoteType: safeQuoteType || (body.quoteType as "text" | "image" | undefined),
         provider,
       });
-      updates.quotes = generated;
+      const trimmed = enforceQuoteLimits(generated, {
+        count: countToUse,
+        quoteType: safeQuoteType,
+        wordLimit: safeWordLimit ?? null,
+      });
+      updates.quotes = trimmed;
       if (safeQuoteType === "image") {
-        updates.image_quotes = generated.map((text: string) => ({ text }));
+        updates.image_quotes = trimmed.map((text: string) => ({ text }));
       } else if (typeof updates.quote_type === "string" && updates.quote_type !== "image") {
         updates.image_quotes = null;
       }
@@ -93,6 +100,14 @@ export async function PATCH(request: Request) {
       applyCookies(response);
       return response;
     }
+  } else if (Array.isArray(body.quotes)) {
+    const cleaned = enforceQuoteLimits(body.quotes, {
+      count: requestedCount ?? body.quotes.length ?? 5,
+      quoteType: safeQuoteType,
+      wordLimit: safeWordLimit ?? null,
+    });
+    updates.quotes = cleaned;
+    updates.image_quotes = safeQuoteType === "image" ? cleaned.map((text: string) => ({ text })) : null;
   }
 
   if (Object.keys(updates).length === 0) {

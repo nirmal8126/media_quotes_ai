@@ -370,9 +370,18 @@ export default function QuotesPage() {
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
   const [downloadIdx, setDownloadIdx] = useState<number | null>(null);
   const [shareIdx, setShareIdx] = useState<number | null>(null);
-  const [fbStatus, setFbStatus] = useState<{ connected: boolean; pageId?: string | null }>({ connected: false, pageId: null });
+  const [fbStatus, setFbStatus] = useState<{ connected: boolean; pageId?: string | null; pageName?: string | null }>({
+    connected: false,
+    pageId: null,
+    pageName: null,
+  });
+  const [fbPages, setFbPages] = useState<Array<{ id: string; name: string }>>([]);
+  const [fbSelectedPageId, setFbSelectedPageId] = useState<string | null>(null);
+  const [fbPageLoading, setFbPageLoading] = useState(false);
+  const [fbPageSaving, setFbPageSaving] = useState(false);
   const [fbPostingIdx, setFbPostingIdx] = useState<number | null>(null);
   const [fbConnecting, setFbConnecting] = useState(false);
+  const [fbStatusError, setFbStatusError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [pageSize, setPageSize] = useState(5);
   const [page, setPage] = useState(1);
@@ -443,21 +452,75 @@ export default function QuotesPage() {
 
   const previewDims = selectedDimensions();
 
-  useEffect(() => {
-    if (!detailRow) return;
-    const fetchStatus = async () => {
+  const fetchFacebookPages = useCallback(async () => {
+    setFbStatusError(null);
+    setFbPageLoading(true);
+    try {
+      const res = await fetch("/api/social/facebook/pages");
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data?.error || "Unable to load Facebook Pages.");
+      }
+      const pages = Array.isArray(data.pages) ? data.pages : [];
+      const preferredPageId = data.selectedPageId ?? pages[0]?.id ?? null;
+      const preferredPageName =
+        data.selectedPageName ?? pages.find((page) => page.id === preferredPageId)?.name ?? null;
+      setFbPages(pages);
+      setFbSelectedPageId((prev) => data.selectedPageId ?? prev ?? preferredPageId);
+      setFbStatus((prev) => ({
+        ...prev,
+        connected: true,
+        pageId: data.selectedPageId ?? prev.pageId ?? preferredPageId,
+        pageName: preferredPageName ?? prev.pageName ?? null,
+      }));
+    } catch (err) {
+      console.error("Failed to load Facebook pages", err);
+      setFbStatusError((err as Error).message || "Unable to load Facebook Pages.");
+    } finally {
+      setFbPageLoading(false);
+    }
+  }, []);
+
+  const refreshFacebookStatus = useCallback(
+    async (withPages = false): Promise<{ connected: boolean; error?: string }> => {
+      setFbStatusError(null);
       try {
         const res = await fetch("/api/social/facebook/status");
         const data = await res.json().catch(() => ({}));
-        if (res.ok) {
-          setFbStatus({ connected: Boolean(data.connected), pageId: data.pageId ?? null });
+        if (!res.ok) {
+          throw new Error(data?.error || "Unable to load Facebook status.");
         }
+        const connected = Boolean(data.connected);
+        setFbStatus({
+          connected,
+          pageId: data.pageId ?? null,
+          pageName: data.pageName ?? null,
+        });
+        setFbSelectedPageId(data.pageId ?? null);
+        if (connected && withPages) {
+          await fetchFacebookPages();
+        } else if (!connected) {
+          setFbPages([]);
+          setFbSelectedPageId(null);
+        }
+        return { connected };
       } catch (err) {
         console.error("Failed to load Facebook status", err);
+        const message = (err as Error).message || "Unable to load Facebook status.";
+        setFbStatusError(message);
+        setFbStatus({ connected: false, pageId: null, pageName: null });
+        setFbPages([]);
+        setFbSelectedPageId(null);
+        return { connected: false, error: message };
       }
-    };
-    fetchStatus();
-  }, [detailRow]);
+    },
+    [fetchFacebookPages],
+  );
+
+  useEffect(() => {
+    if (!detailRow) return;
+    void refreshFacebookStatus(true);
+  }, [detailRow, refreshFacebookStatus]);
 
   const handleShareText = async (text: string) => {
     try {
@@ -492,8 +555,15 @@ export default function QuotesPage() {
   };
 
   const postTextToFacebook = async (text: string, idx: number) => {
-    if (!fbStatus.connected) {
-      pushToast("Connect Facebook first", "error");
+    let connected = fbStatus.connected;
+    let statusError = fbStatusError;
+    if (!connected) {
+      const result = await refreshFacebookStatus(true);
+      connected = result.connected;
+      statusError = result.error ?? statusError;
+    }
+    if (!connected) {
+      pushToast(statusError || "Connect Facebook first", "error");
       return;
     }
     setFbPostingIdx(idx);
@@ -501,7 +571,7 @@ export default function QuotesPage() {
       const res = await fetch("/api/social/facebook/publish", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text }),
+        body: JSON.stringify({ message: text, pageId: fbSelectedPageId || fbStatus.pageId || undefined }),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -517,8 +587,15 @@ export default function QuotesPage() {
   };
 
   const postImageToFacebook = async (text: string, idx: number, rowId: string | number) => {
-    if (!fbStatus.connected) {
-      pushToast("Connect Facebook first", "error");
+    let connected = fbStatus.connected;
+    let statusError = fbStatusError;
+    if (!connected) {
+      const result = await refreshFacebookStatus(true);
+      connected = result.connected;
+      statusError = result.error ?? statusError;
+    }
+    if (!connected) {
+      pushToast(statusError || "Connect Facebook first", "error");
       return;
     }
     setFbPostingIdx(idx);
@@ -537,7 +614,11 @@ export default function QuotesPage() {
       const res = await fetch("/api/social/facebook/publish", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text, imageDataUrl: dataUrl }),
+        body: JSON.stringify({
+          message: text,
+          imageDataUrl: dataUrl,
+          pageId: fbSelectedPageId || fbStatus.pageId || undefined,
+        }),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -642,6 +723,37 @@ export default function QuotesPage() {
   const pushToast = (message: string, type: "success" | "error" = "success") => {
     setToast({ type, message });
     setTimeout(() => setToast((prev) => (prev?.message === message ? null : prev)), 1500);
+  };
+
+  const saveFacebookPageSelection = async () => {
+    if (!fbSelectedPageId) {
+      pushToast("Pick a Facebook Page first", "error");
+      return;
+    }
+    setFbPageSaving(true);
+    try {
+      const res = await fetch("/api/social/facebook/pages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pageId: fbSelectedPageId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data?.error || "Unable to save Page");
+      }
+      setFbStatus((prev) => ({
+        ...prev,
+        connected: true,
+        pageId: data.page?.pageId ?? fbSelectedPageId,
+        pageName: data.page?.pageName ?? prev.pageName ?? null,
+      }));
+      pushToast("Facebook Page saved");
+    } catch (err) {
+      console.error("Failed to save Facebook page", err);
+      pushToast("Could not save Facebook page", "error");
+    } finally {
+      setFbPageSaving(false);
+    }
   };
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -772,6 +884,7 @@ export default function QuotesPage() {
           wordLimit: typeof safeWordLimit === "number" ? safeWordLimit : undefined,
           hook: trimmedHook || null,
           quoteType: safeQuoteType,
+          regenerate: shouldRegenerate,
         }),
       });
       const body = await res.json().catch(() => ({}));
@@ -1381,6 +1494,52 @@ export default function QuotesPage() {
                     >
                       {fbConnecting ? "Starting..." : "Connect Facebook"}
                     </button>
+                  )}
+                  {fbStatus.connected && (
+                    <div className="flex flex-wrap items-center gap-2">
+                      <select
+                        className="rounded-md border border-gray-3 bg-white px-3 py-2 text-xs font-semibold text-gray-7 dark:border-stroke-dark dark:bg-dark-2 dark:text-dark-7"
+                        value={fbSelectedPageId ?? ""}
+                        onChange={(e) => setFbSelectedPageId(e.target.value || null)}
+                        disabled={fbPageLoading}
+                      >
+                        <option value="">{fbPageLoading ? "Loading Pages..." : "Choose a Page"}</option>
+                        {fbPages.map((page) => (
+                          <option key={page.id} value={page.id}>
+                            {page.name}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        onClick={() => fetchFacebookPages()}
+                        className="inline-flex items-center rounded-md border border-gray-3 px-3 py-2 text-xs font-semibold text-gray-7 transition hover:bg-gray-1 dark:border-stroke-dark dark:bg-dark-2 dark:text-dark-7 dark:hover:bg-dark-4"
+                        disabled={fbPageLoading}
+                      >
+                        {fbPageLoading ? "Refreshing..." : "Refresh Pages"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={saveFacebookPageSelection}
+                        className="inline-flex items-center rounded-md bg-primary px-3 py-2 text-xs font-semibold text-white transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-70"
+                        disabled={fbPageSaving || !fbSelectedPageId}
+                      >
+                        {fbPageSaving ? "Saving..." : "Save Page"}
+                      </button>
+                      {fbStatus.pageName && (
+                        <span className="text-xs font-semibold text-gray-6 dark:text-dark-6">
+                          Saved: {fbStatus.pageName}
+                        </span>
+                      )}
+                      {fbStatusError && (
+                        <span className="text-xs font-semibold text-red-600 dark:text-red-300">
+                          {fbStatusError}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                  {!fbStatus.connected && fbStatusError && (
+                    <p className="text-xs font-semibold text-red-600 dark:text-red-300">{fbStatusError}</p>
                   )}
                 </div>
               </div>

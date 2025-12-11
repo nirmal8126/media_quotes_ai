@@ -13,6 +13,7 @@ export async function GET(request: Request) {
     const response = NextResponse.json({
       connected: Boolean(token),
       pageId: token?.page_id ?? null,
+      pageName: (token?.metadata as { page_name?: string } | null)?.page_name ?? null,
     });
     session.applyCookies(response);
     return response;

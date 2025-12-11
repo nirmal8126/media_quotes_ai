@@ -139,6 +139,59 @@ async function resolvePageAccessToken(userAccessToken: string, preferredPageId?:
   return { pageId: page.id as string, accessToken: page.access_token as string, name: page.name as string };
 }
 
+export async function listManagedFacebookPages(userId: string) {
+  const token = await getSocialToken(userId, "facebook");
+  if (!token) {
+    throw new Error("Facebook is not connected for this user.");
+  }
+
+  const listUrl = new URL(`${GRAPH_BASE}/me/accounts`);
+  listUrl.searchParams.set("access_token", token.access_token);
+  const res = await fetch(listUrl.toString(), { method: "GET" });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok || !Array.isArray(json.data)) {
+    throw new Error(json.error?.message || "Unable to load Facebook Pages");
+  }
+
+  const pages = (json.data as Array<{ id?: string; name?: string }>)
+    .filter((page) => Boolean(page?.id))
+    .map((page) => ({
+      id: String(page.id),
+      name: page.name ?? "Untitled Page",
+    }));
+
+  const metadata = (token.metadata as { page_name?: string } | null) ?? null;
+  const selectedPageName =
+    metadata?.page_name ?? pages.find((page) => page.id === token.page_id)?.name ?? null;
+
+  return {
+    pages,
+    selectedPageId: token.page_id ?? null,
+    selectedPageName: selectedPageName ?? null,
+  };
+}
+
+export async function savePreferredFacebookPage(options: { userId: string; pageId: string }) {
+  const token = await getSocialToken(options.userId, "facebook");
+  if (!token) {
+    throw new Error("Facebook is not connected for this user.");
+  }
+
+  const page = await resolvePageAccessToken(token.access_token, options.pageId);
+  await upsertSocialToken({
+    user_id: options.userId,
+    provider: "facebook",
+    access_token: token.access_token,
+    refresh_token: token.refresh_token ?? null,
+    expires_at: token.expires_at ?? null,
+    page_id: page.pageId,
+    page_access_token: page.accessToken,
+    metadata: { ...(token.metadata ?? {}), page_name: page.name },
+  });
+
+  return { pageId: page.pageId, pageName: page.name };
+}
+
 export async function publishToFacebook(options: {
   userId: string;
   message: string;
@@ -153,7 +206,14 @@ export async function publishToFacebook(options: {
   const pageEnv = process.env.FACEBOOK_PAGE_ID;
   const targetPageId = options.pageId || token.page_id || pageEnv || undefined;
 
-  const page = await resolvePageAccessToken(token.access_token, targetPageId);
+  const page =
+    targetPageId && token.page_access_token && token.page_id === targetPageId
+      ? {
+          pageId: token.page_id,
+          accessToken: token.page_access_token,
+          name: (token.metadata as { page_name?: string } | null)?.page_name,
+        }
+      : await resolvePageAccessToken(token.access_token, targetPageId);
 
   if (options.imageDataUrl) {
     const base64 = options.imageDataUrl.split(",")[1] || "";

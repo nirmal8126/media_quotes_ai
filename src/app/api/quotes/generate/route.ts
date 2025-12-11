@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { requireUser } from "@/lib/api-auth";
-import { generateQuotesList, storeQuotePack } from "@/lib/quote-service";
+import { enforceQuoteLimits, generateQuotesList, storeQuotePack } from "@/lib/quote-service";
 import { pickProvider } from "@/lib/llm-provider";
 import { defaultProvider } from "@/lib/openai";
 
@@ -34,7 +34,7 @@ export async function POST(request: Request) {
   const safeQuoteType = body.quoteType === 'image' ? 'image' : 'text';
   const provider = pickProvider({ bodyProvider: body.provider, user, fallback: defaultProvider });
 
-  const quotes = await generateQuotesList({
+  const generated = await generateQuotesList({
     topic: safeTopic,
     tone: body.tone,
     persona: body.persona,
@@ -44,6 +44,11 @@ export async function POST(request: Request) {
     hook: safeHook,
     quoteType: safeQuoteType,
     provider,
+  });
+  const quotes = enforceQuoteLimits(generated, {
+    count: safeCount,
+    quoteType: safeQuoteType,
+    wordLimit: safeWordLimit ?? null,
   });
   const imageQuotes = safeQuoteType === 'image' ? quotes.map((text: string) => ({ text })) : null;
 

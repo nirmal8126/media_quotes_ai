@@ -181,13 +181,12 @@ export async function generateCompletion(
   options?: { temperature?: number; maxTokens?: number; provider?: LlmProvider }
 ): Promise<string> {
   const provider = resolveProvider(options?.provider ?? defaultProvider);
-  const providerExplicit = Boolean(options?.provider);
   if (provider === 'gemini') {
     try {
       return await generateWithGemini(prompt, options);
     } catch (error) {
-      // If Gemini fails and OpenAI is configured, silently fall back to OpenAI so the request still succeeds.
-      if (!providerExplicit && allowFallback && openaiApiKey) {
+      // Always fall back to OpenAI when available (even if Gemini was explicitly requested)
+      if (allowFallback && openaiApiKey) {
         console.warn('Gemini failed, falling back to OpenAI:', (error as Error).message);
         return generateWithOpenAI(prompt, options);
       }
