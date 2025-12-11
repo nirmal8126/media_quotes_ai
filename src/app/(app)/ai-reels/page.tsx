@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { cn } from "@/lib/utils";
-import type { BackgroundType, FontStyle, ReelRenderJob, ReelType, TextAnimation, VideoStyle } from "@/types/generation";
 
 type Status =
   | { type: "idle"; message?: string }
@@ -10,80 +9,83 @@ type Status =
   | { type: "error"; message: string }
   | { type: "success"; message: string };
 
-const reelTypes: ReelType[] = ["text_only", "ai_character", "stock_plus_captions", "black_text", "aesthetic"];
-const videoStyles: VideoStyle[] = ["minimal", "aesthetic", "dark", "neon", "cinematic"];
-const backgrounds: BackgroundType[] = ["stock", "ai_generated", "gradient", "blur", "black"];
-const fonts: FontStyle[] = ["bold", "minimal", "soft", "cursive"];
-const textAnimations: TextAnimation[] = ["typewriter", "fade", "zoom", "slide"];
+type ReelState = {
+  reel?: {
+    id: string;
+    status: string;
+    videoUrl?: string | null;
+    thumbnailUrl?: string | null;
+    rendererJobId?: string | null;
+    durationSec?: number | null;
+    errorMessage?: string | null;
+  };
+  script?: {
+    id: string;
+    text: string;
+    inputPrompt?: string | null;
+  };
+};
+
+const platforms = ["INSTAGRAM", "TIKTOK", "YOUTUBE", "FACEBOOK", "LINKEDIN"];
+const tones = ["motivational", "educational", "funny", "dramatic", "emotional"];
+const styles = ["cinematic", "minimal", "aesthetic", "bold", "fast-cut"];
 
 const defaultForm = {
-  scriptSource: { type: "new", text: "" } as { type: "new" | "uploaded" | "existing"; text?: string; scriptId?: string },
-  reelType: "text_only" as ReelType,
-  videoStyle: "minimal" as VideoStyle,
-  background: "stock" as BackgroundType,
-  font: "bold" as FontStyle,
-  textAnimation: "fade" as TextAnimation,
-  aiVoiceId: "",
-  trendingAudioId: "",
-  resolution: { width: 1080, height: 1920 },
+  idea: "",
+  scriptText: "",
+  platform: "INSTAGRAM",
+  tone: "motivational",
+  style: "cinematic",
+  personaId: "",
+  durationSec: 15,
+  withVoiceover: true,
 };
 
 export default function AiReelsPage() {
   const [form, setForm] = useState({ ...defaultForm });
   const [status, setStatus] = useState<Status>({ type: "idle" });
-  const [job, setJob] = useState<ReelRenderJob | null>(null);
+  const [result, setResult] = useState<ReelState | null>(null);
   const [polling, setPolling] = useState(false);
 
   const handleGenerate = async () => {
     if (status.type === "loading") return;
-    if (form.scriptSource.type === "new" && !form.scriptSource.text?.trim()) {
-      setStatus({ type: "error", message: "Provide a script or pick an existing one." });
+    if (!form.idea.trim() && !form.scriptText.trim()) {
+      setStatus({ type: "error", message: "Provide either an idea or a script." });
       return;
     }
-    setStatus({ type: "loading", message: "Starting reel render..." });
+
+    setStatus({ type: "loading", message: "Generating script and starting render..." });
     try {
       const res = await fetch("/api/reels/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          script: form.scriptSource,
-          reelType: form.reelType,
-          visual: {
-            videoStyle: form.videoStyle,
-            background: form.background,
-            font: form.font,
-            textAnimation: form.textAnimation,
-          },
-          audio: {
-            aiVoiceId: form.aiVoiceId || undefined,
-            trendingAudioId: form.trendingAudioId || undefined,
-          },
-          resolution: form.resolution,
-        }),
+        body: JSON.stringify(form),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {
-        throw new Error(body?.error || "Failed to start reel render.");
+        throw new Error(body?.error || "Failed to start reel generation.");
       }
-      setJob(body.job ?? null);
-      setStatus({ type: "success", message: body.message || "Reel job created." });
+      setResult({ reel: body.reel, script: body.script });
+      setStatus({ type: "success", message: body.message || "Reel created. If rendering, poll for updates." });
     } catch (err) {
       setStatus({ type: "error", message: (err as Error).message || "Unable to start reel render." });
     }
   };
 
-  const pollStatus = async () => {
-    if (!job || polling) return;
+  const handlePoll = async () => {
+    if (!result?.reel?.id || polling) return;
     setPolling(true);
     try {
-      const res = await fetch(`/api/reels/status?jobId=${encodeURIComponent(job.id)}`);
+      const res = await fetch(`/api/reels/status?reelId=${encodeURIComponent(result.reel.id)}`);
       const body = await res.json().catch(() => ({}));
-      if (res.ok && body.job) {
-        setJob(body.job);
-        setStatus({ type: "success", message: `Job status: ${body.job.status}` });
-      } else {
-        throw new Error(body?.error || "Failed to fetch status");
+      if (!res.ok) {
+        throw new Error(body?.error || "Failed to load status.");
       }
+      setResult((prev) => ({ ...(prev ?? {}), reel: body.reel }));
+      setStatus({
+        type: "success",
+        message: `Status: ${body.reel?.status || "unknown"}`,
+      });
     } catch (err) {
       setStatus({ type: "error", message: (err as Error).message || "Unable to fetch status." });
     } finally {
@@ -93,211 +95,139 @@ export default function AiReelsPage() {
 
   return (
     <div className="space-y-4">
-      <div className="rounded-2xl border border-gray-3 bg-white p-5 shadow-card-2">
+      <div className="rounded-2xl border border-gray-3 bg-white p-5 shadow-card-2 dark:border-stroke-dark dark:bg-dark-2">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.35em] text-primary">AI Reels</p>
-            <h1 className="text-2xl font-bold text-dark">Generate video reels</h1>
-            <p className="text-sm text-gray-6">Turn scripts into full MP4s with backgrounds, animations, and audio.</p>
+            <h1 className="text-2xl font-bold text-dark dark:text-dark-8">Generate full reels from an idea or script</h1>
+            <p className="text-sm text-gray-6 dark:text-dark-6">
+              We’ll write the script (if needed), trigger rendering, and return the video + thumbnail.
+            </p>
           </div>
-          <button
-            className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-primary/90"
-            onClick={handleGenerate}
-            disabled={status.type === "loading"}
-          >
-            {status.type === "loading" ? "Generating..." : "Generate AI Reel"}
-          </button>
-          {job && (
+          <div className="flex flex-wrap gap-2">
             <button
-              className="flex items-center gap-2 rounded-lg border border-gray-3 px-4 py-2.5 text-sm font-semibold text-gray-7 transition hover:bg-gray-1 disabled:opacity-60"
-              onClick={pollStatus}
-              disabled={polling}
+              className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-primary/90 disabled:opacity-70"
+              onClick={handleGenerate}
+              disabled={status.type === "loading"}
             >
-              {polling ? "Checking..." : "Check Status"}
+              {status.type === "loading" ? "Working..." : "Generate AI Reel"}
             </button>
-          )}
+            {result?.reel?.id && (
+              <button
+                className="flex items-center gap-2 rounded-lg border border-gray-3 px-4 py-2.5 text-sm font-semibold text-gray-7 transition hover:bg-gray-1 disabled:opacity-60 dark:border-stroke-dark dark:text-dark-7 dark:hover:bg-dark-3"
+                onClick={handlePoll}
+                disabled={polling}
+              >
+                {polling ? "Checking..." : "Check Status"}
+              </button>
+            )}
+          </div>
         </div>
 
-        <div className="mt-4 grid gap-4 md:grid-cols-2">
-          <div className="rounded-xl border border-gray-3 bg-white p-4 shadow-card-2">
-            <h3 className="text-sm font-semibold text-dark">Script source</h3>
-            <div className="mt-3 flex flex-wrap gap-2">
-              {["new", "uploaded", "existing"].map((type) => (
-                <button
-                  key={type}
-                  className={cn(
-                    "rounded-lg border px-3 py-2 text-sm font-semibold transition",
-                    form.scriptSource.type === type ? "border-primary bg-primary/10 text-primary" : "border-gray-3 text-gray-7 hover:bg-gray-1",
-                  )}
-                  onClick={() => {
-                    setForm((prev) => ({
-                      ...prev,
-                      scriptSource: { type: type as "new" | "uploaded" | "existing", text: "", scriptId: "" },
-                    }));
-                  }}
-                >
-                  {type === "new" ? "New script" : type === "uploaded" ? "Upload text" : "Existing script"}
-                </button>
-              ))}
-            </div>
-            {form.scriptSource.type === "new" && (
+        <div className="mt-4 grid gap-4 lg:grid-cols-[1.1fr,0.9fr]">
+          <div className="rounded-xl border border-gray-3 bg-white p-4 shadow-card-2 dark:border-stroke-dark dark:bg-dark-2">
+            <h3 className="text-sm font-semibold text-dark dark:text-dark-8">Idea or Script</h3>
+            <p className="text-xs text-gray-6 dark:text-dark-6">Share an idea to auto-generate a script, or paste your own script.</p>
+            <label className="mt-3 block text-sm font-semibold text-gray-7 dark:text-dark-7">
+              Idea
               <textarea
-                className="mt-3 h-32 w-full rounded-lg border border-gray-3 bg-white px-3 py-2 text-sm outline-none transition focus:border-primary"
-                placeholder="Paste or write your script here..."
-                value={form.scriptSource.text ?? ""}
-                onChange={(e) => setForm((prev) => ({ ...prev, scriptSource: { ...prev.scriptSource, text: e.target.value } }))}
+                className="mt-2 h-24 w-full rounded-lg border border-gray-3 bg-white px-3 py-2 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+                placeholder="e.g., Morning discipline reel with a strong hook"
+                value={form.idea}
+                onChange={(e) => setForm((prev) => ({ ...prev, idea: e.target.value }))}
               />
-            )}
-            {form.scriptSource.type === "uploaded" && (
+            </label>
+            <label className="mt-3 block text-sm font-semibold text-gray-7 dark:text-dark-7">
+              Script (optional)
               <textarea
-                className="mt-3 h-24 w-full rounded-lg border border-gray-3 bg-white px-3 py-2 text-sm outline-none transition focus:border-primary"
-                placeholder="Paste uploaded text here..."
-                value={form.scriptSource.text ?? ""}
-                onChange={(e) => setForm((prev) => ({ ...prev, scriptSource: { ...prev.scriptSource, text: e.target.value } }))}
+                className="mt-2 h-32 w-full rounded-lg border border-gray-3 bg-white px-3 py-2 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+                placeholder="Paste your script. Leave empty to let AI write it."
+                value={form.scriptText}
+                onChange={(e) => setForm((prev) => ({ ...prev, scriptText: e.target.value }))}
               />
-            )}
-            {form.scriptSource.type === "existing" && (
-              <input
-                className="mt-3 w-full rounded-lg border border-gray-3 bg-white px-3 py-2 text-sm outline-none transition focus:border-primary"
-                placeholder="Enter existing script ID"
-                value={form.scriptSource.scriptId ?? ""}
-                onChange={(e) => setForm((prev) => ({ ...prev, scriptSource: { ...prev.scriptSource, scriptId: e.target.value } }))}
-              />
-            )}
+            </label>
           </div>
 
-          <div className="rounded-xl border border-gray-3 bg-white p-4 shadow-card-2">
-            <h3 className="text-sm font-semibold text-dark">Reel type & visuals</h3>
-            <div className="mt-2 grid gap-2 sm:grid-cols-2">
-              <label className="text-sm font-semibold text-gray-7">
-                Reel type
+          <div className="rounded-xl border border-gray-3 bg-white p-4 shadow-card-2 dark:border-stroke-dark dark:bg-dark-2">
+            <h3 className="text-sm font-semibold text-dark dark:text-dark-8">Reel Settings</h3>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="text-sm font-semibold text-gray-7 dark:text-dark-7">
+                Platform
                 <select
-                  className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-3 py-2 text-sm outline-none transition focus:border-primary"
-                  value={form.reelType}
-                  onChange={(e) => setForm((prev) => ({ ...prev, reelType: e.target.value as ReelType }))}
+                  className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-3 py-2 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+                  value={form.platform}
+                  onChange={(e) => setForm((prev) => ({ ...prev, platform: e.target.value }))}
                 >
-                  {reelTypes.map((r) => (
-                    <option key={r} value={r}>
-                      {r.replace(/_/g, " ")}
+                  {platforms.map((p) => (
+                    <option key={p} value={p}>
+                      {p}
                     </option>
                   ))}
                 </select>
               </label>
-              <label className="text-sm font-semibold text-gray-7">
-                Video style
+              <label className="text-sm font-semibold text-gray-7 dark:text-dark-7">
+                Tone
                 <select
-                  className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-3 py-2 text-sm outline-none transition focus:border-primary"
-                  value={form.videoStyle}
-                  onChange={(e) => setForm((prev) => ({ ...prev, videoStyle: e.target.value as VideoStyle }))}
+                  className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-3 py-2 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+                  value={form.tone}
+                  onChange={(e) => setForm((prev) => ({ ...prev, tone: e.target.value }))}
                 >
-                  {videoStyles.map((v) => (
-                    <option key={v} value={v}>
-                      {v}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="text-sm font-semibold text-gray-7">
-                Background
-                <select
-                  className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-3 py-2 text-sm outline-none transition focus:border-primary"
-                  value={form.background}
-                  onChange={(e) => setForm((prev) => ({ ...prev, background: e.target.value as BackgroundType }))}
-                >
-                  {backgrounds.map((b) => (
-                    <option key={b} value={b}>
-                      {b.replace(/_/g, " ")}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="text-sm font-semibold text-gray-7">
-                Font
-                <select
-                  className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-3 py-2 text-sm outline-none transition focus:border-primary"
-                  value={form.font}
-                  onChange={(e) => setForm((prev) => ({ ...prev, font: e.target.value as FontStyle }))}
-                >
-                  {fonts.map((f) => (
-                    <option key={f} value={f}>
-                      {f}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="text-sm font-semibold text-gray-7">
-                Text animation
-                <select
-                  className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-3 py-2 text-sm outline-none transition focus:border-primary"
-                  value={form.textAnimation}
-                  onChange={(e) => setForm((prev) => ({ ...prev, textAnimation: e.target.value as TextAnimation }))}
-                >
-                  {textAnimations.map((t) => (
+                  {tones.map((t) => (
                     <option key={t} value={t}>
                       {t}
                     </option>
                   ))}
                 </select>
               </label>
-            </div>
-          </div>
-
-          <div className="rounded-xl border border-gray-3 bg-white p-4 shadow-card-2">
-            <h3 className="text-sm font-semibold text-dark">Audio</h3>
-            <div className="grid gap-2 sm:grid-cols-2">
-              <label className="text-sm font-semibold text-gray-7">
-                AI Voice ID (optional)
+              <label className="text-sm font-semibold text-gray-7 dark:text-dark-7">
+                Style
+                <select
+                  className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-3 py-2 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+                  value={form.style}
+                  onChange={(e) => setForm((prev) => ({ ...prev, style: e.target.value }))}
+                >
+                  {styles.map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="text-sm font-semibold text-gray-7 dark:text-dark-7">
+                Persona ID (optional)
                 <input
-                  className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-3 py-2 text-sm outline-none transition focus:border-primary"
-                  value={form.aiVoiceId}
-                  onChange={(e) => setForm((prev) => ({ ...prev, aiVoiceId: e.target.value }))}
-                  placeholder="voice_123"
+                  className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-3 py-2 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+                  placeholder="persona UUID"
+                  value={form.personaId}
+                  onChange={(e) => setForm((prev) => ({ ...prev, personaId: e.target.value }))}
                 />
               </label>
-              <label className="text-sm font-semibold text-gray-7">
-                Trending Audio ID (optional)
-                <input
-                  className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-3 py-2 text-sm outline-none transition focus:border-primary"
-                  value={form.trendingAudioId}
-                  onChange={(e) => setForm((prev) => ({ ...prev, trendingAudioId: e.target.value }))}
-                  placeholder="audio_123"
-                />
-              </label>
-            </div>
-            <p className="mt-2 text-xs text-gray-6">Attach either AI voice or trending audio; fallback to silent if none.</p>
-          </div>
-
-          <div className="rounded-xl border border-gray-3 bg-white p-4 shadow-card-2">
-            <h3 className="text-sm font-semibold text-dark">Resolution</h3>
-            <div className="grid grid-cols-2 gap-2">
-              <label className="text-sm font-semibold text-gray-7">
-                Width
+              <label className="text-sm font-semibold text-gray-7 dark:text-dark-7">
+                Duration (sec)
                 <input
                   type="number"
-                  min={320}
-                  max={2160}
-                  className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-3 py-2 text-sm outline-none transition focus:border-primary"
-                  value={form.resolution.width}
+                  min={10}
+                  max={180}
+                  className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-3 py-2 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+                  value={form.durationSec}
                   onChange={(e) =>
-                    setForm((prev) => ({ ...prev, resolution: { ...prev.resolution, width: Number(e.target.value) || 1080 } }))
+                    setForm((prev) => ({ ...prev, durationSec: Number(e.target.value) || defaultForm.durationSec }))
                   }
                 />
               </label>
-              <label className="text-sm font-semibold text-gray-7">
-                Height
+              <label className="mt-1 flex items-center gap-2 text-sm font-semibold text-gray-7 dark:text-dark-7">
                 <input
-                  type="number"
-                  min={320}
-                  max={3840}
-                  className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-3 py-2 text-sm outline-none transition focus:border-primary"
-                  value={form.resolution.height}
-                  onChange={(e) =>
-                    setForm((prev) => ({ ...prev, resolution: { ...prev.resolution, height: Number(e.target.value) || 1920 } }))
-                  }
+                  type="checkbox"
+                  className="h-4 w-4 accent-primary"
+                  checked={form.withVoiceover}
+                  onChange={(e) => setForm((prev) => ({ ...prev, withVoiceover: e.target.checked }))}
                 />
+                Include voiceover
               </label>
             </div>
-            <p className="mt-2 text-xs text-gray-6">Default: 1080×1920 (Reels/TikTok). Adjust if needed.</p>
+            <p className="mt-2 text-xs text-gray-6 dark:text-dark-6">
+              Rendering is stubbed locally. Swap in your renderer API to return real video + thumbnail URLs.
+            </p>
           </div>
         </div>
 
@@ -309,30 +239,94 @@ export default function AiReelsPage() {
                 ? "border-red-200 bg-red-50 text-red-700"
                 : status.type === "success"
                   ? "border-green-200 bg-green-50 text-green-700"
-                  : "border-stroke bg-gray-1 text-dark",
+                  : "border-stroke bg-gray-1 text-dark dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8",
             )}
           >
             {status.message}
           </div>
         )}
-        {job && (
-          <div className="mt-2 rounded-lg border border-gray-3 bg-gray-1 px-4 py-3 text-sm text-gray-7">
-            <div>
-              Job ID: <span className="font-semibold text-dark">{job.id}</span> · Status:{" "}
-              <span className="font-semibold text-dark">{job.status}</span>
-            </div>
-            {job.videoUrl && (
-              <div className="mt-2 flex items-center gap-2">
-                <a href={job.videoUrl} className="text-primary underline" target="_blank" rel="noreferrer">
-                  View video
-                </a>
-                {job.thumbnailUrl && (
-                  <a href={job.thumbnailUrl} className="text-primary underline" target="_blank" rel="noreferrer">
-                    Thumbnail
-                  </a>
+
+        {result?.reel && (
+          <div className="mt-4 grid gap-4 lg:grid-cols-[1.1fr,0.9fr]">
+            <div className="rounded-xl border border-gray-3 bg-white p-4 shadow-card-2 dark:border-stroke-dark dark:bg-dark-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="text-sm text-gray-7 dark:text-dark-7">
+                  <span className="font-semibold text-dark dark:text-dark-8">Reel ID:</span> {result.reel.id}
+                  <span className="ml-2 rounded-full bg-gray-2 px-2 py-1 text-xs font-semibold text-dark dark:bg-dark-3 dark:text-dark-8">
+                    {result.reel.status}
+                  </span>
+                </div>
+                {result.reel.rendererJobId && (
+                  <span className="text-xs text-gray-6 dark:text-dark-6">Job: {result.reel.rendererJobId}</span>
                 )}
               </div>
-            )}
+              {result.reel.videoUrl ? (
+                <div className="mt-3 overflow-hidden rounded-lg border border-gray-3 bg-black dark:border-stroke-dark">
+                  <video
+                    controls
+                    src={result.reel.videoUrl}
+                    poster={result.reel.thumbnailUrl ?? undefined}
+                    className="h-[360px] w-full object-cover"
+                  />
+                </div>
+              ) : (
+                <p className="mt-3 text-sm text-gray-6 dark:text-dark-6">Waiting for renderer to provide a video URL...</p>
+              )}
+              {result.reel.videoUrl && (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <a
+                    href={result.reel.videoUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white transition hover:bg-primary/90"
+                  >
+                    Download / View
+                  </a>
+                  {result.reel.thumbnailUrl && (
+                    <a
+                      href={result.reel.thumbnailUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="rounded-lg border border-gray-3 px-4 py-2 text-sm font-semibold text-gray-7 transition hover:bg-gray-1 dark:border-stroke-dark dark:text-dark-7 dark:hover:bg-dark-3"
+                    >
+                      Thumbnail
+                    </a>
+                  )}
+                  <button
+                    className="rounded-lg border border-gray-3 px-4 py-2 text-sm font-semibold text-gray-7 transition hover:bg-gray-1 disabled:opacity-60 dark:border-stroke-dark dark:text-dark-7 dark:hover:bg-dark-3"
+                    onClick={handlePoll}
+                    disabled={polling}
+                  >
+                    {polling ? "Checking..." : "Refresh status"}
+                  </button>
+                </div>
+              )}
+              {result.reel.errorMessage && (
+                <p className="mt-2 text-sm text-red-600">Error: {result.reel.errorMessage}</p>
+              )}
+            </div>
+
+            <div className="rounded-xl border border-gray-3 bg-white p-4 shadow-card-2 dark:border-stroke-dark dark:bg-dark-2">
+              <h3 className="text-sm font-semibold text-dark dark:text-dark-8">Script</h3>
+              {result.script ? (
+                <>
+                  {result.script.inputPrompt && (
+                    <p className="mb-2 text-xs text-gray-6 dark:text-dark-6">Idea: {result.script.inputPrompt}</p>
+                  )}
+                  <div className="whitespace-pre-wrap rounded-lg border border-gray-3 bg-gray-1 px-3 py-3 text-sm text-gray-8 dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8">
+                    {result.script.text}
+                  </div>
+                </>
+              ) : (
+                <p className="text-sm text-gray-6 dark:text-dark-6">Script will appear here once generated.</p>
+              )}
+              <div className="mt-3 flex flex-wrap gap-2 text-xs text-gray-6 dark:text-dark-6">
+                <span>Platform: {form.platform}</span>
+                <span>· Tone: {form.tone}</span>
+                <span>· Style: {form.style}</span>
+                <span>· Duration: {form.durationSec}s</span>
+              </div>
+            </div>
           </div>
         )}
       </div>

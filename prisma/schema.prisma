@@ -43,3 +43,43 @@ model ActivityLog {
   metadata         Json?
   createdAt        DateTime @map("created_at")
 }
+
+model Script {
+  id          String    @id @default(uuid())
+  userId      String    @map("user_id")
+  personaId   String?   @map("persona_id")
+  platform    String?
+  tone        String?
+  style       String?
+  durationSec Int?      @map("duration_sec")
+  inputPrompt String?   @map("input_prompt")
+  text        String
+  createdAt   DateTime? @map("created_at")
+  updatedAt   DateTime? @map("updated_at")
+
+  @@index([userId], map: "scripts_user_idx")
+  @@map("scripts")
+}
+
+model Reel {
+  id            String    @id @default(uuid())
+  userId        String    @map("user_id")
+  scriptId      String    @map("script_id")
+  personaId     String?   @map("persona_id")
+  platform      String?
+  tone          String?
+  style         String?
+  durationSec   Int?      @map("duration_sec")
+  status        String?
+  rendererJobId String?   @map("renderer_job_id")
+  videoUrl      String?   @map("video_url")
+  thumbnailUrl  String?   @map("thumbnail_url")
+  errorMessage  String?   @map("error_message")
+  createdAt     DateTime? @map("created_at")
+  updatedAt     DateTime? @map("updated_at")
+
+  @@index([userId], map: "reels_user_idx")
+  @@index([scriptId], map: "reels_script_idx")
+  @@index([rendererJobId], map: "reels_renderer_job_idx")
+  @@map("reels")
+}

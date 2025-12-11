@@ -177,6 +177,8 @@ type ImageSizeKey =
   | "mobile_portrait"
   | "custom";
 
+const FACEBOOK_ENABLED = false;
+
 const imageSizePresets: Record<
   ImageSizeKey,
   {
@@ -453,6 +455,7 @@ export default function QuotesPage() {
   const previewDims = selectedDimensions();
 
   const fetchFacebookPages = useCallback(async () => {
+    if (!FACEBOOK_ENABLED) return;
     setFbStatusError(null);
     setFbPageLoading(true);
     try {
@@ -483,6 +486,7 @@ export default function QuotesPage() {
 
   const refreshFacebookStatus = useCallback(
     async (withPages = false): Promise<{ connected: boolean; error?: string }> => {
+      if (!FACEBOOK_ENABLED) return { connected: false };
       setFbStatusError(null);
       try {
         const res = await fetch("/api/social/facebook/status");
@@ -518,7 +522,7 @@ export default function QuotesPage() {
   );
 
   useEffect(() => {
-    if (!detailRow) return;
+    if (!detailRow || !FACEBOOK_ENABLED) return;
     void refreshFacebookStatus(true);
   }, [detailRow, refreshFacebookStatus]);
 
@@ -538,6 +542,10 @@ export default function QuotesPage() {
   };
 
   const startFacebookConnect = async () => {
+    if (!FACEBOOK_ENABLED) {
+      pushToast("Facebook sharing is disabled.", "error");
+      return;
+    }
     setFbConnecting(true);
     try {
       const res = await fetch("/api/social/facebook/start");
@@ -555,6 +563,10 @@ export default function QuotesPage() {
   };
 
   const postTextToFacebook = async (text: string, idx: number) => {
+    if (!FACEBOOK_ENABLED) {
+      pushToast("Facebook sharing is disabled.", "error");
+      return;
+    }
     let connected = fbStatus.connected;
     let statusError = fbStatusError;
     if (!connected) {
@@ -587,6 +599,10 @@ export default function QuotesPage() {
   };
 
   const postImageToFacebook = async (text: string, idx: number, rowId: string | number) => {
+    if (!FACEBOOK_ENABLED) {
+      pushToast("Facebook sharing is disabled.", "error");
+      return;
+    }
     let connected = fbStatus.connected;
     let statusError = fbStatusError;
     if (!connected) {
@@ -726,6 +742,10 @@ export default function QuotesPage() {
   };
 
   const saveFacebookPageSelection = async () => {
+    if (!FACEBOOK_ENABLED) {
+      pushToast("Facebook sharing is disabled.", "error");
+      return;
+    }
     if (!fbSelectedPageId) {
       pushToast("Pick a Facebook Page first", "error");
       return;
@@ -1473,7 +1493,7 @@ export default function QuotesPage() {
                   Tone: {detailRow.tone || "—"} · Persona: {detailRow.persona || "—"} · Language:{" "}
                   {detailRow.language || "—"}
                 </p>
-                <div className="mt-2 flex flex-wrap items-center gap-2">
+                <div className={`mt-2 flex flex-wrap items-center gap-2 ${FACEBOOK_ENABLED ? "" : "hidden"}`}>
                   <span
                     className={`rounded-full px-3 py-1 text-xs font-semibold ${
                       fbStatus.connected
@@ -1903,6 +1923,7 @@ export default function QuotesPage() {
                                     <button
                                       type="button"
                                       aria-label="Post to Facebook"
+                                      className={FACEBOOK_ENABLED ? "inline-flex items-center rounded-md border border-gray-3 px-3 py-2 text-xs font-semibold text-gray-7 transition hover:bg-gray-1 dark:border-stroke-dark dark:bg-dark-2 dark:text-dark-7 dark:hover:bg-dark-4" : "hidden"}
                                       onClick={() => postImageToFacebook(q, idx, detailRow.id)}
                                       className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-white/60 bg-white/20 text-white transition hover:bg-white/30"
                                     >
@@ -1988,6 +2009,7 @@ export default function QuotesPage() {
                                 <button
                                   type="button"
                                   aria-label="Post to Facebook"
+                                  className={FACEBOOK_ENABLED ? "inline-flex items-center rounded-md border border-gray-3 px-3 py-2 text-xs font-semibold text-gray-7 transition hover:bg-gray-1 dark:border-stroke-dark dark:bg-dark-2 dark:text-dark-7 dark:hover:bg-dark-4" : "hidden"}
                                   onClick={() => postTextToFacebook(q, idx)}
                                   className="mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-gray-3 bg-white text-gray-6 transition hover:bg-gray-2 dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-7 dark:hover:bg-dark-4"
                                 >
