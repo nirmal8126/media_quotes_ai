@@ -17,9 +17,15 @@ export const NAV_DATA = [
         items: [],
       },
       {
-        title: "Scripts/Captions",
+        title: "Scripts & Captions",
         url: "/scripts-captions",
         icon: Icons.Alphabet,
+        items: [],
+      },
+      {
+        title: "AI Reels",
+        url: "/ai-reels",
+        icon: Icons.FourCircle,
         items: [],
       },
       {

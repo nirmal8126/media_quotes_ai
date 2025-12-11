@@ -4,6 +4,8 @@ import { supabaseAdmin } from "@/lib/supabase";
 import { generateCaptionContent, generateHashtagList, generateScriptAssets } from "@/lib/reel-service";
 import { pickProvider } from "@/lib/llm-provider";
 import { defaultProvider } from "@/lib/openai";
+import { normalizeScriptCaptionRequest } from "@/lib/generation-normalize";
+import type { ScriptCaptionRequest } from "@/types/generation";
 
 type UpdatePayload = {
   id?: string;
@@ -34,9 +36,19 @@ export async function PATCH(request: Request) {
   }
 
   const provider = pickProvider({ bodyProvider: body.provider, user, fallback: defaultProvider });
-  const topic = (body.topic ?? "").trim();
-  const tone = (body.tone ?? "").trim();
-  const platform = (body.platform ?? "").trim();
+  const normalized: ScriptCaptionRequest = normalizeScriptCaptionRequest({
+    contentType: body.contentType as ScriptCaptionRequest["contentType"],
+    platform: (body.platform as ScriptCaptionRequest["platform"]) ?? undefined,
+    description: body.description ?? body.topic ?? "",
+    tone: body.tone as ScriptCaptionRequest["tone"],
+    length: body.length as ScriptCaptionRequest["length"],
+    persona: body.persona ?? undefined,
+    language: body.language ?? undefined,
+    variations: body.variations,
+  });
+  const topic = normalized.description;
+  const tone = normalized.tone;
+  const platform = normalized.platform;
   const hook = (body.hook ?? "").trim();
   const updates: Record<string, unknown> = {};
 
