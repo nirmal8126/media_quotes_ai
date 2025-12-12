@@ -35,3 +35,26 @@ export async function requireUser(request: Request): Promise<UserResult> {
     applyCookies: (response: NextResponse) => supabaseCookies.applyToResponse(response),
   };
 }
+
+export function isSuperAdmin(user: User): boolean {
+  const role =
+    (user.app_metadata?.role as string | undefined) ??
+    (user.user_metadata?.role as string | undefined);
+  const flag = user.user_metadata?.is_admin ?? user.user_metadata?.admin;
+  return role === 'superadmin' || flag === true;
+}
+
+export async function requireSuperAdmin(request: Request): Promise<UserResult> {
+  const session = await requireUser(request);
+  if ('errorResponse' in session) {
+    return session;
+  }
+
+  if (!isSuperAdmin(session.user)) {
+    const response = NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    session.applyCookies(response);
+    return { errorResponse: response };
+  }
+
+  return session;
+}

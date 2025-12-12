@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import { NAV_DATA } from "./data";
+import { ADMIN_NAV_DATA, NAV_DATA } from "./data";
 import { ArrowLeftIcon, ChevronUp } from "./icons";
 import { MenuItem } from "./menu-item";
 import { useSidebarContext } from "./sidebar-context";
@@ -15,6 +15,7 @@ export function Sidebar() {
   const { setIsOpen, isOpen, isMobile, toggleSidebar } = useSidebarContext();
   const [expandedItems, setExpandedItems] = useState<string[]>([]);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [adminResolved, setAdminResolved] = useState(!pathname?.startsWith("/admin"));
 
   const toggleExpanded = (title: string) => {
     setExpandedItems((prev) => (prev.includes(title) ? [] : [title]));
@@ -60,23 +61,49 @@ export function Sidebar() {
         }
       } catch (error) {
         console.error("Failed to load session for admin link", error);
+      } finally {
+        setAdminResolved(true);
       }
     };
     loadSession();
-  }, []);
+  }, [pathname]);
 
   const adminLink = useMemo(() => {
-    if (!isAdmin) return null;
+    if (!adminResolved || !isAdmin) return null;
+    if (pathname?.startsWith("/admin")) return null;
     return (
       <button
-        onClick={() => window.open("/admin", "_blank", "noopener,noreferrer")}
+        onClick={() => (window.location.href = "/admin")}
         className="mt-4 flex w-full items-center justify-between rounded-xl border border-primary/20 bg-primary/10 px-3 py-3 text-sm font-semibold text-primary transition hover:bg-primary/15"
       >
-        <span>Admin Console</span>
-        <span aria-hidden className="text-xs">↗</span>
+        <span>Admin Dashboard</span>
+        <span aria-hidden className="text-xs">→</span>
       </button>
     );
-  }, [isAdmin]);
+  }, [isAdmin, pathname]);
+
+  const backToUserLink = useMemo(() => {
+    if (!adminResolved || !isAdmin) return null;
+    if (!pathname?.startsWith("/admin")) return null;
+    return (
+      <button
+        onClick={() => (window.location.href = "/")}
+        className="mt-4 flex w-full items-center justify-between rounded-xl border border-primary/20 bg-primary/5 px-3 py-3 text-sm font-semibold text-primary transition hover:bg-primary/10"
+      >
+        <span>Back to User Dashboard</span>
+        <span aria-hidden className="text-xs">→</span>
+      </button>
+    );
+  }, [isAdmin, pathname]);
+
+  const navSections = useMemo(() => {
+    if (pathname?.startsWith("/admin")) {
+      if (!adminResolved) return [];
+      if (isAdmin) return ADMIN_NAV_DATA;
+      return [];
+    }
+    return NAV_DATA;
+  }, [isAdmin, pathname, adminResolved]);
 
   return (
     <>
@@ -123,7 +150,7 @@ export function Sidebar() {
 
           {/* Navigation */}
           <div className="custom-scrollbar mt-6 flex-1 overflow-y-auto pr-3 min-[850px]:mt-10">
-            {NAV_DATA.map((section) => (
+            {navSections.map((section) => (
               <div key={section.label} className="mb-6">
                 <h2 className="mb-5 text-sm font-medium text-dark-4 dark:text-dark-6">
                   {section.label}
@@ -208,9 +235,9 @@ export function Sidebar() {
                 </nav>
               </div>
             ))}
+            {adminLink}
+            {backToUserLink}
           </div>
-
-          {adminLink}
         </div>
       </aside>
     </>
