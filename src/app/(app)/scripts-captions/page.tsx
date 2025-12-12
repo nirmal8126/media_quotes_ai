@@ -905,30 +905,39 @@ export default function ScriptsCaptionsPage() {
                 </div>
               )}
 
-              <div className="mt-4 flex justify-end gap-3">
-                <button
-                  className="rounded-md border border-gray-3 px-4 py-2 text-sm font-semibold text-gray-7 transition hover:bg-gray-1 dark:border-stroke-dark dark:text-dark-7 dark:hover:bg-dark-3"
-                  onClick={resetForm}
-                >
-                  Cancel
-                </button>
-                <button
-                  className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-semibold text-white transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-70"
-                  onClick={handleSubmit}
-                  disabled={submitStatus.type === "loading"}
-                >
-                  {submitStatus.type === "loading"
-                    ? editRow
-                      ? "Saving..."
-                      : "Generating..."
-                    : editRow
-                    ? "Save changes"
-                    : "Generate"}
-                  {submitStatus.type === "loading" && (
-                    <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                  )}
-                </button>
-              </div>
+                <hr className="mt-6 mb-4 border-t border-gray-3 dark:border-stroke-dark" />
+
+                <div className="flex flex-col gap-3 sm:flex-row">
+                  <button
+                    className="flex w-full items-center justify-center rounded-xl border border-gray-3 px-4 py-3 text-sm font-semibold text-gray-7 transition hover:bg-gray-1 dark:border-stroke-dark dark:text-dark-7 dark:hover:bg-dark-3 disabled:opacity-60 sm:w-1/2"
+                    onClick={() => {
+                      setShowModal(false);
+                      setSubmitStatus({ type: "idle" });
+                      setForm({ ...defaultForm });
+                      setEditRow(null);
+                    }}
+                    disabled={submitStatus.type === "loading"}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 py-3 text-sm font-semibold text-white transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-70 sm:w-1/2"
+                    onClick={handleSubmit}
+                    disabled={submitStatus.type === "loading"}
+                  >
+                    {submitStatus.type === "loading"
+                      ? editRow
+                        ? "Saving..."
+                        : "Generating..."
+                      : editRow
+                      ? "Save changes"
+                      : "Generate Script"}
+                    {submitStatus.type === "loading" && (
+                      <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                    )}
+                  </button>
+                </div>
+
             </div>
           </div>
         </ModalPortal>

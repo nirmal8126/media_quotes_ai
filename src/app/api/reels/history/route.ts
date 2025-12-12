@@ -9,12 +9,26 @@ export async function GET(request: Request) {
   }
 
   const { user, applyCookies } = session;
-  const { data, error } = await supabaseAdmin
+  const { searchParams } = new URL(request.url);
+  const channelParam = searchParams.get('channelId') || searchParams.get('channel_id');
+
+  const query = supabaseAdmin
     .from("reels")
-    .select("id, status, video_url, thumbnail_url, renderer_job_id, script_id, created_at")
+    .select("id, status, video_url, thumbnail_url, renderer_job_id, script_id, channel_id, created_at")
     .eq("user_id", user.id)
     .order("created_at", { ascending: false })
     .limit(20);
+
+  const channelFilter = channelParam?.trim();
+  if (channelFilter) {
+    if (channelFilter.toLowerCase() === 'none' || channelFilter.toLowerCase() === 'null') {
+      query.is('channel_id', null);
+    } else {
+      query.eq('channel_id', channelFilter);
+    }
+  }
+
+  const { data, error } = await query;
 
   if (error) {
     const missing =
@@ -52,6 +66,7 @@ export async function GET(request: Request) {
       rendererJobId: row.renderer_job_id,
       scriptId: row.script_id,
       scriptText: row.script_id ? scripts[row.script_id] ?? "" : undefined,
+      channelId: (row as any).channel_id ?? null,
       createdAt: row.created_at,
     })),
   });

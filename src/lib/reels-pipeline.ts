@@ -10,6 +10,7 @@ export type ReelRecord = {
   id: string;
   userId: string;
   scriptId: string;
+  channelId?: string | null;
   personaId?: string | null;
   platform?: string | null;
   tone?: string | null;
@@ -27,6 +28,7 @@ export type ReelRecord = {
 export type ScriptRecord = {
   id: string;
   userId: string;
+  channelId?: string | null;
   personaId?: string | null;
   platform?: string | null;
   tone?: string | null;
@@ -64,6 +66,7 @@ type GeneratePayload = {
     musicUploadId?: string | null;
     trendingAudioId?: string | null;
   };
+  channelId?: string | null;
 };
 
 class HttpError extends Error {
@@ -104,6 +107,7 @@ function mapScript(row: Record<string, any>): ScriptRecord {
   return {
     id: row.id,
     userId: row.user_id,
+    channelId: row.channel_id ?? null,
     personaId: row.persona_id ?? null,
     platform: row.platform ?? null,
     tone: row.tone ?? null,
@@ -121,6 +125,7 @@ function mapReel(row: Record<string, any>): ReelRecord {
     id: row.id,
     userId: row.user_id,
     scriptId: row.script_id,
+    channelId: row.channel_id ?? null,
     personaId: row.persona_id ?? null,
     platform: row.platform ?? null,
     tone: row.tone ?? null,
@@ -168,6 +173,7 @@ async function insertScriptRecord(payload: {
   tone?: string | null;
   style?: string | null;
   durationSec?: number | null;
+  channelId?: string | null;
   inputPrompt?: string | null;
   text: string;
 }): Promise<ScriptRecord> {
@@ -175,6 +181,7 @@ async function insertScriptRecord(payload: {
     .from('scripts')
     .insert({
       user_id: payload.userId,
+      channel_id: payload.channelId || null,
       persona_id: payload.personaId || null,
       platform: payload.platform || null,
       tone: payload.tone || null,
@@ -213,6 +220,7 @@ async function insertReelRecord(payload: {
   tone?: string | null;
   style?: string | null;
   durationSec?: number | null;
+  channelId?: string | null;
   status: ReelStatus;
   rendererJobId?: string | null;
   videoUrl?: string | null;
@@ -224,6 +232,7 @@ async function insertReelRecord(payload: {
     .insert({
       user_id: payload.userId,
       script_id: payload.scriptId,
+      channel_id: payload.channelId || null,
       persona_id: payload.personaId || null,
       platform: payload.platform || null,
       tone: payload.tone || null,
@@ -320,6 +329,7 @@ export async function startReelGeneration(user: User, payload: GeneratePayload):
   const durationSec = clampDuration(payload.durationSec);
   const style = normalizeText(payload.style) || null;
   const personaId = normalizeText(payload.personaId) || null;
+  const channelId = normalizeText(payload.channelId) || null;
   const provider = pickProvider({ bodyProvider: null, user });
 
   if (!idea && !scriptTextInput) {
@@ -340,6 +350,7 @@ export async function startReelGeneration(user: User, payload: GeneratePayload):
 
   const script = await insertScriptRecord({
     userId: user.id,
+    channelId,
     personaId,
     platform,
     tone,
@@ -359,6 +370,7 @@ export async function startReelGeneration(user: User, payload: GeneratePayload):
   const reelStatus: ReelStatus = rendererJob.status === 'ready' ? 'READY' : 'RENDERING';
   let reel = await insertReelRecord({
     userId: user.id,
+    channelId,
     scriptId: script.id,
     personaId,
     platform,

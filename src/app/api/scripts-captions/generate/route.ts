@@ -45,6 +45,7 @@ export async function POST(request: Request) {
   }
 
   const hook = (body.hook ?? "").trim() || undefined;
+  const channelId = (body.channelId ?? body.channel_id ?? "").trim() || null;
   const provider = pickProvider({ bodyProvider: body.provider, user, fallback: defaultProvider });
 
   try {
@@ -54,6 +55,7 @@ export async function POST(request: Request) {
 
     const saved = await storeGeneratedReel({
       userId: user.id,
+      channelId,
       tone: normalized.tone,
       platform: normalized.platform,
       hook: hook ?? scriptResult.hook,

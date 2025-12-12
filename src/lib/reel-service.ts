@@ -4,6 +4,7 @@ import { generateCompletion, type LlmProvider } from '@/lib/openai';
 
 export interface GeneratedReelRecord {
   userId: string;
+  channelId?: string | null;
   tone?: string;
   platform?: string;
   script?: string;
@@ -57,6 +58,7 @@ export async function incrementUserQuota(userId: string, amount = 1) {
 export async function storeGeneratedReel(record: GeneratedReelRecord) {
   const payload = {
     user_id: record.userId,
+    channel_id: record.channelId || null,
     tone: record.tone || null,
     platform: record.platform || null,
     script: record.script || null,

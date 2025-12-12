@@ -15,6 +15,7 @@ export async function POST(request: Request) {
 
   const tone = body.tone ?? 'educational';
   const platform = body.platform ?? 'instagram';
+  const channelId = (body.channelId ?? body.channel_id ?? '').trim() || null;
   const provider = pickProvider({ bodyProvider: body.provider, user, fallback: defaultProvider });
   const { quota } = await fetchUserQuota(user.id);
 
@@ -23,7 +24,14 @@ export async function POST(request: Request) {
   }
 
   const ideas = await generateIdeaList(tone, platform, provider);
-  await storeGeneratedReel({ userId: user.id, tone, platform, hook: ideas[0]?.hook, script: ideas[0]?.title });
+  await storeGeneratedReel({
+    userId: user.id,
+    channelId,
+    tone,
+    platform,
+    hook: ideas[0]?.hook,
+    script: ideas[0]?.title,
+  });
 
   const response = NextResponse.json({
     message: 'Ideas generated',
