@@ -2,6 +2,7 @@ import { supabaseAdmin } from '@/lib/supabase';
 import { generateCompletion, type LlmProvider } from '@/lib/openai';
 import { pickProvider } from '@/lib/llm-provider';
 import { getChannel, type ChannelRecord } from '@/lib/channel-service';
+import { synthesizeWithElevenLabs } from '@/lib/tts';
 import type { User } from '@supabase/supabase-js';
 import type { PostgrestError } from '@supabase/supabase-js';
 
@@ -65,6 +66,7 @@ type GeneratePayload = {
   platform?: string;
   tone?: string;
   style?: string;
+  language?: string;
   personaId?: string | null;
   durationSec?: number;
   withVoiceover?: boolean;
@@ -175,13 +177,14 @@ function mapReel(row: Record<string, any>): ReelRecord {
 async function generateScriptFromIdea(options: {
   idea: string;
   tone: string;
+  language?: string;
   platform: string;
   durationSec: number;
   personaId?: string | null;
   provider?: LlmProvider;
   channel?: ChannelRecord | null;
 }): Promise<string> {
-  const { idea, tone, platform, durationSec, provider, channel } = options;
+  const { idea, tone, platform, durationSec, provider, channel, language } = options;
   const channelLines: string[] = [];
   if (channel) {
     channelLines.push(`Channel: ${channel.name}`);
@@ -196,6 +199,7 @@ async function generateScriptFromIdea(options: {
   const prompt = [
     `Write a ${durationSec}-second vertical video script for ${platform}.`,
     `Tone: ${tone}.`,
+    language ? `Language: ${language}.` : '',
     `Idea: ${idea}.`,
     'Keep it on-topic for the channel and avoid going off-theme.',
     'Return the script as plain text with clear voiceover lines.',
@@ -449,13 +453,81 @@ async function triggerRenderer(options: {
   } | null;
 }) {
   const jobId = `renderer_${Date.now()}`;
-  // Placeholder: replace with real renderer call. For now, we mark as ready immediately.
+  let audioUrl: string | null = null;
+
+  // Attempt TTS via ElevenLabs
+  if (options.withVoiceover !== false) {
+    const ttsKey = process.env.TTS_PROVIDER_API_KEY;
+    const defaultVoice = process.env.TTS_VOICE_DEFAULT;
+    const voiceId = options.audio?.aiVoiceId || defaultVoice;
+    if (ttsKey && voiceId) {
+      try {
+        audioUrl = await synthesizeWithElevenLabs({
+          text: options.scriptText,
+          voiceId,
+          apiKey: ttsKey,
+          mediaBaseUrl: process.env.MEDIA_CDN_BASE_URL,
+          mediaDir: process.env.MEDIA_DIR || undefined,
+        });
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error('TTS synthesis failed, continuing without audio:', err);
+      }
+    }
+  }
+
+  const rendererUrl = process.env.RENDERER_API_URL;
+  const rendererKey = process.env.RENDERER_API_KEY;
+  if (rendererUrl && rendererKey) {
+    try {
+      const res = await fetch(`${rendererUrl.replace(/\/$/, '')}/render`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${rendererKey}`,
+        },
+        body: JSON.stringify({
+          script: options.scriptText,
+          style: options.style,
+          template: options.template,
+          durationSec: options.durationSec,
+          brand: options.brand,
+          audioUrl,
+        }),
+      });
+
+      if (res.ok) {
+        const body = (await res.json().catch(() => ({}))) as {
+          jobId?: string;
+          status?: string;
+          videoUrl?: string;
+          thumbnailUrl?: string;
+          error?: string | null;
+        };
+        const status = body.status === 'ready' ? 'ready' : 'rendering';
+        return {
+          id: body.jobId || jobId,
+          status,
+          videoUrl: body.videoUrl || defaultAssets(jobId).videoUrl,
+          thumbnailUrl: body.thumbnailUrl || defaultAssets(jobId).thumbnailUrl,
+          audioUrl,
+          error: body.error || null,
+        };
+      }
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('Renderer call failed, falling back to defaults:', err);
+    }
+  }
+
+  // Fallback to placeholder assets
   const assets = defaultAssets(jobId);
   return {
     id: jobId,
     status: 'ready' as const,
     videoUrl: assets.videoUrl,
     thumbnailUrl: assets.thumbnailUrl,
+    audioUrl,
     error: null as string | null,
   };
 }
@@ -474,6 +546,7 @@ export async function startReelGeneration(user: User, payload: GeneratePayload):
   const platform = normalizePlatform(payload.platform ?? channel?.platform ?? null);
   const tone = normalizeTone(payload.tone ?? channel?.tone ?? null);
   const style = normalizeText(payload.style ?? channel?.visualStyle ?? channel?.style ?? null) || null;
+  const language = normalizeText(payload.language ?? channel?.language ?? null) || null;
   const durationSec = clampDuration(payload.durationSec ?? channel?.durationDefault ?? null);
   const personaId = normalizeText(payload.personaId ?? channel?.personaId ?? null) || null;
   const template = normalizeText(payload.template ?? channel?.style ?? null) || null;
@@ -500,6 +573,7 @@ export async function startReelGeneration(user: User, payload: GeneratePayload):
     finalScript = await generateScriptFromIdea({
       idea: ideaForPrompt,
       tone,
+      language: language || undefined,
       platform,
       durationSec,
       personaId: personaId || undefined,
@@ -515,6 +589,7 @@ export async function startReelGeneration(user: User, payload: GeneratePayload):
     platform,
     tone,
     style,
+    language: language || null,
     template,
     brandColors,
     brandFonts,

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
+import { labelForLanguage, languageOptions, resolveLanguageCode } from "@/lib/languages";
 
 type ReelHistoryItem = {
   id: string;
@@ -11,6 +12,7 @@ type ReelHistoryItem = {
   tone?: string | null;
   style?: string | null;
   template?: string | null;
+  language?: string | null;
   videoUrl?: string | null;
   thumbnailUrl?: string | null;
   rendererJobId?: string | null;
@@ -51,6 +53,7 @@ type Channel = {
   endScreenTemplate?: string | null;
   durationDefault?: number | null;
   topic?: string | null;
+  language?: string | null;
 };
 type ChannelIdea = {
   id: string;
@@ -125,6 +128,7 @@ const defaultForm = {
   durationSec: 15,
   withVoiceover: true,
   channelId: "",
+  language: "",
   brandColors: "",
   brandFonts: "",
   logoUrl: "",
@@ -162,6 +166,8 @@ export default function AiReelsPage() {
   const [voiceId, setVoiceId] = useState<string>("");
   const [musicTrackId, setMusicTrackId] = useState<string>("");
   const [trendingAudioId, setTrendingAudioId] = useState<string>("");
+  const [languageQuery, setLanguageQuery] = useState(labelForLanguage(defaultForm.language));
+  const [showLanguageList, setShowLanguageList] = useState(false);
   const selectedChannel = useMemo(
     () => channels.find((c) => c.id === form.channelId),
     [channels, form.channelId]
@@ -229,6 +235,21 @@ export default function AiReelsPage() {
     const start = (currentPage - 1) * pageSize;
     return filteredHistory.slice(start, start + pageSize);
   }, [filteredHistory, currentPage, pageSize]);
+
+  const filteredLanguages = useMemo(() => {
+    if (!showLanguageList) return [];
+    const term = (languageQuery || "").trim().toLowerCase();
+    if (!term || term === "choose a language...") return languageOptions;
+
+    const exactMatch = languageOptions.some(
+      (lang) => lang.label.toLowerCase() === term || lang.code.toLowerCase() === term
+    );
+    if (exactMatch) return languageOptions;
+
+    return languageOptions.filter(
+      (lang) => lang.label.toLowerCase().includes(term) || lang.code.toLowerCase().includes(term)
+    );
+  }, [languageQuery, showLanguageList]);
 
   useEffect(() => {
     setPage(1);
@@ -368,12 +389,15 @@ export default function AiReelsPage() {
       type: "loading",
       message: "Generating script and starting render...",
     });
+    const languageValue = (form.language || languageQuery || "").trim();
+    const normalizedLanguage = languageValue ? resolveLanguageCode(languageValue) : undefined;
     try {
       const res = await fetch("/api/reels/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...form,
+          language: normalizedLanguage,
           multiVariants: true,
           storyboard: true,
           brand: {
@@ -498,6 +522,8 @@ export default function AiReelsPage() {
             setResult(null);
             setStatus({ type: "idle" });
             setForm({ ...defaultForm });
+            setLanguageQuery(labelForLanguage(defaultForm.language));
+            setShowLanguageList(false);
             setShowModal(true);
           }}
           className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-primary/90"
@@ -926,7 +952,7 @@ export default function AiReelsPage() {
                 Enter handles (comma separated) like @channel1, @channel2. Platform follows current selection.
               </p>
               <input
-                className="mt-1 w-full rounded-lg border border-gray-3 bg-white px-3 py-2 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+                className="mt-1 w-full rounded-lg border border-gray-3 bg-white px-3 py-2 text-sm text-dark outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
                 placeholder="@handle1, @handle2"
                 value={competitors}
                 onChange={(e) => setCompetitors(e.target.value)}
@@ -1092,6 +1118,8 @@ export default function AiReelsPage() {
                   if (!form.channelId) return;
                   setBulkStatus({ type: "loading", message: "Bulk generating..." });
                   try {
+                    const languageValue = (form.language || languageQuery || "").trim();
+                    const normalizedLanguage = languageValue ? resolveLanguageCode(languageValue) : undefined;
                     const res = await fetch("/api/automation/bulk", {
                       method: "POST",
                       headers: { "Content-Type": "application/json" },
@@ -1101,6 +1129,7 @@ export default function AiReelsPage() {
                         spacingDays: bulkSpacing,
                         platform: form.platform,
                         tone: form.tone,
+                        language: normalizedLanguage,
                       }),
                     });
                     const body = await res.json().catch(() => ({}));
@@ -1201,6 +1230,8 @@ export default function AiReelsPage() {
                     setShowModal(false);
                     setStatus({ type: "idle" });
                     setForm({ ...defaultForm });
+                    setLanguageQuery(labelForLanguage(defaultForm.language));
+                    setShowLanguageList(false);
                   }}
                   className="rounded-full bg-gray-1 px-3 py-1 text-sm font-semibold text-gray-7 hover:bg-gray-2 dark:bg-dark-3 dark:text-dark-7 dark:hover:bg-dark-4"
                 >
@@ -1217,7 +1248,7 @@ export default function AiReelsPage() {
                     </span>
                   </div>
                   <textarea
-                    className="mt-2 h-28 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+                    className="mt-2 h-28 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm text-dark outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
                     placeholder="e.g., Morning discipline reel with a strong hook"
                     value={form.idea}
                     onChange={(e) =>
@@ -1231,7 +1262,7 @@ export default function AiReelsPage() {
                     <span className="text-xs font-normal text-gray-6 dark:text-dark-6">(paste if you have one)</span>
                   </div>
                   <textarea
-                    className="mt-2 h-28 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+                    className="mt-2 h-28 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm text-dark outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
                     placeholder="Paste your script. Leave empty to let AI write it."
                     value={form.scriptText}
                     onChange={(e) =>
@@ -1251,12 +1282,14 @@ export default function AiReelsPage() {
                     <span className="text-xs font-normal text-gray-6 dark:text-dark-6">(pick to auto-fill defaults)</span>
                   </div>
                   <select
-                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm text-dark outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
                     value={form.channelId}
                     onChange={(e) => {
                       const selected = channels.find(
                         (c) => c.id === e.target.value
                       );
+                      const nextLanguage = selected?.language || form.language || "";
+                      setLanguageQuery(labelForLanguage(nextLanguage));
                       setForm((prev) => ({
                         ...prev,
                         channelId: e.target.value,
@@ -1266,6 +1299,7 @@ export default function AiReelsPage() {
                         tone: selected?.tone || prev.tone,
                         style: selected?.style || prev.style,
                         template: selected?.template || prev.template,
+                        language: selected?.language || prev.language,
                         durationSec:
                           typeof selected?.durationDefault === "number" &&
                           Number.isFinite(selected.durationDefault)
@@ -1304,7 +1338,7 @@ export default function AiReelsPage() {
                     <span className="text-xs font-normal text-gray-6 dark:text-dark-6">(instagram, youtube, etc.)</span>
                   </div>
                   <select
-                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm text-dark outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
                     value={form.platform}
                     onChange={(e) =>
                       setForm((prev) => ({ ...prev, platform: e.target.value }))
@@ -1317,13 +1351,73 @@ export default function AiReelsPage() {
                     ))}
                   </select>
                 </label>
+                <label className="relative block text-sm font-semibold text-dark dark:text-dark-7">
+                  <div className="flex items-center gap-2">
+                    <span>Language</span>
+                    <span className="text-xs font-normal text-gray-6 dark:text-dark-6">(English, Hindi, etc.)</span>
+                  </div>
+                  <div className="relative mt-2">
+                    <input
+                      className="w-full rounded-lg border border-gray-3 bg-white px-4 pr-10 py-3 text-sm text-dark outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+                      name="language"
+                      value={languageQuery}
+                      onFocus={() => setShowLanguageList(true)}
+                      onClick={() => setShowLanguageList(true)}
+                      onChange={(e) => {
+                        const next = e.target.value;
+                        setLanguageQuery(next);
+                        setForm((prev) => ({ ...prev, language: next }));
+                        setShowLanguageList(true);
+                      }}
+                      placeholder="Choose a language..."
+                      autoComplete="off"
+                      onBlur={() => {
+                        setTimeout(() => setShowLanguageList(false), 120);
+                      }}
+                    />
+                    <button
+                      type="button"
+                      aria-label="Show languages"
+                      onMouseDown={(ev) => {
+                        ev.preventDefault();
+                        setShowLanguageList((prev) => !prev);
+                      }}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 flex h-8 w-8 items-center justify-center rounded-md text-gray-6 transition hover:bg-gray-2 dark:text-dark-6 dark:hover:bg-dark-4"
+                    >
+                      ▼
+                    </button>
+                  </div>
+                  {showLanguageList && (
+                    <div className="absolute z-20 mt-1 max-h-56 w-full overflow-auto rounded-lg border border-gray-3 bg-white shadow-card-2 dark:border-stroke-dark dark:bg-dark-3">
+                      {filteredLanguages.length === 0 && (
+                        <div className="px-3 py-2 text-sm text-gray-6 dark:text-dark-6">No matches</div>
+                      )}
+                      {filteredLanguages.map((lang) => (
+                        <button
+                          type="button"
+                          key={`${lang.code}-${lang.label}`}
+                          className="flex w-full items-center justify-between px-3 py-2 text-left text-sm text-dark hover:bg-gray-1 dark:text-dark-8 dark:hover:bg-dark-4"
+                          onMouseDown={(ev) => {
+                            ev.preventDefault();
+                            setLanguageQuery(lang.label);
+                            setForm((prev) => ({ ...prev, language: lang.label }));
+                            setShowLanguageList(false);
+                          }}
+                        >
+                          <span>{lang.label}</span>
+                          <span className="text-xs text-gray-5 dark:text-dark-6">{lang.code.toUpperCase()}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </label>
                 <label className="block text-sm font-semibold text-dark dark:text-dark-7">
                   <div className="flex items-center gap-2">
                     <span>Template</span>
                     <span className="text-xs font-normal text-gray-6 dark:text-dark-6">(meme, cinematic, etc.)</span>
                   </div>
                   <select
-                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm text-dark outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
                     value={form.template}
                     onChange={(e) =>
                       setForm((prev) => ({ ...prev, template: e.target.value }))
@@ -1342,7 +1436,7 @@ export default function AiReelsPage() {
                     <span className="text-xs font-normal text-gray-6 dark:text-dark-6">(motivational, funny, etc.)</span>
                   </div>
                   <select
-                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm text-dark outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
                     value={form.tone}
                     onChange={(e) =>
                       setForm((prev) => ({ ...prev, tone: e.target.value }))
@@ -1361,7 +1455,7 @@ export default function AiReelsPage() {
                     <span className="text-xs font-normal text-gray-6 dark:text-dark-6">(cinematic, minimal, etc.)</span>
                   </div>
                   <select
-                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm text-dark outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
                     value={form.style}
                     onChange={(e) =>
                       setForm((prev) => ({ ...prev, style: e.target.value }))
@@ -1380,7 +1474,7 @@ export default function AiReelsPage() {
                     <span className="text-xs font-normal text-gray-6 dark:text-dark-6">(persona UUID)</span>
                   </div>
                   <input
-                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm text-dark outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
                     placeholder="persona UUID"
                     value={form.personaId}
                     onChange={(e) =>
@@ -1400,7 +1494,7 @@ export default function AiReelsPage() {
                     type="number"
                     min={10}
                     max={180}
-                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm text-dark outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
                     value={form.durationSec}
                     onChange={(e) =>
                       setForm((prev) => ({
@@ -1417,7 +1511,7 @@ export default function AiReelsPage() {
                     <span className="text-xs font-normal text-gray-6 dark:text-dark-6">(comma separated)</span>
                   </div>
                   <input
-                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm text-dark outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
                     placeholder="#F97316, #7C3AED"
                     value={form.brandColors}
                     onChange={(e) =>
@@ -1431,7 +1525,7 @@ export default function AiReelsPage() {
                     <span className="text-xs font-normal text-gray-6 dark:text-dark-6">(comma separated)</span>
                   </div>
                   <input
-                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm text-dark outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
                     placeholder="Poppins, Satoshi"
                     value={form.brandFonts}
                     onChange={(e) =>
@@ -1445,7 +1539,7 @@ export default function AiReelsPage() {
                     <span className="text-xs font-normal text-gray-6 dark:text-dark-6">(optional)</span>
                   </div>
                   <input
-                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm text-dark outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
                     placeholder="https://example.com/logo.png"
                     value={form.logoUrl}
                     onChange={(e) =>
@@ -1459,7 +1553,7 @@ export default function AiReelsPage() {
                     <span className="text-xs font-normal text-gray-6 dark:text-dark-6">(optional)</span>
                   </div>
                   <input
-                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm text-dark outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
                     placeholder="CTA + logo end card"
                     value={form.endScreenTemplate}
                     onChange={(e) =>
@@ -1473,7 +1567,7 @@ export default function AiReelsPage() {
                     <span className="text-xs font-normal text-gray-6 dark:text-dark-6">(optional)</span>
                   </div>
                   <input
-                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm text-dark outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
                     placeholder="voice_123"
                     value={voiceId}
                     onChange={(e) => setVoiceId(e.target.value)}
@@ -1485,7 +1579,7 @@ export default function AiReelsPage() {
                     <span className="text-xs font-normal text-gray-6 dark:text-dark-6">(optional)</span>
                   </div>
                   <input
-                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm text-dark outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
                     placeholder="music_upload_123"
                     value={musicTrackId}
                     onChange={(e) => setMusicTrackId(e.target.value)}
@@ -1497,7 +1591,7 @@ export default function AiReelsPage() {
                     <span className="text-xs font-normal text-gray-6 dark:text-dark-6">(optional)</span>
                   </div>
                   <input
-                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm text-dark outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
                     placeholder="trending_audio_123"
                     value={trendingAudioId}
                     onChange={(e) => setTrendingAudioId(e.target.value)}
@@ -1543,6 +1637,8 @@ export default function AiReelsPage() {
                     setShowModal(false);
                     setStatus({ type: "idle" });
                     setForm({ ...defaultForm });
+                    setLanguageQuery(labelForLanguage(defaultForm.language));
+                    setShowLanguageList(false);
                   }}
                   disabled={status.type === "loading"}
                 >

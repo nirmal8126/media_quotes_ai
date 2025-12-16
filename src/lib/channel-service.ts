@@ -15,6 +15,7 @@ export type ChannelRecord = {
   logoUrl?: string | null;
   audience?: string | null;
   contentType?: string | null;
+  language?: string | null;
   styleRules?: string | null;
   visualStyle?: string | null;
   postingFrequency?: string | null;
@@ -45,6 +46,7 @@ function mapChannel(row: Record<string, any>): ChannelRecord {
     logoUrl: row.logo_url ?? null,
     audience: row.audience ?? null,
     contentType: row.content_type ?? null,
+    language: row.language ?? null,
     styleRules: row.style_rules ?? null,
     visualStyle: row.visual_style ?? null,
     postingFrequency: row.posting_frequency ?? null,
@@ -114,6 +116,7 @@ export async function createChannel(userId: string, payload: {
   logoUrl?: string | null;
   audience?: string | null;
   contentType?: string | null;
+  language?: string | null;
   styleRules?: string | null;
   visualStyle?: string | null;
   postingFrequency?: string | null;
@@ -142,6 +145,7 @@ export async function createChannel(userId: string, payload: {
       logo_url: payload.logoUrl || null,
       audience: payload.audience || null,
       content_type: payload.contentType || null,
+      language: payload.language || null,
       style_rules: payload.styleRules || null,
       visual_style: payload.visualStyle || null,
       posting_frequency: payload.postingFrequency || null,
@@ -190,6 +194,7 @@ export async function updateChannel(userId: string, channelId: string, payload: 
   logoUrl: string | null;
   audience: string | null;
   contentType: string | null;
+  language: string | null;
   styleRules: string | null;
   visualStyle: string | null;
   postingFrequency: string | null;
@@ -217,6 +222,7 @@ export async function updateChannel(userId: string, channelId: string, payload: 
   if (payload.logoUrl !== undefined) updates.logo_url = payload.logoUrl;
   if (payload.audience !== undefined) updates.audience = payload.audience;
   if (payload.contentType !== undefined) updates.content_type = payload.contentType;
+  if (payload.language !== undefined) updates.language = payload.language;
   if (payload.styleRules !== undefined) updates.style_rules = payload.styleRules;
   if (payload.visualStyle !== undefined) updates.visual_style = payload.visualStyle;
   if (payload.postingFrequency !== undefined) updates.posting_frequency = payload.postingFrequency;
