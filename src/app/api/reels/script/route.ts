@@ -17,6 +17,7 @@ export async function POST(request: Request) {
 
     const tone = body.tone ?? 'educational';
     const platform = body.platform ?? 'instagram';
+    const channelId = (body.channelId ?? body.channel_id ?? '').trim() || null;
     const provider = pickProvider({ bodyProvider: body.provider, user, fallback: defaultProvider });
     const { user: quotaUser } = await fetchUserQuota(user.id);
     const quota = evaluateQuota(quotaUser.plan_tier, quotaUser.quota_used);
@@ -28,6 +29,7 @@ export async function POST(request: Request) {
     const assets = await generateScriptAssets(tone, platform, provider);
     await storeGeneratedReel({
       userId: user.id,
+      channelId,
       tone,
       platform,
       script: assets.script,

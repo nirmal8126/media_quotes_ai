@@ -38,6 +38,7 @@ export async function POST(request: Request) {
     bestTime?: string;
     status?: string;
     platform?: string;
+    channelId?: string;
   };
 
   const reelId = body.reelId;
@@ -51,18 +52,20 @@ export async function POST(request: Request) {
   const bestTime = body.bestTime || "Best time TBD";
   const status = body.status || "planned";
   const platform = body.platform || "instagram";
+  const channelId = (body.channelId ?? body.channel_id ?? "").trim() || null;
 
   const { data, error } = await supabaseAdmin
     .from("content_calendar")
     .insert({
       user_id: user.id,
       reel_id: reelId,
+      channel_id: channelId,
       scheduled_date: scheduledDate,
       best_time: bestTime,
       status,
       platform,
     })
-    .select("id, reel_id, scheduled_date, best_time, status, platform")
+    .select("id, reel_id, channel_id, scheduled_date, best_time, status, platform")
     .maybeSingle();
 
   if (error) {

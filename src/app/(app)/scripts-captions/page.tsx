@@ -1,8 +1,19 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
-import type { ContentType, LengthPreset, Platform, ToneStyle } from "@/types/generation";
+import type {
+  ContentType,
+  LengthPreset,
+  Platform,
+  ToneStyle,
+} from "@/types/generation";
+
+function ModalPortal({ children }: { children: React.ReactNode }) {
+  if (typeof document === "undefined") return null;
+  return createPortal(children, document.body);
+}
 
 type ScriptRow = {
   id: string;
@@ -24,8 +35,22 @@ type Status =
   | { type: "success"; message: string };
 
 const contentTypes: ContentType[] = ["caption", "short_script", "long_script"];
-const platformOptions: Platform[] = ["tiktok", "instagram_reels", "youtube_shorts", "facebook_reels", "linkedin"];
-const toneOptions: ToneStyle[] = ["motivational", "poetic", "funny", "savage", "emotional", "business", "informative"];
+const platformOptions: Platform[] = [
+  "tiktok",
+  "instagram_reels",
+  "youtube_shorts",
+  "facebook_reels",
+  "linkedin",
+];
+const toneOptions: ToneStyle[] = [
+  "motivational",
+  "poetic",
+  "funny",
+  "savage",
+  "emotional",
+  "business",
+  "informative",
+];
 const lengthOptions: LengthPreset[] = ["short", "medium", "long"];
 
 const defaultForm = {
@@ -53,7 +78,10 @@ export default function ScriptsCaptionsPage() {
   const [generatedRows, setGeneratedRows] = useState<ScriptRow[]>([]);
   const [deleteStatus, setDeleteStatus] = useState<Status>({ type: "idle" });
   const [submitStatus, setSubmitStatus] = useState<Status>({ type: "idle" });
-  const [toast, setToast] = useState<{ type: "success" | "error"; message: string } | null>(null);
+  const [toast, setToast] = useState<{
+    type: "success" | "error";
+    message: string;
+  } | null>(null);
   const [search, setSearch] = useState("");
   const [pageSize, setPageSize] = useState(5);
   const [page, setPage] = useState(1);
@@ -65,7 +93,9 @@ export default function ScriptsCaptionsPage() {
       setLoading(true);
       setError(null);
       try {
-        const res = await fetch("/api/scripts-captions/history", { cache: "no-store" });
+        const res = await fetch("/api/scripts-captions/history", {
+          cache: "no-store",
+        });
         const body = await res.json().catch(() => ({}));
         if (!res.ok) {
           throw new Error(body?.error || "Unable to load scripts/captions.");
@@ -98,9 +128,15 @@ export default function ScriptsCaptionsPage() {
     }
   }, [showModal, editRow]);
 
-  const pushToast = (message: string, type: "success" | "error" = "success") => {
+  const pushToast = (
+    message: string,
+    type: "success" | "error" = "success"
+  ) => {
     setToast({ type, message });
-    setTimeout(() => setToast((prev) => (prev?.message === message ? null : prev)), 1500);
+    setTimeout(
+      () => setToast((prev) => (prev?.message === message ? null : prev)),
+      1500
+    );
   };
 
   const copyToClipboard = async (text: string, label: string) => {
@@ -148,7 +184,14 @@ export default function ScriptsCaptionsPage() {
     const term = search.trim().toLowerCase();
     if (!term) return rows;
     return rows.filter((row) => {
-      const haystack = [row.topic, row.tone, row.platform, row.hook, row.script, row.caption]
+      const haystack = [
+        row.topic,
+        row.tone,
+        row.platform,
+        row.hook,
+        row.script,
+        row.caption,
+      ]
         .filter(Boolean)
         .join(" ")
         .toLowerCase();
@@ -174,7 +217,10 @@ export default function ScriptsCaptionsPage() {
       setSubmitStatus({ type: "error", message: "Description is required." });
       return;
     }
-    setSubmitStatus({ type: "loading", message: editRow ? "Saving..." : "Generating..." });
+    setSubmitStatus({
+      type: "loading",
+      message: editRow ? "Saving..." : "Generating...",
+    });
     try {
       if (editRow) {
         const res = await fetch("/api/scripts-captions/update", {
@@ -253,7 +299,10 @@ export default function ScriptsCaptionsPage() {
       }
       resetForm();
     } catch (err) {
-      setSubmitStatus({ type: "error", message: (err as Error).message || "Unable to save." });
+      setSubmitStatus({
+        type: "error",
+        message: (err as Error).message || "Unable to save.",
+      });
     }
   };
 
@@ -261,7 +310,10 @@ export default function ScriptsCaptionsPage() {
     if (!deleteRow) return;
     setDeleteStatus({ type: "loading", message: "Deleting..." });
     try {
-      const res = await fetch(`/api/scripts-captions/delete?id=${encodeURIComponent(deleteRow.id)}`, { method: "DELETE" });
+      const res = await fetch(
+        `/api/scripts-captions/delete?id=${encodeURIComponent(deleteRow.id)}`,
+        { method: "DELETE" }
+      );
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {
         throw new Error(body?.error || "Failed to delete.");
@@ -270,7 +322,10 @@ export default function ScriptsCaptionsPage() {
       setDeleteStatus({ type: "success", message: "Deleted." });
       setDeleteRow(null);
     } catch (err) {
-      setDeleteStatus({ type: "error", message: (err as Error).message || "Unable to delete." });
+      setDeleteStatus({
+        type: "error",
+        message: (err as Error).message || "Unable to delete.",
+      });
     }
   };
 
@@ -280,19 +335,27 @@ export default function ScriptsCaptionsPage() {
         <div
           className={cn(
             "fixed right-4 top-4 z-30 rounded-md px-4 py-3 text-sm font-semibold shadow-lg",
-            toast.type === "success" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700",
+            toast.type === "success"
+              ? "bg-green-100 text-green-700"
+              : "bg-red-100 text-red-700"
           )}
         >
           {toast.message}
         </div>
       )}
 
-      <div className="rounded-2xl border border-gray-3 bg-white p-5 shadow-card-2">
+      <div className="rounded-2xl border border-gray-3 bg-white p-5 shadow-card-2 dark:border-stroke-dark dark:bg-dark-2">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.35em] text-primary">Scripts & Captions</p>
-            <h1 className="text-2xl font-bold text-dark">Generated scripts</h1>
-            <p className="text-sm text-gray-6">View your recent scripts/captions and create new ones.</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.35em] text-primary">
+              Scripts & Captions
+            </p>
+            <h1 className="text-2xl font-bold text-dark dark:text-dark-8">
+              Generated scripts
+            </h1>
+            <p className="text-sm text-gray-6 dark:text-dark-6">
+              View your recent scripts/captions and create new ones.
+            </p>
           </div>
           <button
             className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-primary/90"
@@ -310,47 +373,63 @@ export default function ScriptsCaptionsPage() {
         {generatedRows.length > 0 && (
           <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {generatedRows.map((row) => (
-              <div key={row.id} className="rounded-xl border border-gray-3 bg-white p-4 shadow-card-2">
+              <div
+                key={row.id}
+                className="rounded-xl border border-gray-3 bg-white p-4 shadow-card-2 dark:border-stroke-dark dark:bg-dark-2"
+              >
                 <div className="mb-2 flex items-center justify-between text-xs font-semibold uppercase text-primary">
                   <span>Variation {row.variationIndex ?? 1}</span>
-                  <span className="rounded-full bg-gray-1 px-2 py-1 text-[10px] text-gray-6">New</span>
+                  <span className="rounded-full bg-gray-1 px-2 py-1 text-[10px] text-gray-6 dark:bg-dark-3 dark:text-dark-6">
+                    New
+                  </span>
                 </div>
-                <p className="text-sm font-semibold text-dark line-clamp-3">{row.script || row.caption || "—"}</p>
-                <div className="mt-2 flex flex-wrap gap-2 text-[11px] font-semibold uppercase text-gray-7">
-                  <span className="rounded-full bg-gray-2 px-2.5 py-1">{row.tone || "tone"}</span>
-                  <span className="rounded-full bg-gray-2 px-2.5 py-1">{row.platform || "platform"}</span>
+                <p className="text-sm font-semibold text-dark dark:text-dark-8 line-clamp-3">
+                  {row.script || row.caption || "—"}
+                </p>
+                <div className="mt-2 flex flex-wrap gap-2 text-[11px] font-semibold uppercase text-gray-7 dark:text-dark-6">
+                  <span className="rounded-full bg-gray-2 px-2.5 py-1 dark:bg-dark-3">
+                    {row.tone || "tone"}
+                  </span>
+                  <span className="rounded-full bg-gray-2 px-2.5 py-1 dark:bg-dark-3">
+                    {row.platform || "platform"}
+                  </span>
                 </div>
                 <div className="mt-3 flex flex-wrap gap-2 text-xs font-semibold">
                   <button
-                    className="rounded-md border border-gray-3 px-3 py-1 text-gray-7 transition hover:bg-gray-1"
+                    className="rounded-md border border-gray-3 px-3 py-1 text-gray-7 transition hover:bg-gray-1 dark:border-stroke-dark dark:text-dark-7 dark:hover:bg-dark-3"
                     onClick={() => setDetailRow(row)}
                   >
                     Detail
                   </button>
                   {row.script && (
                     <button
-                      className="rounded-md border border-gray-3 px-3 py-1 text-gray-7 transition hover:bg-gray-1"
-                      onClick={() => copyToClipboard(row.script || "", "Script")}
+                      className="rounded-md border border-gray-3 px-3 py-1 text-gray-7 transition hover:bg-gray-1 dark:border-stroke-dark dark:text-dark-7 dark:hover:bg-dark-3"
+                      onClick={() =>
+                        copyToClipboard(row.script || "", "Script")
+                      }
                     >
                       Copy Script
                     </button>
                   )}
                   {row.caption && (
                     <button
-                      className="rounded-md border border-gray-3 px-3 py-1 text-gray-7 transition hover:bg-gray-1"
-                      onClick={() => copyToClipboard(row.caption || "", "Caption")}
+                      className="rounded-md border border-gray-3 px-3 py-1 text-gray-7 transition hover:bg-gray-1 dark:border-stroke-dark dark:text-dark-7 dark:hover:bg-dark-3"
+                      onClick={() =>
+                        copyToClipboard(row.caption || "", "Caption")
+                      }
                     >
                       Copy Caption
                     </button>
                   )}
                   <button
-                    className="rounded-md border border-gray-3 px-3 py-1 text-gray-7 transition hover:bg-gray-1"
+                    className="rounded-md border border-gray-3 px-3 py-1 text-gray-7 transition hover:bg-gray-1 dark:border-stroke-dark dark:text-dark-7 dark:hover:bg-dark-3"
                     onClick={() => {
                       setEditRow(row);
                       setForm({
                         description: row.topic || "",
                         contentType: form.contentType,
-                        platform: (row.platform as Platform) || "instagram_reels",
+                        platform:
+                          (row.platform as Platform) || "instagram_reels",
                         tone: (row.tone as ToneStyle) || "informative",
                         length: form.length,
                         persona: "",
@@ -366,7 +445,7 @@ export default function ScriptsCaptionsPage() {
                     Use
                   </button>
                   <button
-                    className="rounded-md border border-gray-3 px-3 py-1 text-gray-7 transition hover:bg-gray-1 disabled:opacity-60"
+                    className="rounded-md border border-gray-3 px-3 py-1 text-gray-7 transition hover:bg-gray-1 disabled:opacity-60 dark:border-stroke-dark dark:text-dark-7 dark:hover:bg-dark-3"
                     onClick={() => addToPlanner(row)}
                     disabled={plannerBusyId === row.id}
                   >
@@ -379,427 +458,559 @@ export default function ScriptsCaptionsPage() {
         )}
       </div>
 
-      <div className="rounded-2xl border border-gray-3 bg-white p-4 shadow-card-2">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2 text-sm text-gray-7">
-            <span className="text-gray-6">Show</span>
-            <select
-              value={pageSize}
-              onChange={(e) => setPageSize(Number(e.target.value) || 5)}
-              className="h-10 rounded-lg border border-gray-3 bg-white px-3 text-sm font-semibold text-dark focus:border-primary"
-            >
-              {[5, 10, 20, 50].map((size) => (
-                <option key={size} value={size}>
-                  {size}
-                </option>
-              ))}
-            </select>
-            <span className="text-gray-6">entries</span>
+      <div className="rounded-2xl border border-gray-3 bg-white p-4 shadow-card-2 dark:border-stroke-dark dark:bg-dark-2">
+        {loading ? (
+          <div className="py-10 text-center text-gray-6 dark:text-dark-6">
+            Loading quotes...
           </div>
+        ) : error ? (
+          <div className="py-10 text-center text-red-600">{error}</div>
+        ) : (
+          <div className="space-y-4 overflow-x-auto">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2 text-sm text-gray-7 dark:text-dark-7">
+                <span className="text-gray-6 dark:text-dark-6">Show</span>
+                <select
+                  value={pageSize}
+                  onChange={(e) => setPageSize(Number(e.target.value) || 5)}
+                  className="h-10 rounded-lg border border-gray-3 bg-white px-3 text-sm font-semibold text-dark focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+                >
+                  {[5, 10, 20, 50].map((size) => (
+                    <option key={size} value={size}>
+                      {size}
+                    </option>
+                  ))}
+                </select>
+                <span className="text-gray-6 dark:text-dark-6">entries</span>
+              </div>
 
-          <div className="flex items-center gap-2">
-            <div className="text-xs font-semibold text-gray-6">Search</div>
-            <div className="relative">
-              <input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search (topic, tone, platform)"
-                className="h-10 w-56 rounded-lg border border-gray-3 bg-white px-3 pl-9 text-sm text-dark outline-none transition focus:border-primary"
-                aria-label="Search scripts by topic, tone, or platform"
-              />
-              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-5">🔍</span>
+              <div className="flex flex-col gap-1">
+                <div className="text-xs font-semibold text-gray-6 dark:text-dark-6">
+                  Search{" "}
+                  <span className="font-normal">(topic, tone, persona)</span>
+                </div>
+                <div className="relative">
+                  <input
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    placeholder="Search (topic, tone, persona)"
+                    className="h-10 w-56 rounded-lg border border-gray-3 bg-white px-3 pl-9 text-sm text-dark outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+                    aria-label="Search quotes by topic, tone, or persona"
+                  />
+                  <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-5">
+                    🔍
+                  </span>
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
 
-        <div className="overflow-x-auto">
-          <table className="min-w-full text-left text-sm text-dark">
-            <thead className="bg-gray-1 text-xs font-semibold uppercase text-gray-6">
-              <tr>
-                <th className="px-4 py-3">Script</th>
-                <th className="px-4 py-3">Topic</th>
-                <th className="px-4 py-3">Tone</th>
-                <th className="px-4 py-3">Platform</th>
-                <th className="px-4 py-3">Created</th>
-                <th className="px-4 py-3">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-3">
-              {loading ? (
+            <table className="min-w-full text-left text-sm text-dark dark:text-dark-8">
+              <thead className="bg-gray-1 text-xs font-semibold uppercase text-gray-6 dark:bg-dark-3 dark:text-dark-6">
                 <tr>
-                  <td colSpan={6} className="px-4 py-10 text-center text-gray-6">
-                    Loading...
-                  </td>
+                  <th className="px-4 py-3">Script</th>
+                  <th className="px-4 py-3">Topic</th>
+                  <th className="px-4 py-3">Tone</th>
+                  <th className="px-4 py-3">Platform</th>
+                  <th className="px-4 py-3">Created</th>
+                  <th className="px-4 py-3">Actions</th>
                 </tr>
-              ) : error ? (
-                <tr>
-                  <td colSpan={6} className="px-4 py-10 text-center text-red-600">
-                    {error}
-                  </td>
-                </tr>
-              ) : pagedRows.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="px-4 py-10 text-center text-gray-6">
-                    No scripts/captions found for your search.
-                  </td>
-                </tr>
-              ) : (
-                pagedRows.map((row) => (
-                  <tr key={row.id} className="align-top hover:bg-gray-1/60">
-                    <td className="px-4 py-3 text-sm text-gray-7">
-                      <div className="line-clamp-2 font-medium text-dark">{row.script || "—"}</div>
-                      <div className="mt-2 flex flex-wrap gap-2 text-[11px] font-semibold uppercase">
-                        <span className="rounded-full bg-primary/10 px-2.5 py-1 text-primary">{row.hook ? "Hook" : "No hook"}</span>
-                        <span className="rounded-full bg-gray-2 px-2.5 py-1 text-gray-7">{row.caption ? "Has caption" : "No caption"}</span>
-                        <span className="rounded-full bg-gray-2 px-2.5 py-1 text-gray-7">
-                          {row.hashtags && row.hashtags.length ? `${row.hashtags.length} tags` : "0 tags"}
-                        </span>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 font-medium text-dark">{row.topic || "Untitled"}</td>
-                    <td className="px-4 py-3 text-gray-7">{row.tone || "—"}</td>
-                    <td className="px-4 py-3 text-gray-7">{row.platform || "—"}</td>
-                    <td className="px-4 py-3 text-gray-6">
-                      {row.created_at
-                        ? new Date(row.created_at).toLocaleString(undefined, {
-                            month: "short",
-                            day: "numeric",
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })
-                        : "—"}
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex flex-wrap gap-2 text-xs font-semibold">
-                        <button
-                          className="rounded-md border border-gray-3 px-3 py-1 text-gray-7 transition hover:bg-gray-1"
-                          onClick={() => setDetailRow(row)}
-                        >
-                          Detail
-                        </button>
-                        <button
-                          className="rounded-md border border-gray-3 px-3 py-1 text-gray-7 transition hover:bg-gray-1"
-                          onClick={() => {
-                            setEditRow(row);
-                            setForm({
-                              description: row.topic || "",
-                              contentType: form.contentType,
-                              platform: (row.platform as Platform) || "instagram_reels",
-                              tone: (row.tone as ToneStyle) || "informative",
-                              length: form.length,
-                              persona: "",
-                              language: "",
-                              hook: row.hook || "",
-                              script: row.script || "",
-                              caption: row.caption || "",
-                            });
-                            setShowModal(true);
-                            setSubmitStatus({ type: "idle" });
-                          }}
-                        >
-                          Edit
-                        </button>
-                        <button
-                          className="rounded-md border border-red-200 px-3 py-1 text-red-600 transition hover:bg-red-50"
-                          onClick={() => {
-                            setDeleteStatus({ type: "idle" });
-                            setDeleteRow(row);
-                          }}
-                        >
-                          Delete
-                        </button>
-                        <button
-                          className="rounded-md border border-gray-3 px-3 py-1 text-gray-7 transition hover:bg-gray-1 disabled:opacity-60"
-                          onClick={() => addToPlanner(row)}
-                          disabled={plannerBusyId === row.id}
-                        >
-                          {plannerBusyId === row.id ? "Adding..." : "Add to Planner"}
-                        </button>
-                      </div>
+              </thead>
+              <tbody className="divide-y divide-gray-3 dark:divide-stroke-dark">
+                {loading ? (
+                  <tr>
+                    <td
+                      colSpan={6}
+                      className="px-4 py-10 text-center text-gray-6"
+                    >
+                      Loading...
                     </td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+                ) : error ? (
+                  <tr>
+                    <td
+                      colSpan={6}
+                      className="px-4 py-10 text-center text-red-600"
+                    >
+                      {error}
+                    </td>
+                  </tr>
+                ) : pagedRows.length === 0 ? (
+                  <tr>
+                    <td
+                      colSpan={6}
+                      className="px-4 py-10 text-center text-gray-6"
+                    >
+                      No scripts/captions found for your search.
+                    </td>
+                  </tr>
+                ) : (
+                  pagedRows.map((row) => (
+                    <tr
+                      key={row.id}
+                      className="align-top hover:bg-gray-1/60 dark:hover:bg-dark-3"
+                    >
+                      <td className="px-4 py-3 text-sm text-gray-7 dark:text-dark-7">
+                        <div className="line-clamp-2 font-medium text-dark dark:text-dark-8">
+                          {row.script || "—"}
+                        </div>
+                        <div className="mt-2 flex flex-wrap gap-2 text-[11px] font-semibold uppercase">
+                          <span className="rounded-full bg-primary/10 px-2.5 py-1 text-primary">
+                            {row.hook ? "Hook" : "No hook"}
+                          </span>
+                          <span className="rounded-full bg-gray-2 px-2.5 py-1 text-gray-7 dark:bg-dark-3 dark:text-dark-7">
+                            {row.caption ? "Has caption" : "No caption"}
+                          </span>
+                          <span className="rounded-full bg-gray-2 px-2.5 py-1 text-gray-7 dark:bg-dark-3 dark:text-dark-7">
+                            {row.hashtags && row.hashtags.length
+                              ? `${row.hashtags.length} tags`
+                              : "0 tags"}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 font-medium text-dark dark:text-dark-8">
+                        {row.topic || "Untitled"}
+                      </td>
+                      <td className="px-4 py-3 text-gray-7 dark:text-dark-7">
+                        {row.tone || "—"}
+                      </td>
+                      <td className="px-4 py-3 text-gray-7 dark:text-dark-7">
+                        {row.platform || "—"}
+                      </td>
+                      <td className="px-4 py-3 text-gray-6 dark:text-dark-6">
+                        {row.created_at
+                          ? new Date(row.created_at).toLocaleString(undefined, {
+                              month: "short",
+                              day: "numeric",
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })
+                          : "—"}
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex flex-wrap gap-2 text-xs font-semibold">
+                          <button
+                            className="rounded-md border border-gray-3 px-3 py-1 text-gray-7 transition hover:bg-gray-1 dark:border-stroke-dark dark:text-dark-7 dark:hover:bg-dark-3"
+                            onClick={() => setDetailRow(row)}
+                          >
+                            Detail
+                          </button>
+                          <button
+                            className="rounded-md border border-gray-3 px-3 py-1 text-gray-7 transition hover:bg-gray-1 dark:border-stroke-dark dark:text-dark-7 dark:hover:bg-dark-3"
+                            onClick={() => {
+                              setEditRow(row);
+                              setForm({
+                                description: row.topic || "",
+                                contentType: form.contentType,
+                                platform:
+                                  (row.platform as Platform) ||
+                                  "instagram_reels",
+                                tone: (row.tone as ToneStyle) || "informative",
+                                length: form.length,
+                                persona: "",
+                                language: "",
+                                hook: row.hook || "",
+                                script: row.script || "",
+                                caption: row.caption || "",
+                              });
+                              setShowModal(true);
+                              setSubmitStatus({ type: "idle" });
+                            }}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            className="rounded-md border border-red-200 px-3 py-1 text-red-600 transition hover:bg-red-50 dark:border-red-400/40 dark:hover:bg-red-500/10"
+                            onClick={() => {
+                              setDeleteStatus({ type: "idle" });
+                              setDeleteRow(row);
+                            }}
+                          >
+                            Delete
+                          </button>
+                          <button
+                            className="rounded-md border border-gray-3 px-3 py-1 text-gray-7 transition hover:bg-gray-1 disabled:opacity-60 dark:border-stroke-dark dark:text-dark-7 dark:hover:bg-dark-3"
+                            onClick={() => addToPlanner(row)}
+                            disabled={plannerBusyId === row.id}
+                          >
+                            {plannerBusyId === row.id
+                              ? "Adding..."
+                              : "Add to Planner"}
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
 
-        <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-sm text-gray-6">
-          <div>
-            Showing{" "}
-            <span className="font-semibold text-dark">{filteredRows.length === 0 ? 0 : (currentPage - 1) * pageSize + 1}</span> to{" "}
-            <span className="font-semibold text-dark">
-              {filteredRows.length === 0 ? 0 : Math.min(currentPage * pageSize, filteredRows.length)}
-            </span>{" "}
-            of <span className="font-semibold text-dark">{filteredRows.length}</span> entries
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-              disabled={currentPage === 1 || filteredRows.length === 0}
-              className="min-w-[88px] rounded-lg border border-gray-3 px-3 py-2 text-sm font-semibold text-gray-7 transition hover:bg-gray-1 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              Previous
-            </button>
-            <div className="flex items-center gap-2">
-              {Array.from({ length: pageCount }).map((_, idx) => {
-                const p = idx + 1;
-                const isActive = p === currentPage;
-                return (
-                  <button
-                    key={p}
-                    type="button"
-                    onClick={() => setPage(p)}
-                    disabled={filteredRows.length === 0}
-                    className={cn(
-                      "h-10 w-10 rounded-lg border text-sm font-semibold transition",
-                      isActive ? "border-primary bg-primary text-white" : "border-gray-3 bg-white text-gray-7 hover:bg-gray-1",
-                      filteredRows.length === 0 && "cursor-not-allowed opacity-60",
-                    )}
-                  >
-                    {p}
-                  </button>
-                );
-              })}
+            <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-gray-6 dark:text-dark-6">
+              <div>
+                Showing{" "}
+                <span className="font-semibold text-dark dark:text-dark-8">
+                  {filteredRows.length === 0
+                    ? 0
+                    : (currentPage - 1) * pageSize + 1}
+                </span>{" "}
+                to{" "}
+                <span className="font-semibold text-dark dark:text-dark-8">
+                  {filteredRows.length === 0
+                    ? 0
+                    : Math.min(currentPage * pageSize, filteredRows.length)}
+                </span>{" "}
+                of{" "}
+                <span className="font-semibold text-dark dark:text-dark-8">
+                  {filteredRows.length}
+                </span>{" "}
+                entries
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  disabled={currentPage === 1 || filteredRows.length === 0}
+                  className="min-w-[88px] rounded-lg border border-gray-3 px-3 py-2 text-sm font-semibold text-gray-7 transition hover:bg-gray-1 disabled:cursor-not-allowed disabled:opacity-60 dark:border-stroke-dark dark:text-dark-7 dark:hover:bg-dark-3"
+                >
+                  Previous
+                </button>
+                <div className="flex items-center gap-2">
+                  {Array.from({ length: pageCount }).map((_, idx) => {
+                    const p = idx + 1;
+                    const isActive = p === currentPage;
+                    return (
+                      <button
+                        key={p}
+                        type="button"
+                        onClick={() => setPage(p)}
+                        disabled={filteredRows.length === 0}
+                        className={cn(
+                          "h-10 w-10 rounded-lg border text-sm font-semibold transition",
+                          isActive
+                            ? "border-primary bg-primary text-white"
+                            : "border-gray-3 bg-white text-gray-7 hover:bg-gray-1 dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-7 dark:hover:bg-dark-2",
+                          filteredRows.length === 0 &&
+                            "cursor-not-allowed opacity-60"
+                        )}
+                      >
+                        {p}
+                      </button>
+                    );
+                  })}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
+                  disabled={
+                    currentPage === pageCount || filteredRows.length === 0
+                  }
+                  className="min-w-[88px] rounded-lg border border-gray-3 px-3 py-2 text-sm font-semibold text-gray-7 transition hover:bg-gray-1 disabled:cursor-not-allowed disabled:opacity-60 dark:border-stroke-dark dark:text-dark-7 dark:hover:bg-dark-3"
+                >
+                  Next
+                </button>
+              </div>
             </div>
-            <button
-              type="button"
-              onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
-              disabled={currentPage === pageCount || filteredRows.length === 0}
-              className="min-w-[88px] rounded-lg border border-gray-3 px-3 py-2 text-sm font-semibold text-gray-7 transition hover:bg-gray-1 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              Next
-            </button>
           </div>
-        </div>
+        )}
       </div>
 
       {showModal && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/60 px-4 py-10">
-          <div className="mt-4 w-full max-w-3xl rounded-2xl bg-white p-6 shadow-2xl">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.35em] text-primary">Generate</p>
-                <h2 className="text-xl font-bold text-dark">{editRow ? "Edit script/caption" : "New script/caption"}</h2>
+        <ModalPortal>
+          <div
+            className="fixed inset-0 z-[20000] flex items-start justify-center bg-black/60 px-4 py-12 backdrop-blur-sm"
+            role="dialog"
+            aria-modal="true"
+          >
+            <div className="mt-4 max-h-[85vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white p-6 shadow-card-2 dark:bg-dark-2 dark:border dark:border-stroke-dark">
+              <div className="flex items-start justify-between">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.35em] text-primary">
+                    Generate
+                  </p>
+                  <h2 className="text-xl font-bold text-dark dark:text-dark-8">
+                    {editRow ? "Edit script/caption" : "New script/caption"}
+                  </h2>
+                </div>
+                <button
+                  className="rounded-full bg-gray-1 px-3 py-1 text-sm font-semibold text-gray-7 hover:bg-gray-2 dark:bg-dark-3 dark:text-dark-7 dark:hover:bg-dark-4"
+                  onClick={resetForm}
+                >
+                  Close
+                </button>
               </div>
-              <button
-                className="rounded-full bg-gray-1 px-3 py-1 text-sm font-semibold text-gray-7 hover:bg-gray-2"
-                onClick={resetForm}
-              >
-                Close
-              </button>
-            </div>
 
-            <div className="mt-4 grid gap-4 md:grid-cols-2">
-              <label className="block text-sm font-semibold text-dark">
-                Description / Topic *
-                <input
-                  ref={topicInputRef}
-                  className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary"
-                  value={form.description}
-                  onChange={(e) => setForm((prev) => ({ ...prev, description: e.target.value }))}
-                  placeholder="E.g., self-discipline and waking up early"
-                />
-              </label>
-              <label className="block text-sm font-semibold text-dark">
-                Content type
-                <select
-                  className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary"
-                  value={form.contentType}
-                  onChange={(e) => setForm((prev) => ({ ...prev, contentType: e.target.value as ContentType }))}
-                >
-                  {contentTypes.map((type) => (
-                    <option key={type} value={type}>
-                      {type.replace("_", " ")}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="block text-sm font-semibold text-dark">
-                Platform
-                <select
-                  className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary"
-                  value={form.platform}
-                  onChange={(e) => setForm((prev) => ({ ...prev, platform: e.target.value as Platform }))}
-                >
-                  {platformOptions.map((p) => (
-                    <option key={p} value={p}>
-                      {p.replace("_", " ")}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="block text-sm font-semibold text-dark">
-                Tone / Style
-                <select
-                  className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary"
-                  value={form.tone}
-                  onChange={(e) => setForm((prev) => ({ ...prev, tone: e.target.value as ToneStyle }))}
-                >
-                  {toneOptions.map((tone) => (
-                    <option key={tone} value={tone}>
-                      {tone}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="block text-sm font-semibold text-dark">
-                Length
-                <select
-                  className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary"
-                  value={form.length}
-                  onChange={(e) => setForm((prev) => ({ ...prev, length: e.target.value as LengthPreset }))}
-                >
-                  {lengthOptions.map((len) => (
-                    <option key={len} value={len}>
-                      {len}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="block text-sm font-semibold text-dark">
-                Persona (optional)
-                <input
-                  className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary"
-                  value={form.persona}
-                  onChange={(e) => setForm((prev) => ({ ...prev, persona: e.target.value }))}
-                  placeholder="Your voice, GaryVee style, etc."
-                />
-              </label>
-              <label className="block text-sm font-semibold text-dark">
-                Language (optional)
-                <input
-                  className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary"
-                  value={form.language}
-                  onChange={(e) => setForm((prev) => ({ ...prev, language: e.target.value }))}
-                  placeholder="en, hi, etc."
-                />
-              </label>
-              <label className="block text-sm font-semibold text-dark">
-                Hook / Angle (optional)
-                <input
-                  className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary"
-                  value={form.hook}
-                  onChange={(e) => setForm((prev) => ({ ...prev, hook: e.target.value }))}
-                  placeholder="Why waking up early transforms your day"
-                />
-              </label>
-            </div>
-
-            {editRow && (
               <div className="mt-4 grid gap-4 md:grid-cols-2">
-                <label className="block text-sm font-semibold text-dark">
-                  Script
+                <label className="block text-sm font-semibold text-dark dark:text-dark-8">
+                  Description / Topic *
+                  <input
+                    ref={topicInputRef}
+                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+                    value={form.description}
+                    onChange={(e) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        description: e.target.value,
+                      }))
+                    }
+                    placeholder="E.g., self-discipline and waking up early"
+                  />
+                </label>
+                <label className="block text-sm font-semibold text-dark dark:text-dark-8">
+                  Content type
+                  <select
+                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+                    value={form.contentType}
+                    onChange={(e) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        contentType: e.target.value as ContentType,
+                      }))
+                    }
+                  >
+                    {contentTypes.map((type) => (
+                      <option key={type} value={type}>
+                        {type.replace("_", " ")}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="block text-sm font-semibold text-dark dark:text-dark-8">
+                  Platform
+                  <select
+                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+                    value={form.platform}
+                    onChange={(e) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        platform: e.target.value as Platform,
+                      }))
+                    }
+                  >
+                    {platformOptions.map((p) => (
+                      <option key={p} value={p}>
+                        {p.replace("_", " ")}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="block text-sm font-semibold text-dark dark:text-dark-8">
+                  Tone / Style
+                  <select
+                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+                    value={form.tone}
+                    onChange={(e) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        tone: e.target.value as ToneStyle,
+                      }))
+                    }
+                  >
+                    {toneOptions.map((tone) => (
+                      <option key={tone} value={tone}>
+                        {tone}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="block text-sm font-semibold text-dark dark:text-dark-8">
+                  Length
+                  <select
+                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+                    value={form.length}
+                    onChange={(e) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        length: e.target.value as LengthPreset,
+                      }))
+                    }
+                  >
+                    {lengthOptions.map((len) => (
+                      <option key={len} value={len}>
+                        {len}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="block text-sm font-semibold text-dark dark:text-dark-8">
+                  Persona (optional)
+                  <input
+                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+                    value={form.persona}
+                    onChange={(e) =>
+                      setForm((prev) => ({ ...prev, persona: e.target.value }))
+                    }
+                    placeholder="Your voice, GaryVee style, etc."
+                  />
+                </label>
+                <label className="block text-sm font-semibold text-dark dark:text-dark-8">
+                  Language (optional)
+                  <input
+                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+                    value={form.language}
+                    onChange={(e) =>
+                      setForm((prev) => ({ ...prev, language: e.target.value }))
+                    }
+                    placeholder="en, hi, etc."
+                  />
+                </label>
+                <label className="block text-sm font-semibold text-dark dark:text-dark-8">
+                  Hook / Angle (optional)
+                  <input
+                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+                    value={form.hook}
+                    onChange={(e) =>
+                      setForm((prev) => ({ ...prev, hook: e.target.value }))
+                    }
+                    placeholder="Why waking up early transforms your day"
+                  />
+                </label>
+              </div>
+
+              <div className="mt-4 grid gap-4 md:grid-cols-2">
+                <label className="block text-sm font-semibold text-dark dark:text-dark-8">
+                  Script (optional)
                   <textarea
-                    className="mt-2 h-40 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary"
+                    className="mt-2 h-40 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
                     value={form.script}
-                    onChange={(e) => setForm((prev) => ({ ...prev, script: e.target.value }))}
-                    placeholder="Edit the script..."
+                    onChange={(e) =>
+                      setForm((prev) => ({ ...prev, script: e.target.value }))
+                    }
+                    placeholder="Paste or tweak your script..."
                   />
                 </label>
-                <label className="block text-sm font-semibold text-dark">
-                  Caption
+                <label className="block text-sm font-semibold text-dark dark:text-dark-8">
+                  Caption (optional)
                   <textarea
-                    className="mt-2 h-40 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary"
+                    className="mt-2 h-40 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
                     value={form.caption}
-                    onChange={(e) => setForm((prev) => ({ ...prev, caption: e.target.value }))}
-                    placeholder="Edit the caption..."
+                    onChange={(e) =>
+                      setForm((prev) => ({ ...prev, caption: e.target.value }))
+                    }
+                    placeholder="Add or edit the caption..."
                   />
                 </label>
               </div>
-            )}
 
-            {submitStatus.type !== "idle" && (
-              <div
-                className={cn(
-                  "mt-3 rounded-lg border px-4 py-3 text-sm",
-                  submitStatus.type === "error"
-                    ? "border-red-200 bg-red-50 text-red-700"
-                    : submitStatus.type === "success"
+              {submitStatus.type !== "idle" && (
+                <div
+                  className={cn(
+                    "mt-3 rounded-lg border px-4 py-3 text-sm",
+                    submitStatus.type === "error"
+                      ? "border-red-200 bg-red-50 text-red-700"
+                      : submitStatus.type === "success"
                       ? "border-green-200 bg-green-50 text-green-700"
-                      : "border-stroke bg-gray-1 text-dark",
-                )}
-              >
-                {submitStatus.message}
-              </div>
-            )}
+                      : "border-stroke bg-gray-1 text-dark dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+                  )}
+                >
+                  {submitStatus.message}
+                </div>
+              )}
 
-            <div className="mt-4 flex justify-end gap-3">
-              <button
-                className="rounded-md border border-gray-3 px-4 py-2 text-sm font-semibold text-gray-7 transition hover:bg-gray-1"
-                onClick={resetForm}
-              >
-                Cancel
-              </button>
-              <button
-                className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-semibold text-white transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-70"
-                onClick={handleSubmit}
-                disabled={submitStatus.type === "loading"}
-              >
-                {submitStatus.type === "loading" ? (editRow ? "Saving..." : "Generating...") : editRow ? "Save changes" : "Generate"}
-                {submitStatus.type === "loading" && (
-                  <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                )}
-              </button>
+                <hr className="mt-6 mb-4 border-t border-gray-3 dark:border-stroke-dark" />
+
+                <div className="flex flex-col gap-3 sm:flex-row">
+                  <button
+                    className="flex w-full items-center justify-center rounded-xl border border-gray-3 px-4 py-3 text-sm font-semibold text-gray-7 transition hover:bg-gray-1 dark:border-stroke-dark dark:text-dark-7 dark:hover:bg-dark-3 disabled:opacity-60 sm:w-1/2"
+                    onClick={() => {
+                      setShowModal(false);
+                      setSubmitStatus({ type: "idle" });
+                      setForm({ ...defaultForm });
+                      setEditRow(null);
+                    }}
+                    disabled={submitStatus.type === "loading"}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 py-3 text-sm font-semibold text-white transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-70 sm:w-1/2"
+                    onClick={handleSubmit}
+                    disabled={submitStatus.type === "loading"}
+                  >
+                    {submitStatus.type === "loading"
+                      ? editRow
+                        ? "Saving..."
+                        : "Generating..."
+                      : editRow
+                      ? "Save changes"
+                      : "Generate Script"}
+                    {submitStatus.type === "loading" && (
+                      <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                    )}
+                  </button>
+                </div>
+
             </div>
           </div>
-        </div>
+        </ModalPortal>
       )}
 
       {detailRow && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/60 px-4 py-10">
-          <div className="mt-6 w-full max-w-4xl rounded-2xl bg-white p-6 shadow-2xl">
-            <div className="mb-3 flex items-start justify-between gap-3">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.35em] text-primary">Script & Caption</p>
-                <h2 className="text-xl font-bold text-dark">{detailRow.topic || "Details"}</h2>
-                <p className="text-sm text-gray-6">
-                  Tone: {detailRow.tone || "—"} · Platform: {detailRow.platform || "—"} · Hook: {detailRow.hook || "—"}
-                </p>
-              </div>
-              <button
-                className="rounded-full bg-gray-1 px-3 py-1 text-sm font-semibold text-gray-7 hover:bg-gray-2"
-                onClick={() => setDetailRow(null)}
-              >
-                Close
-              </button>
-            </div>
-
-            <div className="space-y-4">
-              <div className="rounded-lg border border-gray-3 bg-gray-1 p-4">
-                <p className="text-xs font-semibold uppercase text-gray-6">Script</p>
-                <p className="mt-2 whitespace-pre-line text-sm text-dark">{detailRow.script || "—"}</p>
-              </div>
-              <div className="rounded-lg border border-gray-3 bg-gray-1 p-4">
-                <p className="text-xs font-semibold uppercase text-gray-6">Caption</p>
-                <p className="mt-2 whitespace-pre-line text-sm text-dark">{detailRow.caption || "—"}</p>
-              </div>
-              {detailRow.hashtags && detailRow.hashtags.length > 0 && (
-                <div className="flex flex-wrap gap-2">
-                  {detailRow.hashtags.map((tag) => (
-                    <span key={tag} className="rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold uppercase text-primary">
-                      {tag}
-                    </span>
-                  ))}
+        <ModalPortal>
+          <div
+            className="fixed inset-0 z-[20000] flex items-start justify-center bg-black/60 px-4 py-12 backdrop-blur-sm"
+            role="dialog"
+            aria-modal="true"
+          >
+            <div className="mt-4 max-h-[85vh] w-full max-w-5xl overflow-y-auto rounded-2xl bg-white p-6 shadow-card-2 dark:border dark:border-stroke-dark dark:bg-dark-2 dark:shadow-black/40">
+              <div className="mb-4 flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.35em] text-primary">Script & Caption</p>
+                  <h2 className="text-xl font-bold text-dark dark:text-dark-8">{detailRow.topic || "Details"}</h2>
+                  <p className="text-sm text-gray-6 dark:text-dark-6">
+                    Tone: {detailRow.tone || "—"} · Platform: {detailRow.platform || "—"} · Hook: {detailRow.hook || "—"}
+                  </p>
                 </div>
-              )}
+                <button
+                  className="rounded-full bg-gray-1 px-3 py-1 text-sm font-semibold text-gray-7 hover:bg-gray-2 dark:bg-dark-3 dark:text-dark-7 dark:hover:bg-dark-4"
+                  onClick={() => setDetailRow(null)}
+                >
+                  Close
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                <div className="rounded-lg border border-gray-3 bg-gray-1 p-4 dark:border-stroke-dark dark:bg-dark-3">
+                  <p className="text-xs font-semibold uppercase text-gray-6 dark:text-dark-6">Script</p>
+                  <p className="mt-2 whitespace-pre-line text-sm text-dark dark:text-dark-8">{detailRow.script || "—"}</p>
+                </div>
+                <div className="rounded-lg border border-gray-3 bg-gray-1 p-4 dark:border-stroke-dark dark:bg-dark-3">
+                  <p className="text-xs font-semibold uppercase text-gray-6 dark:text-dark-6">Caption</p>
+                  <p className="mt-2 whitespace-pre-line text-sm text-dark dark:text-dark-8">{detailRow.caption || "—"}</p>
+                </div>
+                {detailRow.hashtags && detailRow.hashtags.length > 0 && (
+                  <div className="flex flex-wrap gap-2">
+                    {detailRow.hashtags.map((tag) => (
+                      <span
+                        key={tag}
+                        className="rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold uppercase text-primary dark:bg-primary/20"
+                      >
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
-        </div>
+        </ModalPortal>
       )}
 
       {deleteRow && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
-          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-2xl">
-            <h3 className="text-lg font-bold text-dark">Delete script/caption</h3>
-            <p className="mt-2 text-sm text-gray-6">This cannot be undone.</p>
+          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-2xl dark:border dark:border-stroke-dark dark:bg-dark-2">
+            <h3 className="text-lg font-bold text-dark dark:text-dark-8">
+              Delete script/caption
+            </h3>
+            <p className="mt-2 text-sm text-gray-6 dark:text-dark-6">
+              This cannot be undone.
+            </p>
             {deleteStatus.type === "error" && (
-              <p className="mt-2 rounded-md bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">{deleteStatus.message}</p>
+              <p className="mt-2 rounded-md bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">
+                {deleteStatus.message}
+              </p>
             )}
             <div className="mt-4 flex justify-end gap-3">
               <button
-                className="rounded-md border border-gray-3 px-4 py-2 text-sm font-semibold text-gray-7 transition hover:bg-gray-1"
+                className="rounded-md border border-gray-3 px-4 py-2 text-sm font-semibold text-gray-7 transition hover:bg-gray-1 dark:border-stroke-dark dark:text-dark-7 dark:hover:bg-dark-3"
                 onClick={() => setDeleteRow(null)}
               >
                 Cancel

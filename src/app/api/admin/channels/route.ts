@@ -5,26 +5,22 @@ import { requireSuperAdmin } from "@/lib/api-auth";
 export async function GET(request: Request) {
   const session = await requireSuperAdmin(request);
   if ("errorResponse" in session) return session.errorResponse;
-
   const { applyCookies } = session;
-  const { searchParams } = new URL(request.url);
-  const limit = Number(searchParams.get("limit")) || 200;
 
   const { data, error } = await supabaseAdmin
-    .from("quotes")
+    .from("channels")
     .select(
-      "id, topic, persona, tone, language, style, quote_type, image_quotes, hook, word_limit, quotes, created_at, user_id",
+      "id, name, platform, handle, tone, style, persona_id, topic, audience, content_type, duration_default, cta_default, base_hashtags, character_name, character_images, logo_url, created_at, user_id",
     )
-    .order("created_at", { ascending: false })
-    .limit(Math.max(1, Math.min(500, limit)));
+    .order("created_at", { ascending: false });
 
   if (error) {
-    const response = NextResponse.json({ error: error.message || "Unable to load quotes" }, { status: 500 });
+    const response = NextResponse.json({ error: error.message || "Unable to load channels" }, { status: 500 });
     applyCookies(response);
     return response;
   }
 
-  const response = NextResponse.json({ quotes: data ?? [] });
+  const response = NextResponse.json({ channels: data ?? [] });
   applyCookies(response);
   return response;
 }
@@ -42,9 +38,9 @@ export async function DELETE(request: Request) {
     return response;
   }
 
-  const { error } = await supabaseAdmin.from("quotes").delete().eq("id", id);
+  const { error } = await supabaseAdmin.from("channels").delete().eq("id", id);
   if (error) {
-    const response = NextResponse.json({ error: error.message || "Unable to delete quote" }, { status: 500 });
+    const response = NextResponse.json({ error: error.message || "Unable to delete channel" }, { status: 500 });
     applyCookies(response);
     return response;
   }

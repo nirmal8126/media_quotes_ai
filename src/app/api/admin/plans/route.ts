@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import type { PostgrestError } from '@supabase/supabase-js';
-import { requireUser } from '@/lib/api-auth';
+import { isSuperAdmin, requireSuperAdmin } from '@/lib/api-auth';
 import type { User } from '@supabase/supabase-js';
 
 type PlanPayload = {
@@ -36,27 +36,34 @@ async function applyResponse(result: { error: PostgrestError | null; data?: unkn
   return NextResponse.json({ success: true, data: result.data });
 }
 
-function isSuperAdmin(user: User): boolean {
-  const role =
-    (user.app_metadata?.role as string | undefined) ??
-    (user.user_metadata?.role as string | undefined);
-  const flag = user.user_metadata?.is_admin ?? user.user_metadata?.admin;
-  return role === 'superadmin' || flag === true;
-}
-
 async function ensureAuthenticated(request: Request) {
-  const session = await requireUser(request);
+  const session = await requireSuperAdmin(request);
   if ('errorResponse' in session) {
     return { errorResponse: session.errorResponse };
   }
+  return { applyCookies: session.applyCookies, user: session.user };
+}
 
-  if (!isSuperAdmin(session.user)) {
-    const response = NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-    session.applyCookies(response);
-    return { errorResponse: response };
+export async function GET(request: Request) {
+  const auth = await ensureAuthenticated(request);
+  if ('errorResponse' in auth) return auth.errorResponse;
+
+  const { data, error } = await supabaseAdmin
+    .from('plans')
+    .select('id, name, price, reels_per_month, perks')
+    .order('id', { ascending: true });
+
+  if (error) {
+    const response = NextResponse.json({ error: error.message || 'Failed to load plans' }, { status: 500 });
+    auth.applyCookies(response);
+    return response;
   }
 
-  return { applyCookies: session.applyCookies };
+  const response = NextResponse.json({
+    plans: data ?? [],
+  });
+  auth.applyCookies(response);
+  return response;
 }
 
 export async function POST(request: Request) {

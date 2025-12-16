@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import { NAV_DATA } from "./data";
+import { ADMIN_NAV_DATA, NAV_DATA } from "./data";
 import { ArrowLeftIcon, ChevronUp } from "./icons";
 import { MenuItem } from "./menu-item";
 import { useSidebarContext } from "./sidebar-context";
@@ -15,6 +15,8 @@ export function Sidebar() {
   const { setIsOpen, isOpen, isMobile, toggleSidebar } = useSidebarContext();
   const [expandedItems, setExpandedItems] = useState<string[]>([]);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [adminResolved, setAdminResolved] = useState(!pathname?.startsWith("/admin"));
+  const isLoadingAdmin = !adminResolved;
 
   const toggleExpanded = (title: string) => {
     setExpandedItems((prev) => (prev.includes(title) ? [] : [title]));
@@ -60,23 +62,49 @@ export function Sidebar() {
         }
       } catch (error) {
         console.error("Failed to load session for admin link", error);
+      } finally {
+        setAdminResolved(true);
       }
     };
     loadSession();
-  }, []);
+  }, [pathname]);
 
   const adminLink = useMemo(() => {
-    if (!isAdmin) return null;
+    if (!adminResolved || !isAdmin) return null;
+    if (pathname?.startsWith("/admin")) return null;
     return (
       <button
-        onClick={() => window.open("/admin", "_blank", "noopener,noreferrer")}
+        onClick={() => (window.location.href = "/admin")}
         className="mt-4 flex w-full items-center justify-between rounded-xl border border-primary/20 bg-primary/10 px-3 py-3 text-sm font-semibold text-primary transition hover:bg-primary/15"
       >
-        <span>Admin Console</span>
-        <span aria-hidden className="text-xs">↗</span>
+        <span>Admin Dashboard</span>
+        <span aria-hidden className="text-xs">→</span>
       </button>
     );
-  }, [isAdmin]);
+  }, [isAdmin, pathname]);
+
+  const backToUserLink = useMemo(() => {
+    if (!adminResolved || !isAdmin) return null;
+    if (!pathname?.startsWith("/admin")) return null;
+    return (
+      <button
+        onClick={() => (window.location.href = "/")}
+        className="mt-4 flex w-full items-center justify-between rounded-xl border border-primary/20 bg-primary/5 px-3 py-3 text-sm font-semibold text-primary transition hover:bg-primary/10"
+      >
+        <span>Back to User Dashboard</span>
+        <span aria-hidden className="text-xs">→</span>
+      </button>
+    );
+  }, [isAdmin, pathname]);
+
+  const navSections = useMemo(() => {
+    if (pathname?.startsWith("/admin")) {
+      if (!adminResolved) return [];
+      if (isAdmin) return ADMIN_NAV_DATA;
+      return [];
+    }
+    return NAV_DATA;
+  }, [isAdmin, pathname, adminResolved]);
 
   return (
     <>
@@ -123,94 +151,107 @@ export function Sidebar() {
 
           {/* Navigation */}
           <div className="custom-scrollbar mt-6 flex-1 overflow-y-auto pr-3 min-[850px]:mt-10">
-            {NAV_DATA.map((section) => (
-              <div key={section.label} className="mb-6">
-                <h2 className="mb-5 text-sm font-medium text-dark-4 dark:text-dark-6">
-                  {section.label}
-                </h2>
-
-                <nav role="navigation" aria-label={section.label}>
-                  <ul className="space-y-2">
-                    {section.items.map((item) => (
-                      <li key={item.title}>
-                        {item.items.length ? (
-                          <div>
-                            <MenuItem
-                              isActive={item.items.some(
-                                ({ url }) => url === pathname,
-                              )}
-                              onClick={() => toggleExpanded(item.title)}
-                            >
-                              <item.icon
-                                className="size-6 shrink-0"
-                                aria-hidden="true"
-                              />
-
-                              <span>{item.title}</span>
-
-                              <ChevronUp
-                                className={cn(
-                                  "ml-auto rotate-180 transition-transform duration-200",
-                                  expandedItems.includes(item.title) &&
-                                    "rotate-0",
-                                )}
-                                aria-hidden="true"
-                              />
-                            </MenuItem>
-
-                            {expandedItems.includes(item.title) && (
-                              <ul
-                                className="ml-9 mr-0 space-y-1.5 pb-[15px] pr-0 pt-2"
-                                role="menu"
-                              >
-                                {item.items.map((subItem) => (
-                                  <li key={subItem.title} role="none">
-                                    <MenuItem
-                                      as="link"
-                                      href={subItem.url}
-                                      isActive={pathname === subItem.url}
-                                    >
-                                      <span>{subItem.title}</span>
-                                    </MenuItem>
-                                  </li>
-                                ))}
-                              </ul>
-                            )}
-                          </div>
-                        ) : (
-                          (() => {
-                            const href =
-                              "url" in item
-                                ? item.url + ""
-                                : "/" +
-                                  item.title.toLowerCase().split(" ").join("-");
-
-                            return (
-                              <MenuItem
-                                className="flex items-center gap-3 py-3"
-                                as="link"
-                                href={href}
-                                isActive={pathname === href}
-                              >
-                                <item.icon
-                                  className="size-6 shrink-0"
-                                  aria-hidden="true"
-                                />
-
-                                <span>{item.title}</span>
-                              </MenuItem>
-                            );
-                          })()
-                        )}
-                      </li>
-                    ))}
-                  </ul>
-                </nav>
+            {isLoadingAdmin ? (
+              <div className="space-y-4">
+                <div className="h-4 w-24 rounded bg-gray-2 dark:bg-dark-3" />
+                <div className="space-y-2">
+                  {Array.from({ length: 6 }).map((_, idx) => (
+                    <div key={idx} className="h-10 rounded-lg bg-gray-2 dark:bg-dark-3" />
+                  ))}
+                </div>
               </div>
-            ))}
-          </div>
+            ) : (
+              <>
+                {navSections.map((section) => (
+                  <div key={section.label} className="mb-6">
+                    <h2 className="mb-5 text-sm font-medium text-dark-4 dark:text-dark-6">
+                      {section.label}
+                    </h2>
 
-          {adminLink}
+                    <nav role="navigation" aria-label={section.label}>
+                      <ul className="space-y-2">
+                        {section.items.map((item) => (
+                          <li key={item.title}>
+                            {item.items.length ? (
+                              <div>
+                                <MenuItem
+                                  isActive={item.items.some(
+                                    ({ url }) => url === pathname,
+                                  )}
+                                  onClick={() => toggleExpanded(item.title)}
+                                >
+                                  <item.icon
+                                    className="size-6 shrink-0"
+                                    aria-hidden="true"
+                                  />
+
+                                  <span>{item.title}</span>
+
+                                  <ChevronUp
+                                    className={cn(
+                                      "ml-auto rotate-180 transition-transform duration-200",
+                                      expandedItems.includes(item.title) &&
+                                        "rotate-0",
+                                    )}
+                                    aria-hidden="true"
+                                  />
+                                </MenuItem>
+
+                                {expandedItems.includes(item.title) && (
+                                  <ul
+                                    className="ml-9 mr-0 space-y-1.5 pb-[15px] pr-0 pt-2"
+                                    role="menu"
+                                  >
+                                    {item.items.map((subItem) => (
+                                      <li key={subItem.title} role="none">
+                                        <MenuItem
+                                          as="link"
+                                          href={subItem.url}
+                                          isActive={pathname === subItem.url}
+                                        >
+                                          <span>{subItem.title}</span>
+                                        </MenuItem>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                )}
+                              </div>
+                            ) : (
+                              (() => {
+                                const href =
+                                  "url" in item
+                                    ? item.url + ""
+                                    : "/" +
+                                      item.title.toLowerCase().split(" ").join("-");
+
+                                return (
+                                  <MenuItem
+                                    className="flex items-center gap-3 py-3"
+                                    as="link"
+                                    href={href}
+                                    isActive={pathname === href}
+                                  >
+                                    <item.icon
+                                      className="size-6 shrink-0"
+                                      aria-hidden="true"
+                                    />
+
+                                    <span>{item.title}</span>
+                                  </MenuItem>
+                                );
+                              })()
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    </nav>
+                  </div>
+                ))}
+                {adminLink}
+                {backToUserLink}
+              </>
+            )}
+          </div>
         </div>
       </aside>
     </>

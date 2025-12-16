@@ -177,6 +177,8 @@ type ImageSizeKey =
   | "mobile_portrait"
   | "custom";
 
+const FACEBOOK_ENABLED = false;
+
 const imageSizePresets: Record<
   ImageSizeKey,
   {
@@ -453,6 +455,7 @@ export default function QuotesPage() {
   const previewDims = selectedDimensions();
 
   const fetchFacebookPages = useCallback(async () => {
+    if (!FACEBOOK_ENABLED) return;
     setFbStatusError(null);
     setFbPageLoading(true);
     try {
@@ -461,10 +464,12 @@ export default function QuotesPage() {
       if (!res.ok) {
         throw new Error(data?.error || "Unable to load Facebook Pages.");
       }
-      const pages = Array.isArray(data.pages) ? data.pages : [];
+      const pages: Array<{ id: string; name: string }> = Array.isArray(data.pages)
+        ? data.pages
+        : [];
       const preferredPageId = data.selectedPageId ?? pages[0]?.id ?? null;
       const preferredPageName =
-        data.selectedPageName ?? pages.find((page) => page.id === preferredPageId)?.name ?? null;
+        data.selectedPageName ?? pages.find((page: { id: string }) => page.id === preferredPageId)?.name ?? null;
       setFbPages(pages);
       setFbSelectedPageId((prev) => data.selectedPageId ?? prev ?? preferredPageId);
       setFbStatus((prev) => ({
@@ -483,6 +488,7 @@ export default function QuotesPage() {
 
   const refreshFacebookStatus = useCallback(
     async (withPages = false): Promise<{ connected: boolean; error?: string }> => {
+      if (!FACEBOOK_ENABLED) return { connected: false };
       setFbStatusError(null);
       try {
         const res = await fetch("/api/social/facebook/status");
@@ -518,7 +524,7 @@ export default function QuotesPage() {
   );
 
   useEffect(() => {
-    if (!detailRow) return;
+    if (!detailRow || !FACEBOOK_ENABLED) return;
     void refreshFacebookStatus(true);
   }, [detailRow, refreshFacebookStatus]);
 
@@ -538,6 +544,10 @@ export default function QuotesPage() {
   };
 
   const startFacebookConnect = async () => {
+    if (!FACEBOOK_ENABLED) {
+      pushToast("Facebook sharing is disabled.", "error");
+      return;
+    }
     setFbConnecting(true);
     try {
       const res = await fetch("/api/social/facebook/start");
@@ -555,6 +565,10 @@ export default function QuotesPage() {
   };
 
   const postTextToFacebook = async (text: string, idx: number) => {
+    if (!FACEBOOK_ENABLED) {
+      pushToast("Facebook sharing is disabled.", "error");
+      return;
+    }
     let connected = fbStatus.connected;
     let statusError = fbStatusError;
     if (!connected) {
@@ -587,6 +601,10 @@ export default function QuotesPage() {
   };
 
   const postImageToFacebook = async (text: string, idx: number, rowId: string | number) => {
+    if (!FACEBOOK_ENABLED) {
+      pushToast("Facebook sharing is disabled.", "error");
+      return;
+    }
     let connected = fbStatus.connected;
     let statusError = fbStatusError;
     if (!connected) {
@@ -726,6 +744,10 @@ export default function QuotesPage() {
   };
 
   const saveFacebookPageSelection = async () => {
+    if (!FACEBOOK_ENABLED) {
+      pushToast("Facebook sharing is disabled.", "error");
+      return;
+    }
     if (!fbSelectedPageId) {
       pushToast("Pick a Facebook Page first", "error");
       return;
@@ -1429,28 +1451,46 @@ export default function QuotesPage() {
                 </div>
               )}
 
-              <button
-                type="submit"
-                onClick={(e) => {
-                  if (editRow) {
-                    e.preventDefault();
-                    handleUpdate();
-                  }
-                }}
-                className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-3 text-sm font-semibold text-white transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-70"
-                disabled={submitStatus.type === "loading"}
-              >
-                {submitStatus.type === "loading"
-                  ? editRow
-                    ? "Saving..."
-                    : "Generating..."
-                  : editRow
-                    ? "Save changes"
-                    : "Generate Quotes"}
-                {submitStatus.type === "loading" && (
-                  <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-solid border-white border-t-transparent" />
-                )}
-              </button>
+            <hr className="mt-6 mb-4 border-t border-gray-3 dark:border-stroke-dark" />
+
+              <div className="flex flex-col gap-3 sm:flex-row">
+                <button
+                  type="button"
+                  className="flex w-full items-center justify-center rounded-xl border border-gray-3 px-4 py-3 text-sm font-semibold text-gray-7 transition hover:bg-gray-1 dark:border-stroke-dark dark:text-dark-7 dark:hover:bg-dark-3 disabled:opacity-60 sm:w-1/2"
+                  onClick={() => {
+                    setShowModal(false);
+                    setEditRow(null);
+                    setForm({ ...defaultForm });
+                    setSubmitStatus({ type: "idle" });
+                    setLanguageQuery(labelForLanguage(defaultForm.language));
+                  }}
+                  disabled={submitStatus.type === "loading"}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  onClick={(e) => {
+                    if (editRow) {
+                      e.preventDefault();
+                      handleUpdate();
+                    }
+                  }}
+                  className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 py-3 text-sm font-semibold text-white transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-70 sm:w-1/2"
+                  disabled={submitStatus.type === "loading"}
+                >
+                  {submitStatus.type === "loading"
+                    ? editRow
+                      ? "Saving..."
+                      : "Generating..."
+                    : editRow
+                      ? "Save changes"
+                      : "Generate Quotes"}
+                  {submitStatus.type === "loading" && (
+                    <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-solid border-white border-t-transparent" />
+                  )}
+                </button>
+              </div>
             </form>
           </div>
         </div>
@@ -1473,7 +1513,7 @@ export default function QuotesPage() {
                   Tone: {detailRow.tone || "—"} · Persona: {detailRow.persona || "—"} · Language:{" "}
                   {detailRow.language || "—"}
                 </p>
-                <div className="mt-2 flex flex-wrap items-center gap-2">
+                <div className={`mt-2 flex flex-wrap items-center gap-2 ${FACEBOOK_ENABLED ? "" : "hidden"}`}>
                   <span
                     className={`rounded-full px-3 py-1 text-xs font-semibold ${
                       fbStatus.connected
@@ -1903,8 +1943,12 @@ export default function QuotesPage() {
                                     <button
                                       type="button"
                                       aria-label="Post to Facebook"
+                                      className={
+                                        FACEBOOK_ENABLED
+                                          ? "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-white/60 bg-white/20 text-white transition hover:bg-white/30"
+                                          : "hidden"
+                                      }
                                       onClick={() => postImageToFacebook(q, idx, detailRow.id)}
-                                      className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-white/60 bg-white/20 text-white transition hover:bg-white/30"
                                     >
                                       {fbPostingIdx === idx ? (
                                         <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
@@ -1988,8 +2032,12 @@ export default function QuotesPage() {
                                 <button
                                   type="button"
                                   aria-label="Post to Facebook"
+                                  className={
+                                    FACEBOOK_ENABLED
+                                      ? "mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-gray-3 bg-white text-gray-6 transition hover:bg-gray-2 dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-7 dark:hover:bg-dark-4"
+                                      : "hidden"
+                                  }
                                   onClick={() => postTextToFacebook(q, idx)}
-                                  className="mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-gray-3 bg-white text-gray-6 transition hover:bg-gray-2 dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-7 dark:hover:bg-dark-4"
                                 >
                                   {fbPostingIdx === idx ? (
                                     <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />

@@ -10,15 +10,23 @@ export async function GET(request: Request) {
 
   const { user, applyCookies } = session;
   const { data, error } = await supabaseAdmin
-    .from("generated_reels")
-    .select("id, tone, platform, hook, script, caption, hashtags, thumbnail_prompt, created_at")
+    .from("scripts")
+    .select("id, input_prompt, tone, platform, text, created_at")
     .eq("user_id", user.id)
-    .not("script", "is", null)
     .order("created_at", { ascending: false })
     .limit(50);
 
   if (error) {
-    const response = NextResponse.json({ error: "Failed to load scripts & captions history" }, { status: 500 });
+    const missingTable =
+      error.message?.toLowerCase().includes("relation") && error.message?.toLowerCase().includes("does not exist");
+    const response = NextResponse.json(
+      {
+        error: missingTable
+          ? 'Missing "scripts" table. Run web/docs/sql/ai_reels_tables.sql in Supabase.'
+          : "Failed to load scripts & captions history",
+      },
+      { status: 500 },
+    );
     applyCookies(response);
     return response;
   }
@@ -26,7 +34,11 @@ export async function GET(request: Request) {
   const response = NextResponse.json({
     items: (data ?? []).map((row) => ({
       ...row,
-      topic: row.thumbnail_prompt ?? "",
+      topic: row.input_prompt ?? "Untitled",
+      hook: null,
+      caption: null,
+      hashtags: [],
+      script: row.text,
     })),
   });
   applyCookies(response);
