@@ -58,6 +58,11 @@ type ChannelIdea = {
   idea: string;
   source?: string | null;
 };
+type BulkStatus =
+  | { type: "idle"; message?: string }
+  | { type: "loading"; message?: string }
+  | { type: "error"; message: string }
+  | { type: "success"; message: string };
 
 type Status =
   | { type: "idle"; message?: string }
@@ -141,6 +146,9 @@ export default function AiReelsPage() {
   const [channelIdeas, setChannelIdeas] = useState<ChannelIdea[]>([]);
   const [ideasLoading, setIdeasLoading] = useState(false);
   const [ideasError, setIdeasError] = useState<string | null>(null);
+  const [bulkCount, setBulkCount] = useState<number>(5);
+  const [bulkSpacing, setBulkSpacing] = useState<number>(1);
+  const [bulkStatus, setBulkStatus] = useState<BulkStatus>({ type: "idle" });
 
   const filteredHistory = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -810,6 +818,61 @@ export default function AiReelsPage() {
             >
               Generate ideas
             </button>
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                min={1}
+                max={30}
+                value={bulkCount}
+                onChange={(e) => setBulkCount(Math.max(1, Math.min(Number(e.target.value) || 5, 30)))}
+                className="h-10 w-20 rounded-lg border border-gray-3 bg-white px-3 text-sm text-dark outline-none focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+              />
+              <input
+                type="number"
+                min={1}
+                max={14}
+                value={bulkSpacing}
+                onChange={(e) => setBulkSpacing(Math.max(1, Math.min(Number(e.target.value) || 1, 14)))}
+                className="h-10 w-20 rounded-lg border border-gray-3 bg-white px-3 text-sm text-dark outline-none focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+              />
+              <button
+                className="rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-60"
+                onClick={async () => {
+                  if (!form.channelId) return;
+                  setBulkStatus({ type: "loading", message: "Bulk generating..." });
+                  try {
+                    const res = await fetch("/api/automation/bulk", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        channelId: form.channelId,
+                        count: bulkCount,
+                        spacingDays: bulkSpacing,
+                        platform: form.platform,
+                        tone: form.tone,
+                      }),
+                    });
+                    const body = await res.json().catch(() => ({}));
+                    if (!res.ok) {
+                      throw new Error(body?.error || "Bulk generation failed.");
+                    }
+                    setBulkStatus({
+                      type: "success",
+                      message: `Generated ${body.generated || 0} reels.`,
+                    });
+                    await loadHistory();
+                  } catch (err) {
+                    setBulkStatus({
+                      type: "error",
+                      message: (err as Error).message || "Unable to bulk generate.",
+                    });
+                  }
+                }}
+                disabled={!form.channelId || bulkStatus.type === "loading"}
+              >
+                {bulkStatus.type === "loading" ? "Generating..." : "Bulk generate"}
+              </button>
+            </div>
           </div>
         </div>
         {!form.channelId ? (
@@ -847,6 +910,18 @@ export default function AiReelsPage() {
               ))
             )}
           </div>
+          {bulkStatus.type !== "idle" && bulkStatus.message ? (
+            <div
+              className={cn(
+                "mt-3 rounded-lg border px-3 py-2 text-sm",
+                bulkStatus.type === "error"
+                  ? "border-red-200 bg-red-50 text-red-700"
+                  : "border-emerald-200 bg-emerald-50 text-emerald-700"
+              )}
+            >
+              {bulkStatus.message}
+            </div>
+          ) : null}
         )}
       </div>
 
