@@ -42,6 +42,11 @@ These are the “source of truth” shapes to use in product/UI, agent logic, an
 - Brand kit: optional metadata attached to reel payload: `{ brandColors?: string[], brandFonts?: string[], logoUrl?: string | null, endScreenTemplate?: string | null }`.
 - Rendering payload should pass template + brand kit to the renderer. If renderer is stubbed, keep placeholders but store template/brand in `reels` for future re-renders.
 
+## Audio & Voiceover (Phase 6)
+- Payload supports audio sources: `{ audio: { aiVoiceId?: string | null, musicUploadId?: string | null, trendingAudioId?: string | null } }`.
+- UI should allow selecting a voice ID, uploaded music track ID, or trending audio ID. Renderer should receive these for voiceover/music layering.
+- Current implementation stubs rendering; video URLs are placeholders. Store audio fields in DB for future real rendering.
+
 ## Normalizers (src/lib/generation-normalize.ts)
 - `normalizeScriptCaptionRequest(input)` → applies defaults, trims strings, clamps variations.
 - `normalizeReelRequest(input)` → applies defaults for reel type, visual, audio, resolution, and script source.

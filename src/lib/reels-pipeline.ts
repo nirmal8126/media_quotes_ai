@@ -22,6 +22,9 @@ export type ReelRecord = {
   logoUrl?: string | null;
   endScreenTemplate?: string | null;
   durationSec?: number | null;
+  audioVoiceId?: string | null;
+  musicTrackId?: string | null;
+  trendingAudioId?: string | null;
   status: ReelStatus;
   rendererJobId?: string | null;
   videoUrl?: string | null;
@@ -219,6 +222,9 @@ async function insertScriptRecord(payload: {
   brandFonts?: string[] | null;
   logoUrl?: string | null;
   endScreenTemplate?: string | null;
+  audioVoiceId?: string | null;
+  musicTrackId?: string | null;
+  trendingAudioId?: string | null;
   durationSec?: number | null;
   channelId?: string | null;
   inputPrompt?: string | null;
@@ -238,6 +244,9 @@ async function insertScriptRecord(payload: {
       brand_fonts: payload.brandFonts || null,
       logo_url: payload.logoUrl || null,
       end_screen_template: payload.endScreenTemplate || null,
+      audio_voice_id: payload.audioVoiceId || null,
+      music_track_id: payload.musicTrackId || null,
+      trending_audio_id: payload.trendingAudioId || null,
       duration_sec: payload.durationSec ?? null,
       input_prompt: payload.inputPrompt || null,
       text: payload.text,
@@ -280,6 +289,9 @@ async function insertReelRecord(payload: {
   brandFonts?: string[] | null;
   logoUrl?: string | null;
   endScreenTemplate?: string | null;
+  audioVoiceId?: string | null;
+  musicTrackId?: string | null;
+  trendingAudioId?: string | null;
   durationSec?: number | null;
   channelId?: string | null;
   status: ReelStatus;
@@ -303,6 +315,9 @@ async function insertReelRecord(payload: {
       brand_fonts: payload.brandFonts || null,
       logo_url: payload.logoUrl || null,
       end_screen_template: payload.endScreenTemplate || null,
+      audio_voice_id: payload.audioVoiceId || null,
+      music_track_id: payload.musicTrackId || null,
+      trending_audio_id: payload.trendingAudioId || null,
       duration_sec: payload.durationSec ?? null,
       status: payload.status,
       renderer_job_id: payload.rendererJobId || null,
@@ -385,6 +400,11 @@ async function triggerRenderer(options: {
   } | null;
   durationSec: number;
   withVoiceover?: boolean;
+  audio?: {
+    aiVoiceId?: string | null;
+    musicUploadId?: string | null;
+    trendingAudioId?: string | null;
+  } | null;
 }) {
   const jobId = `renderer_${Date.now()}`;
   // Placeholder: replace with real renderer call. For now, we mark as ready immediately.
@@ -419,6 +439,9 @@ export async function startReelGeneration(user: User, payload: GeneratePayload):
   const brandFonts = payload.brand?.fonts ?? channel?.brandFonts ?? null;
   const logoUrl = payload.brand?.logoUrl ?? channel?.logoUrl ?? null;
   const endScreenTemplate = payload.brand?.endScreenTemplate ?? channel?.endScreenTemplate ?? null;
+  const audioVoiceId = payload.audio?.aiVoiceId ?? null;
+  const musicTrackId = payload.audio?.musicUploadId ?? null;
+  const trendingAudioId = payload.audio?.trendingAudioId ?? null;
 
   const ideaSeed = idea || channel?.topic || '';
   const ideaForPrompt =
@@ -455,6 +478,9 @@ export async function startReelGeneration(user: User, payload: GeneratePayload):
     brandFonts,
     logoUrl,
     endScreenTemplate,
+    audioVoiceId,
+    musicTrackId,
+    trendingAudioId,
     durationSec,
     inputPrompt: idea || channel?.topic || null,
     text: finalScript,
@@ -467,6 +493,11 @@ export async function startReelGeneration(user: User, payload: GeneratePayload):
     brand: { colors: brandColors, fonts: brandFonts, logoUrl, endScreenTemplate },
     durationSec,
     withVoiceover: payload.withVoiceover !== false,
+    audio: {
+      aiVoiceId: audioVoiceId,
+      musicUploadId: musicTrackId,
+      trendingAudioId,
+    },
   });
 
   const reelStatus: ReelStatus = rendererJob.status === 'ready' ? 'READY' : 'RENDERING';
@@ -483,6 +514,9 @@ export async function startReelGeneration(user: User, payload: GeneratePayload):
     brandFonts,
     logoUrl,
     endScreenTemplate,
+    audioVoiceId,
+    musicTrackId,
+    trendingAudioId,
     durationSec,
     status: reelStatus,
     rendererJobId: rendererJob.id,

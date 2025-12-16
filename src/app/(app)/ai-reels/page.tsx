@@ -10,6 +10,7 @@ type ReelHistoryItem = {
   platform?: string | null;
   tone?: string | null;
   style?: string | null;
+  template?: string | null;
   videoUrl?: string | null;
   thumbnailUrl?: string | null;
   rendererJobId?: string | null;
@@ -130,6 +131,9 @@ export default function AiReelsPage() {
   const [statusFilter, setStatusFilter] = useState<string>("");
   const [dateFrom, setDateFrom] = useState<string>("");
   const [dateTo, setDateTo] = useState<string>("");
+  const [voiceId, setVoiceId] = useState<string>("");
+  const [musicTrackId, setMusicTrackId] = useState<string>("");
+  const [trendingAudioId, setTrendingAudioId] = useState<string>("");
   const selectedChannel = useMemo(
     () => channels.find((c) => c.id === form.channelId),
     [channels, form.channelId]
@@ -304,6 +308,11 @@ export default function AiReelsPage() {
               .filter(Boolean),
             logoUrl: form.logoUrl || null,
             endScreenTemplate: form.endScreenTemplate || null,
+          },
+          audio: {
+            aiVoiceId: voiceId || null,
+            musicUploadId: musicTrackId || null,
+            trendingAudioId: trendingAudioId || null,
           },
         }),
       });
@@ -1128,6 +1137,42 @@ export default function AiReelsPage() {
                     onChange={(e) =>
                       setForm((prev) => ({ ...prev, endScreenTemplate: e.target.value }))
                     }
+                  />
+                </label>
+                <label className="block text-sm font-semibold text-dark dark:text-dark-7">
+                  <div className="flex items-center gap-2">
+                    <span>AI Voice ID</span>
+                    <span className="text-xs font-normal text-gray-6 dark:text-dark-6">(optional)</span>
+                  </div>
+                  <input
+                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+                    placeholder="voice_123"
+                    value={voiceId}
+                    onChange={(e) => setVoiceId(e.target.value)}
+                  />
+                </label>
+                <label className="block text-sm font-semibold text-dark dark:text-dark-7">
+                  <div className="flex items-center gap-2">
+                    <span>Music upload ID</span>
+                    <span className="text-xs font-normal text-gray-6 dark:text-dark-6">(optional)</span>
+                  </div>
+                  <input
+                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+                    placeholder="music_upload_123"
+                    value={musicTrackId}
+                    onChange={(e) => setMusicTrackId(e.target.value)}
+                  />
+                </label>
+                <label className="block text-sm font-semibold text-dark dark:text-dark-7">
+                  <div className="flex items-center gap-2">
+                    <span>Trending audio ID</span>
+                    <span className="text-xs font-normal text-gray-6 dark:text-dark-6">(optional)</span>
+                  </div>
+                  <input
+                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+                    placeholder="trending_audio_123"
+                    value={trendingAudioId}
+                    onChange={(e) => setTrendingAudioId(e.target.value)}
                   />
                 </label>
                 <label className="mt-1 mb-1 flex items-center gap-2 text-sm font-semibold text-dark dark:text-dark-7">
