@@ -27,6 +27,13 @@ type ReelState = {
     text: string;
     inputPrompt?: string | null;
   };
+  variants?: {
+    hooks?: string[];
+    titles?: string[];
+    scripts?: string[];
+    hashtags?: string[][];
+  };
+  storyboard?: Array<{ label?: string; text: string; durationMs?: number; visualSuggestion?: string }>;
 };
 
 type Channel = {
@@ -269,13 +276,18 @@ export default function AiReelsPage() {
       const res = await fetch("/api/reels/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
+        body: JSON.stringify({ ...form, multiVariants: true, storyboard: true }),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {
         throw new Error(body?.error || "Failed to start reel generation.");
       }
-      setResult({ reel: body.reel, script: body.script });
+      setResult({
+        reel: body.reel,
+        script: body.script,
+        variants: body.variants,
+        storyboard: body.storyboard,
+      });
       setStatus({
         type: "success",
         message:
@@ -463,11 +475,11 @@ export default function AiReelsPage() {
       </div>
 
       <div className="rounded-2xl border border-gray-3 bg-white p-4 shadow-card-2 dark:border-stroke-dark dark:bg-dark-2">
-        {historyLoading ? (
-          <div className="py-10 text-center text-gray-6 dark:text-dark-6">
-            Loading reels...
-          </div>
-        ) : historyError ? (
+      {historyLoading ? (
+        <div className="py-10 text-center text-gray-6 dark:text-dark-6">
+          Loading reels...
+        </div>
+      ) : historyError ? (
           <div className="py-10 text-center text-red-600">{historyError}</div>
         ) : (
           <div className="space-y-4 overflow-x-auto">
@@ -639,6 +651,80 @@ export default function AiReelsPage() {
           </div>
         )}
       </div>
+
+      {result?.variants || result?.storyboard ? (
+        <div className="rounded-2xl border border-gray-3 bg-white p-4 shadow-card-2 dark:border-stroke-dark dark:bg-dark-2">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.35em] text-primary">
+                Generated extras
+              </p>
+              <h3 className="text-lg font-bold text-dark dark:text-dark-8">Variants & storyboard</h3>
+            </div>
+          </div>
+
+          <div className="mt-4 grid gap-3 md:grid-cols-2">
+            {result?.variants && (result.variants.hooks?.length || result.variants.scripts?.length) ? (
+              <div className="space-y-2 rounded-lg border border-gray-3 p-3 dark:border-stroke-dark">
+                <div className="text-sm font-semibold text-dark dark:text-dark-8">Variants</div>
+                <div className="space-y-1 text-sm text-gray-7 dark:text-dark-7">
+                  {result.variants.hooks?.length ? (
+                    <div>
+                      <div className="text-xs font-semibold uppercase text-gray-6 dark:text-dark-6">Hooks</div>
+                      <ul className="list-disc pl-5">
+                        {result.variants.hooks.slice(0, 3).map((hook, idx) => (
+                          <li key={`hook-${idx}`}>{hook}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
+                  {result.variants.scripts?.length ? (
+                    <div>
+                      <div className="text-xs font-semibold uppercase text-gray-6 dark:text-dark-6">Scripts (preview)</div>
+                      <ul className="list-disc pl-5">
+                        {result.variants.scripts.slice(0, 2).map((script, idx) => (
+                          <li key={`script-${idx}`} className="line-clamp-2">
+                            {script}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
+                  {result.variants.titles?.length ? (
+                    <div>
+                      <div className="text-xs font-semibold uppercase text-gray-6 dark:text-dark-6">Titles</div>
+                      <ul className="list-disc pl-5">
+                        {result.variants.titles.slice(0, 3).map((title, idx) => (
+                          <li key={`title-${idx}`}>{title}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
+
+            {result?.storyboard && result.storyboard.length > 0 ? (
+              <div className="space-y-2 rounded-lg border border-gray-3 p-3 dark:border-stroke-dark">
+                <div className="text-sm font-semibold text-dark dark:text-dark-8">Storyboard (up to 5 scenes)</div>
+                <ol className="space-y-2 text-sm text-gray-7 dark:text-dark-7">
+                  {result.storyboard.slice(0, 5).map((scene, idx) => (
+                    <li key={`scene-${idx}`} className="rounded-lg bg-gray-1/60 p-2 dark:bg-dark-3/70">
+                      <div className="text-xs font-semibold uppercase text-gray-6 dark:text-dark-6">
+                        {scene.label || `Scene ${idx + 1}`} {scene.durationMs ? `• ${Math.round(scene.durationMs / 1000)}s` : ""}
+                      </div>
+                      <div>{scene.text}</div>
+                      {scene.visualSuggestion ? (
+                        <div className="text-[11px] text-gray-5 dark:text-dark-6">Visual: {scene.visualSuggestion}</div>
+                      ) : null}
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
 
       <div className="rounded-2xl border border-gray-3 bg-white p-4 shadow-card-2 dark:border-stroke-dark dark:bg-dark-2">
         <div className="flex flex-wrap items-center justify-between gap-3">

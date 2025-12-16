@@ -162,6 +162,99 @@ export async function generateThumbnailPrompt(tone: string, platform: string, pr
   return raw;
 }
 
+export async function generateScriptVariants(options: {
+  topic: string;
+  tone: string;
+  platform: string;
+  count?: number;
+  provider?: LlmProvider;
+}) {
+  const { topic, tone, platform, provider } = options;
+  const count = Math.max(3, Math.min(options.count ?? 3, 5));
+  const prompt = [
+    `Generate ${count} hooks, ${count} titles, ${count} scripts, and ${count} hashtag sets for a ${platform} reel.`,
+    `Topic: ${topic}. Tone: ${tone}. Keep them distinct and on-topic.`,
+    'Return JSON with keys: hooks (array of strings), titles (array), scripts (array), hashtags (array of arrays).',
+  ].join(' ');
+
+  const fallback = { hooks: [], titles: [], scripts: [], hashtags: [] as string[][] };
+  const raw = await generateCompletion(prompt, { temperature: 0.85, maxTokens: 900, provider });
+
+  try {
+    const parsed = JSON.parse(raw) as {
+      hooks?: unknown[];
+      titles?: unknown[];
+      scripts?: unknown[];
+      hashtags?: unknown[];
+    };
+    const hooks = Array.isArray(parsed.hooks) ? parsed.hooks.map((h) => String(h || '')).filter(Boolean) : [];
+    const titles = Array.isArray(parsed.titles) ? parsed.titles.map((h) => String(h || '')).filter(Boolean) : [];
+    const scripts = Array.isArray(parsed.scripts) ? parsed.scripts.map((h) => String(h || '')).filter(Boolean) : [];
+    const hashtags = Array.isArray(parsed.hashtags)
+      ? parsed.hashtags.map((set) =>
+          Array.isArray(set) ? set.map((t) => String(t || '')).filter(Boolean) : String(set || '').split(/[,\n]/).map((t) => t.trim()).filter(Boolean),
+        )
+      : [];
+
+    return {
+      hooks: hooks.slice(0, count),
+      titles: titles.slice(0, count),
+      scripts: scripts.slice(0, count),
+      hashtags: hashtags.slice(0, count).map((set) =>
+        set.map((tag) => (tag.startsWith('#') ? tag : `#${tag}`)).slice(0, 8),
+      ),
+    };
+  } catch {
+    return fallback;
+  }
+}
+
+export async function generateStoryboard(options: {
+  script: string;
+  tone: string;
+  platform: string;
+  provider?: LlmProvider;
+}) {
+  const { script, tone, platform, provider } = options;
+  const prompt = [
+    `Create a storyboard for this ${platform} script in a ${tone} tone.`,
+    'Return JSON array of scenes, each with: label (hook/body/outro/etc), text, durationMs, and optional visualSuggestion.',
+    'Keep 4-8 scenes max. Use concise text.',
+    'Script:',
+    script,
+  ].join('\n');
+
+  const raw = await generateCompletion(prompt, { temperature: 0.6, maxTokens: 600, provider });
+
+  try {
+    const parsed = JSON.parse(raw) as Array<{
+      label?: string;
+      text?: string;
+      durationMs?: number;
+      visualSuggestion?: string;
+    }>;
+    if (Array.isArray(parsed)) {
+      return parsed
+        .map((scene) => ({
+          label: (scene.label || '').trim() || undefined,
+          text: (scene.text || '').trim(),
+          durationMs: scene.durationMs ?? undefined,
+          visualSuggestion: (scene.visualSuggestion || '').trim() || undefined,
+        }))
+        .filter((s) => s.text)
+        .slice(0, 8);
+    }
+  } catch {
+    // fall through
+  }
+
+  return raw
+    .split(/\n+/)
+    .filter((line) => line.trim())
+    .slice(0, 8)
+    .map((text) => ({ label: undefined, text: text.trim() }));
+}
+
 export async function generateHashtagList(tone: string, platform: string, provider?: LlmProvider) {
   const prompt = `List 12 relevant, high-engagement hashtags for a ${tone} ${platform} reel. Output as a comma-separated list.`;
   const raw = await generateCompletion(prompt, { temperature: 0.6, maxTokens: 120, provider });
