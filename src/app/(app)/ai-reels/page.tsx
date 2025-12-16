@@ -58,6 +58,29 @@ type ChannelIdea = {
   idea: string;
   source?: string | null;
 };
+type Insights = {
+  totals?: { reels?: number };
+  byPlatform?: Record<string, number>;
+  byTone?: Record<string, number>;
+  topHashtags?: Array<{ tag: string; count: number }>;
+  sampleHooks?: string[];
+};
+type Trends = {
+  platform: string;
+  niche: string;
+  trendingSounds: string[];
+  trendingTopics: string[];
+  trendingHashtags: string[];
+  personalizedHashtags: string[];
+};
+type CompetitorInsight = {
+  handle: string;
+  platform: string;
+  bestPostingTimes?: string[];
+  topHooks?: string[];
+  topHashtags?: string[];
+  viralTopics?: string[];
+};
 type BulkStatus =
   | { type: "idle"; message?: string }
   | { type: "loading"; message?: string }
@@ -149,6 +172,12 @@ export default function AiReelsPage() {
   const [bulkCount, setBulkCount] = useState<number>(5);
   const [bulkSpacing, setBulkSpacing] = useState<number>(1);
   const [bulkStatus, setBulkStatus] = useState<BulkStatus>({ type: "idle" });
+  const [insights, setInsights] = useState<Insights | null>(null);
+  const [trends, setTrends] = useState<Trends | null>(null);
+  const [metaError, setMetaError] = useState<string | null>(null);
+  const [competitors, setCompetitors] = useState<string>("");
+  const [competitorInsights, setCompetitorInsights] = useState<CompetitorInsight[]>([]);
+  const [competitorStatus, setCompetitorStatus] = useState<Status>({ type: "idle" });
 
   const filteredHistory = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -280,6 +309,47 @@ export default function AiReelsPage() {
   useEffect(() => {
     void loadChannelIdeas(form.channelId);
   }, [form.channelId]);
+
+  useEffect(() => {
+    const loadInsights = async () => {
+      try {
+        const res = await fetch("/api/meta/insights", { cache: "no-store" });
+        const body = await res.json().catch(() => ({}));
+        if (res.ok) {
+          setInsights(body);
+          setMetaError(null);
+        }
+      } catch {
+        setMetaError("Unable to load insights.");
+      }
+    };
+    void loadInsights();
+  }, []);
+
+  useEffect(() => {
+    const loadTrends = async () => {
+      const platformParam =
+        platformFilter ||
+        selectedChannel?.platform ||
+        form.platform ||
+        "instagram";
+      const nicheParam = selectedChannel?.topic || selectedChannel?.name || "general";
+      try {
+        const res = await fetch(
+          `/api/meta/trends?platform=${encodeURIComponent(platformParam)}&niche=${encodeURIComponent(nicheParam)}`,
+          { cache: "no-store" }
+        );
+        const body = await res.json().catch(() => ({}));
+        if (res.ok) {
+          setTrends(body);
+          setMetaError(null);
+        }
+      } catch {
+        setMetaError("Unable to load trends.");
+      }
+    };
+    void loadTrends();
+  }, [platformFilter, selectedChannel, form.platform]);
 
   const handleGenerate = async () => {
     if (status.type === "loading") return;
@@ -772,6 +842,151 @@ export default function AiReelsPage() {
         </div>
       ) : null}
 
+      {(insights || trends) && (
+        <div className="rounded-2xl border border-gray-3 bg-white p-4 shadow-card-2 dark:border-stroke-dark dark:bg-dark-2">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.35em] text-primary">Insights & trends</p>
+              <h3 className="text-lg font-bold text-dark dark:text-dark-8">Recent performance & ideas</h3>
+            </div>
+            {metaError && <span className="text-xs text-red-600">{metaError}</span>}
+          </div>
+          <div className="mt-4 grid gap-3 md:grid-cols-2">
+            {insights ? (
+              <div className="space-y-2 rounded-lg border border-gray-3 p-3 dark:border-stroke-dark">
+                <div className="text-sm font-semibold text-dark dark:text-dark-8">
+                  Totals: {insights.totals?.reels ?? 0} reels
+                </div>
+                <div className="text-xs text-gray-6 dark:text-dark-6">Top hashtags</div>
+                <div className="flex flex-wrap gap-2 text-xs text-dark dark:text-dark-8">
+                  {(insights.topHashtags ?? []).slice(0, 6).map((h) => (
+                    <span key={h.tag} className="rounded-full bg-gray-1 px-2 py-1 dark:bg-dark-3">
+                      {h.tag} ({h.count})
+                    </span>
+                  ))}
+                  {(insights.topHashtags ?? []).length === 0 && <span className="text-gray-5">No data</span>}
+                </div>
+                <div className="text-xs text-gray-6 dark:text-dark-6">Sample hooks</div>
+                <ul className="list-disc space-y-1 pl-4 text-sm text-dark dark:text-dark-8">
+                  {(insights.sampleHooks ?? []).slice(0, 3).map((hook, idx) => (
+                    <li key={`hook-sample-${idx}`} className="line-clamp-2">
+                      {hook}
+                    </li>
+                  ))}
+                  {(insights.sampleHooks ?? []).length === 0 && <li className="text-gray-5">No hooks yet</li>}
+                </ul>
+              </div>
+            ) : null}
+            {trends ? (
+              <div className="space-y-2 rounded-lg border border-gray-3 p-3 dark:border-stroke-dark">
+                <div className="text-sm font-semibold text-dark dark:text-dark-8">
+                  Trends for {trends.platform} / {trends.niche}
+                </div>
+                <div className="text-xs text-gray-6 dark:text-dark-6">Trending topics</div>
+                <div className="flex flex-wrap gap-2 text-xs text-dark dark:text-dark-8">
+                  {trends.trendingTopics.slice(0, 5).map((topic, idx) => (
+                    <span key={`topic-${idx}`} className="rounded-full bg-gray-1 px-2 py-1 dark:bg-dark-3">
+                      {topic}
+                    </span>
+                  ))}
+                </div>
+                <div className="text-xs text-gray-6 dark:text-dark-6">Trending hashtags</div>
+                <div className="flex flex-wrap gap-2 text-xs text-dark dark:text-dark-8">
+                  {trends.trendingHashtags.slice(0, 6).map((tag, idx) => (
+                    <span key={`htag-${idx}`} className="rounded-full bg-gray-1 px-2 py-1 dark:bg-dark-3">
+                      {tag}
+                    </span>
+                  ))}
+                </div>
+                <div className="text-xs text-gray-6 dark:text-dark-6">Personalized hashtags</div>
+                <div className="flex flex-wrap gap-2 text-xs text-dark dark:text-dark-8">
+                  {trends.personalizedHashtags.slice(0, 6).map((tag, idx) => (
+                    <span key={`ptag-${idx}`} className="rounded-full bg-emerald-50 px-2 py-1 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200">
+                      {tag}
+                    </span>
+                  ))}
+                  {trends.personalizedHashtags.length === 0 && (
+                    <span className="text-gray-5">No personalized tags yet</span>
+                  )}
+                </div>
+              </div>
+            ) : null}
+            <div className="space-y-2 rounded-lg border border-gray-3 p-3 dark:border-stroke-dark">
+              <div className="flex items-center justify-between gap-2">
+                <div className="text-sm font-semibold text-dark dark:text-dark-8">Competitors</div>
+                {competitorStatus.type === "error" && competitorStatus.message && (
+                  <span className="text-xs text-red-600">{competitorStatus.message}</span>
+                )}
+              </div>
+              <p className="text-xs text-gray-6 dark:text-dark-6">
+                Enter handles (comma separated) like @channel1, @channel2. Platform follows current selection.
+              </p>
+              <input
+                className="mt-1 w-full rounded-lg border border-gray-3 bg-white px-3 py-2 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+                placeholder="@handle1, @handle2"
+                value={competitors}
+                onChange={(e) => setCompetitors(e.target.value)}
+              />
+              <button
+                className="mt-2 w-full rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-indigo-700 disabled:opacity-60"
+                onClick={async () => {
+                  const handles = competitors
+                    .split(",")
+                    .map((h) => h.trim())
+                    .filter(Boolean);
+                  if (!handles.length) return;
+                  setCompetitorStatus({ type: "loading", message: "Fetching competitor insights..." });
+                  try {
+                    const payload = {
+                      competitors: handles.map((h) => ({
+                        handle: h.startsWith("@") ? h.slice(1) : h,
+                        platform: platformFilter || selectedChannel?.platform || form.platform || "instagram",
+                      })),
+                    };
+                    const res = await fetch("/api/meta/competitors", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify(payload),
+                    });
+                    const body = await res.json().catch(() => ({}));
+                    if (!res.ok) {
+                      throw new Error(body?.error || "Failed to load competitors.");
+                    }
+                    setCompetitorInsights(Array.isArray(body.insights) ? body.insights : []);
+                    setCompetitorStatus({ type: "success", message: "Fetched competitor suggestions." });
+                  } catch (err) {
+                    setCompetitorStatus({ type: "error", message: (err as Error).message || "Unable to load competitors." });
+                  }
+                }}
+                disabled={competitorStatus.type === "loading"}
+              >
+                {competitorStatus.type === "loading" ? "Loading..." : "Fetch competitor tips"}
+              </button>
+              {competitorInsights.length > 0 ? (
+                <div className="space-y-2 text-sm text-dark dark:text-dark-8">
+                  {competitorInsights.map((c, idx) => (
+                    <div key={`${c.handle}-${idx}`} className="rounded-lg bg-gray-1/60 p-2 dark:bg-dark-3/70">
+                      <div className="text-xs font-semibold uppercase text-gray-6 dark:text-dark-6">
+                        {c.handle} • {c.platform}
+                      </div>
+                      <div className="text-xs text-gray-6 dark:text-dark-6">Best times: {(c.bestPostingTimes || []).join(", ") || "N/A"}</div>
+                      <div className="text-xs text-gray-6 dark:text-dark-6">
+                        Hooks: {(c.topHooks || []).slice(0, 2).join(" | ") || "N/A"}
+                      </div>
+                      <div className="text-xs text-gray-6 dark:text-dark-6">
+                        Hashtags: {(c.topHashtags || []).slice(0, 4).join(", ") || "N/A"}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-xs text-gray-5">No competitor data yet</div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="rounded-2xl border border-gray-3 bg-white p-4 shadow-card-2 dark:border-stroke-dark dark:bg-dark-2">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -882,46 +1097,48 @@ export default function AiReelsPage() {
         ) : ideasError ? (
           <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">{ideasError}</div>
         ) : (
-          <div className="mt-4 grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-            {ideasLoading && channelIdeas.length === 0 ? (
-              <div className="rounded-lg border border-gray-3 p-4 text-sm text-gray-6 dark:border-stroke-dark dark:text-dark-6">
-                Loading ideas...
-              </div>
-            ) : channelIdeas.length === 0 ? (
-              <div className="rounded-lg border border-dashed border-gray-3 p-4 text-sm text-gray-6 dark:border-stroke-dark dark:text-dark-6">
-                No ideas saved yet. Generate or add one manually by typing in the Idea field and saving a reel.
-              </div>
-            ) : (
-              channelIdeas.map((idea) => (
-                <div key={idea.id} className="flex flex-col justify-between rounded-lg border border-gray-3 p-3 shadow-sm dark:border-stroke-dark">
-                  <div className="text-sm text-dark dark:text-dark-8">{idea.idea}</div>
-                  <div className="mt-3 flex items-center justify-between text-xs text-gray-6 dark:text-dark-6">
-                    <span className="rounded-full bg-gray-1 px-2 py-1 font-semibold uppercase text-gray-7 dark:bg-dark-3 dark:text-dark-7">
-                      {idea.source || "user"}
-                    </span>
-                    <button
-                      className="text-primary hover:underline"
-                      onClick={() => setForm((prev) => ({ ...prev, idea: idea.idea }))}
-                    >
-                      Use
-                    </button>
-                  </div>
+          <>
+            <div className="mt-4 grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+              {ideasLoading && channelIdeas.length === 0 ? (
+                <div className="rounded-lg border border-gray-3 p-4 text-sm text-gray-6 dark:border-stroke-dark dark:text-dark-6">
+                  Loading ideas...
                 </div>
-              ))
-            )}
-          </div>
-          {bulkStatus.type !== "idle" && bulkStatus.message ? (
-            <div
-              className={cn(
-                "mt-3 rounded-lg border px-3 py-2 text-sm",
-                bulkStatus.type === "error"
-                  ? "border-red-200 bg-red-50 text-red-700"
-                  : "border-emerald-200 bg-emerald-50 text-emerald-700"
+              ) : channelIdeas.length === 0 ? (
+                <div className="rounded-lg border border-dashed border-gray-3 p-4 text-sm text-gray-6 dark:border-stroke-dark dark:text-dark-6">
+                  No ideas saved yet. Generate or add one manually by typing in the Idea field and saving a reel.
+                </div>
+              ) : (
+                channelIdeas.map((idea) => (
+                  <div key={idea.id} className="flex flex-col justify-between rounded-lg border border-gray-3 p-3 shadow-sm dark:border-stroke-dark">
+                    <div className="text-sm text-dark dark:text-dark-8">{idea.idea}</div>
+                    <div className="mt-3 flex items-center justify-between text-xs text-gray-6 dark:text-dark-6">
+                      <span className="rounded-full bg-gray-1 px-2 py-1 font-semibold uppercase text-gray-7 dark:bg-dark-3 dark:text-dark-7">
+                        {idea.source || "user"}
+                      </span>
+                      <button
+                        className="text-primary hover:underline"
+                        onClick={() => setForm((prev) => ({ ...prev, idea: idea.idea }))}
+                      >
+                        Use
+                      </button>
+                    </div>
+                  </div>
+                ))
               )}
-            >
-              {bulkStatus.message}
             </div>
-          ) : null}
+            {bulkStatus.type !== "idle" && bulkStatus.message ? (
+              <div
+                className={cn(
+                  "mt-3 rounded-lg border px-3 py-2 text-sm",
+                  bulkStatus.type === "error"
+                    ? "border-red-200 bg-red-50 text-red-700"
+                    : "border-emerald-200 bg-emerald-50 text-emerald-700"
+                )}
+              >
+                {bulkStatus.message}
+              </div>
+            ) : null}
+          </>
         )}
       </div>
 
