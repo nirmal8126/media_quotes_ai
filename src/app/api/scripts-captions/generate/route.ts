@@ -56,6 +56,7 @@ export async function POST(request: Request) {
     const saved = await storeGeneratedReel({
       userId: user.id,
       channelId,
+      status: "generated",
       tone: normalized.tone,
       platform: normalized.platform,
       hook: hook ?? scriptResult.hook,

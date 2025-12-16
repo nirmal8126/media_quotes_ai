@@ -75,6 +75,8 @@ export async function POST(request: Request) {
 
     const record = await storeGeneratedReel({
       userId,
+      status: 'generated',
+      scheduledDate: scheduledDate.toISOString().split('T')[0],
       tone,
       platform,
       script: scriptAssets.script,

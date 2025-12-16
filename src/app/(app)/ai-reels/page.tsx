@@ -7,12 +7,16 @@ import { cn } from "@/lib/utils";
 type ReelHistoryItem = {
   id: string;
   status?: string | null;
+  platform?: string | null;
+  tone?: string | null;
+  style?: string | null;
   videoUrl?: string | null;
   thumbnailUrl?: string | null;
   rendererJobId?: string | null;
   createdAt?: string | null;
   scriptId?: string | null;
   scriptText?: string | null;
+  inputPrompt?: string | null;
   channelId?: string | null;
 };
 
@@ -94,6 +98,11 @@ export default function AiReelsPage() {
   const [channelLoading, setChannelLoading] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [channelFilter, setChannelFilter] = useState<string>("");
+  const [platformFilter, setPlatformFilter] = useState<string>("");
+  const [toneFilter, setToneFilter] = useState<string>("");
+  const [statusFilter, setStatusFilter] = useState<string>("");
+  const [dateFrom, setDateFrom] = useState<string>("");
+  const [dateTo, setDateTo] = useState<string>("");
 
   const filteredHistory = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -104,9 +113,25 @@ export default function AiReelsPage() {
         ? history.filter((h) => !h.channelId)
         : history.filter((h) => h.channelId === channelFilter);
 
-    if (!term) return filteredByChannel;
+    const filteredByMeta = filteredByChannel.filter((item) => {
+      const matchesPlatform = !platformFilter
+        ? true
+        : (item.platform ?? "").toLowerCase().includes(platformFilter.toLowerCase());
+      const matchesTone = !toneFilter
+        ? true
+        : (item.tone ?? "").toLowerCase().includes(toneFilter.toLowerCase());
+      const matchesStatus = !statusFilter
+        ? true
+        : (item.status ?? "").toLowerCase() === statusFilter.toLowerCase();
+      const created = item.createdAt ? new Date(item.createdAt) : null;
+      const matchesFrom = !dateFrom || !created ? true : created >= new Date(dateFrom);
+      const matchesTo = !dateTo || !created ? true : created <= new Date(dateTo);
+      return matchesPlatform && matchesTone && matchesStatus && matchesFrom && matchesTo;
+    });
 
-    return filteredByChannel.filter((item) => {
+    if (!term) return filteredByMeta;
+
+    return filteredByMeta.filter((item) => {
       const text = [
         item.id,
         item.status,
@@ -120,7 +145,7 @@ export default function AiReelsPage() {
         .toLowerCase();
       return text.includes(term);
     });
-  }, [history, search, channelFilter]);
+  }, [history, search, channelFilter, platformFilter, toneFilter, statusFilter, dateFrom, dateTo]);
 
   const pageCount = Math.max(1, Math.ceil(filteredHistory.length / pageSize));
   const currentPage = Math.min(page, pageCount);
@@ -131,13 +156,22 @@ export default function AiReelsPage() {
 
   useEffect(() => {
     setPage(1);
-  }, [search, pageSize, history.length]);
+  }, [search, pageSize, history.length, channelFilter, platformFilter, toneFilter, statusFilter, dateFrom, dateTo]);
 
   const loadHistory = async () => {
     setHistoryLoading(true);
     setHistoryError(null);
     try {
-      const res = await fetch("/api/reels/history", { cache: "no-store" });
+      const params = new URLSearchParams();
+      if (channelFilter && channelFilter !== "none") params.set("channelId", channelFilter);
+      if (platformFilter) params.set("platform", platformFilter);
+      if (toneFilter) params.set("tone", toneFilter);
+      if (statusFilter) params.set("status", statusFilter);
+      if (dateFrom) params.set("from", dateFrom);
+      if (dateTo) params.set("to", dateTo);
+
+      const url = params.toString() ? `/api/reels/history?${params.toString()}` : "/api/reels/history";
+      const res = await fetch(url, { cache: "no-store" });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {
         throw new Error(body?.error || "Failed to load reel history.");
@@ -168,9 +202,12 @@ export default function AiReelsPage() {
   };
 
   useEffect(() => {
-    void loadHistory();
     void loadChannels();
   }, []);
+
+  useEffect(() => {
+    void loadHistory();
+  }, [channelFilter, platformFilter, toneFilter, statusFilter, dateFrom, dateTo]);
 
   const handleGenerate = async () => {
     if (status.type === "loading") return;
@@ -299,6 +336,91 @@ export default function AiReelsPage() {
       </div>
 
       <div className="rounded-2xl border border-gray-3 bg-white p-4 shadow-card-2 dark:border-stroke-dark dark:bg-dark-2">
+        <div className="grid gap-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
+          <label className="flex flex-col gap-1 text-xs font-semibold text-gray-6 dark:text-dark-6">
+            Channel
+            <select
+              className="h-10 rounded-lg border border-gray-3 bg-white px-3 text-sm font-semibold text-dark focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+              value={channelFilter}
+              onChange={(e) => setChannelFilter(e.target.value)}
+              disabled={channelLoading}
+            >
+              <option value="">All</option>
+              <option value="none">No channel</option>
+              {channels.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name} {c.platform ? `• ${c.platform}` : ""}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex flex-col gap-1 text-xs font-semibold text-gray-6 dark:text-dark-6">
+            Platform
+            <select
+              className="h-10 rounded-lg border border-gray-3 bg-white px-3 text-sm font-semibold text-dark focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+              value={platformFilter}
+              onChange={(e) => setPlatformFilter(e.target.value)}
+            >
+              <option value="">All</option>
+              {platforms.map((p) => (
+                <option key={p} value={p}>
+                  {p}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex flex-col gap-1 text-xs font-semibold text-gray-6 dark:text-dark-6">
+            Tone
+            <select
+              className="h-10 rounded-lg border border-gray-3 bg-white px-3 text-sm font-semibold text-dark focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+              value={toneFilter}
+              onChange={(e) => setToneFilter(e.target.value)}
+            >
+              <option value="">All</option>
+              {tones.map((t) => (
+                <option key={t} value={t}>
+                  {t}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex flex-col gap-1 text-xs font-semibold text-gray-6 dark:text-dark-6">
+            Status
+            <select
+              className="h-10 rounded-lg border border-gray-3 bg-white px-3 text-sm font-semibold text-dark focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+            >
+              <option value="">All</option>
+              {["READY", "RENDERING", "SCHEDULED", "PUBLISHED", "FAILED", "PENDING"].map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="flex flex-col gap-1 text-xs font-semibold text-gray-6 dark:text-dark-6">
+            Date range
+            <div className="flex items-center gap-2">
+              <input
+                type="date"
+                value={dateFrom}
+                onChange={(e) => setDateFrom(e.target.value)}
+                className="h-10 w-full rounded-lg border border-gray-3 bg-white px-3 text-sm text-dark outline-none focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+              />
+              <span className="text-xs text-gray-6 dark:text-dark-6">to</span>
+              <input
+                type="date"
+                value={dateTo}
+                onChange={(e) => setDateTo(e.target.value)}
+                className="h-10 w-full rounded-lg border border-gray-3 bg-white px-3 text-sm text-dark outline-none focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-gray-3 bg-white p-4 shadow-card-2 dark:border-stroke-dark dark:bg-dark-2">
         {historyLoading ? (
           <div className="py-10 text-center text-gray-6 dark:text-dark-6">
             Loading reels...
@@ -323,48 +445,22 @@ export default function AiReelsPage() {
                 </select>
                 <span className="text-gray-6 dark:text-dark-6">entries</span>
               </div>
-
-              <div className="flex flex-wrap items-center gap-3">
-                <div className="flex flex-col gap-1">
-                  <div className="text-xs font-semibold text-gray-6 dark:text-dark-6">
-                    Search{" "}
-                    <span className="font-normal">(script, id, status)</span>
-                  </div>
-                  <div className="relative">
-                    <input
-                      value={search}
-                      onChange={(e) => setSearch(e.target.value)}
-                      placeholder="Search reels"
-                      className="h-10 w-56 rounded-lg border border-gray-3 bg-white px-3 pl-9 text-sm text-dark outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
-                      aria-label="Search reels"
-                    />
-                    <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-5">
-                      🔍
-                    </span>
-                  </div>
-                </div>
-                <div className="flex flex-col gap-1">
-                  <div className="text-xs font-semibold text-gray-6 dark:text-dark-6">
-                    Channel
-                  </div>
-                  <select
-                    className="h-10 rounded-lg border border-gray-3 bg-white px-3 text-sm font-semibold text-dark focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
-                    value={channelFilter}
-                    onChange={(e) => setChannelFilter(e.target.value)}
-                    disabled={channelLoading}
-                  >
-                    <option value="">All</option>
-                    <option value="none">No channel</option>
-                    {channels.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name} {c.platform ? `• ${c.platform}` : ""}
-                      </option>
-                    ))}
-                  </select>
+              <div className="flex flex-col gap-1 text-xs font-semibold text-gray-6 dark:text-dark-6">
+                Search <span className="font-normal">(script, id, status)</span>
+                <div className="relative">
+                  <input
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    placeholder="Search reels"
+                    className="h-10 w-56 rounded-lg border border-gray-3 bg-white px-3 pl-9 text-sm text-dark outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+                    aria-label="Search reels"
+                  />
+                  <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-5">
+                    🔍
+                  </span>
                 </div>
               </div>
             </div>
-
             <table className="min-w-full text-left text-sm text-dark dark:text-dark-8">
               <thead className="bg-gray-1 text-xs font-semibold uppercase text-gray-6 dark:bg-dark-3 dark:text-dark-7">
                 <tr>
@@ -400,6 +496,11 @@ export default function AiReelsPage() {
                         <div className="text-xs text-gray-6 dark:text-dark-6">
                           ID: {item.id}
                         </div>
+                        {(item.platform || item.tone) && (
+                          <div className="text-[11px] text-gray-5 dark:text-dark-6">
+                            {[item.platform, item.tone].filter(Boolean).join(" • ")}
+                          </div>
+                        )}
                         {item.rendererJobId && (
                           <div className="text-[11px] text-gray-5 dark:text-dark-6">
                             Job: {item.rendererJobId}

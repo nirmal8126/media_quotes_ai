@@ -15,6 +15,12 @@ export type ChannelRecord = {
   logoUrl?: string | null;
   audience?: string | null;
   contentType?: string | null;
+  styleRules?: string | null;
+  visualStyle?: string | null;
+  postingFrequency?: string | null;
+  brandColors?: string[] | null;
+  brandFonts?: string[] | null;
+  endScreenTemplate?: string | null;
   durationDefault?: number | null;
   ctaDefault?: string | null;
   baseHashtags?: string[] | null;
@@ -39,6 +45,12 @@ function mapChannel(row: Record<string, any>): ChannelRecord {
     logoUrl: row.logo_url ?? null,
     audience: row.audience ?? null,
     contentType: row.content_type ?? null,
+    styleRules: row.style_rules ?? null,
+    visualStyle: row.visual_style ?? null,
+    postingFrequency: row.posting_frequency ?? null,
+    brandColors: row.brand_colors ?? null,
+    brandFonts: row.brand_fonts ?? null,
+    endScreenTemplate: row.end_screen_template ?? null,
     durationDefault: row.duration_default ?? null,
     ctaDefault: row.cta_default ?? null,
     baseHashtags: row.base_hashtags ?? null,
@@ -102,6 +114,12 @@ export async function createChannel(userId: string, payload: {
   logoUrl?: string | null;
   audience?: string | null;
   contentType?: string | null;
+  styleRules?: string | null;
+  visualStyle?: string | null;
+  postingFrequency?: string | null;
+  brandColors?: string[] | null;
+  brandFonts?: string[] | null;
+  endScreenTemplate?: string | null;
   durationDefault?: number | null;
   ctaDefault?: string | null;
   baseHashtags?: string[] | null;
@@ -124,6 +142,12 @@ export async function createChannel(userId: string, payload: {
       logo_url: payload.logoUrl || null,
       audience: payload.audience || null,
       content_type: payload.contentType || null,
+      style_rules: payload.styleRules || null,
+      visual_style: payload.visualStyle || null,
+      posting_frequency: payload.postingFrequency || null,
+      brand_colors: payload.brandColors || null,
+      brand_fonts: payload.brandFonts || null,
+      end_screen_template: payload.endScreenTemplate || null,
       duration_default: payload.durationDefault ?? null,
       cta_default: payload.ctaDefault || null,
       base_hashtags: payload.baseHashtags || null,
@@ -138,6 +162,10 @@ export async function createChannel(userId: string, payload: {
     const message = error.message?.toLowerCase() ?? '';
     if (message.includes('relation') && message.includes('channels')) {
       throw new Error(missingTableMessage());
+    }
+    const missingColumns = ['style_rules', 'visual_style', 'posting_frequency', 'brand_colors', 'brand_fonts', 'end_screen_template'];
+    if (missingColumns.some((col) => message.includes(col))) {
+      throw new Error('Channels table is missing identity/brand columns. Run docs/sql/channels.sql in Supabase.');
     }
     throw new Error(error.message || 'Unable to create channel');
   }
@@ -162,6 +190,12 @@ export async function updateChannel(userId: string, channelId: string, payload: 
   logoUrl: string | null;
   audience: string | null;
   contentType: string | null;
+  styleRules: string | null;
+  visualStyle: string | null;
+  postingFrequency: string | null;
+  brandColors: string[] | null;
+  brandFonts: string[] | null;
+  endScreenTemplate: string | null;
   durationDefault: number | null;
   ctaDefault: string | null;
   baseHashtags: string[] | null;
@@ -183,6 +217,12 @@ export async function updateChannel(userId: string, channelId: string, payload: 
   if (payload.logoUrl !== undefined) updates.logo_url = payload.logoUrl;
   if (payload.audience !== undefined) updates.audience = payload.audience;
   if (payload.contentType !== undefined) updates.content_type = payload.contentType;
+  if (payload.styleRules !== undefined) updates.style_rules = payload.styleRules;
+  if (payload.visualStyle !== undefined) updates.visual_style = payload.visualStyle;
+  if (payload.postingFrequency !== undefined) updates.posting_frequency = payload.postingFrequency;
+  if (payload.brandColors !== undefined) updates.brand_colors = payload.brandColors;
+  if (payload.brandFonts !== undefined) updates.brand_fonts = payload.brandFonts;
+  if (payload.endScreenTemplate !== undefined) updates.end_screen_template = payload.endScreenTemplate;
   if (payload.durationDefault !== undefined) updates.duration_default = payload.durationDefault;
   if (payload.ctaDefault !== undefined) updates.cta_default = payload.ctaDefault;
   if (payload.baseHashtags !== undefined) updates.base_hashtags = payload.baseHashtags;
@@ -200,6 +240,10 @@ export async function updateChannel(userId: string, channelId: string, payload: 
     const message = error.message?.toLowerCase() ?? '';
     if (message.includes('relation') && message.includes('channels')) {
       throw new Error(missingTableMessage());
+    }
+    const missingColumns = ['style_rules', 'visual_style', 'posting_frequency', 'brand_colors', 'brand_fonts', 'end_screen_template'];
+    if (missingColumns.some((col) => message.includes(col))) {
+      throw new Error('Channels table is missing identity/brand columns. Run docs/sql/channels.sql in Supabase.');
     }
     throw new Error(error.message || 'Unable to update channel');
   }

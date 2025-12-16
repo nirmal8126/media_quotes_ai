@@ -47,15 +47,29 @@ export async function POST(request: Request) {
       tone: body.tone ?? null,
       style: body.style ?? null,
       topic: body.topic ?? null,
+      styleRules: body.styleRules ?? null,
+      visualStyle: body.visualStyle ?? null,
+      postingFrequency: body.postingFrequency ?? null,
       characterName: body.characterName ?? null,
       characterImages: Array.isArray(body.characterImages)
         ? body.characterImages
         : typeof body.characterImages === 'string'
           ? body.characterImages.split(',').map((v: string) => v.trim()).filter(Boolean)
-          : null,
+        : null,
       logoUrl: body.logoUrl ?? null,
       audience: body.audience ?? null,
       contentType: body.contentType ?? null,
+      brandColors: Array.isArray(body.brandColors)
+        ? body.brandColors
+        : typeof body.brandColors === 'string'
+          ? body.brandColors.split(',').map((v: string) => v.trim()).filter(Boolean)
+          : null,
+      brandFonts: Array.isArray(body.brandFonts)
+        ? body.brandFonts
+        : typeof body.brandFonts === 'string'
+          ? body.brandFonts.split(',').map((v: string) => v.trim()).filter(Boolean)
+          : null,
+      endScreenTemplate: body.endScreenTemplate ?? null,
       durationDefault:
         typeof body.durationDefault === 'number'
           ? body.durationDefault
@@ -106,6 +120,9 @@ export async function PATCH(request: Request) {
       tone: body.tone,
       style: body.style,
       topic: body.topic,
+      styleRules: body.styleRules,
+      visualStyle: body.visualStyle,
+      postingFrequency: body.postingFrequency,
       characterName: body.characterName,
       characterImages: Array.isArray(body.characterImages)
         ? body.characterImages
@@ -115,6 +132,17 @@ export async function PATCH(request: Request) {
       logoUrl: body.logoUrl,
       audience: body.audience,
       contentType: body.contentType,
+      brandColors: Array.isArray(body.brandColors)
+        ? body.brandColors
+        : typeof body.brandColors === 'string'
+          ? body.brandColors.split(',').map((v: string) => v.trim()).filter(Boolean)
+          : undefined,
+      brandFonts: Array.isArray(body.brandFonts)
+        ? body.brandFonts
+        : typeof body.brandFonts === 'string'
+          ? body.brandFonts.split(',').map((v: string) => v.trim()).filter(Boolean)
+          : undefined,
+      endScreenTemplate: body.endScreenTemplate,
       durationDefault:
         typeof body.durationDefault === 'number'
           ? body.durationDefault

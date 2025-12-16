@@ -13,6 +13,9 @@ export interface GeneratedReelRecord {
   hashtags?: string[];
   thumbnailPrompt?: string;
   hook?: string;
+  status?: string;
+  scheduledDate?: string;
+  publishedAt?: string;
 }
 
 export async function fetchUserQuota(userId: string) {
@@ -67,6 +70,9 @@ export async function storeGeneratedReel(record: GeneratedReelRecord) {
     hashtags: record.hashtags || null,
     thumbnail_prompt: record.thumbnailPrompt || null,
     hook: record.hook || null,
+    status: record.status || 'generated',
+    scheduled_date: record.scheduledDate || null,
+    published_at: record.publishedAt || null,
     created_at: new Date().toISOString(),
   };
 
@@ -77,7 +83,12 @@ export async function storeGeneratedReel(record: GeneratedReelRecord) {
     .maybeSingle();
 
   if (error) {
-    console.error('Failed to persist generated reel', error);
+    const message = error.message?.toLowerCase() ?? '';
+    if (message.includes('status') || message.includes('generated_reels')) {
+      console.error('Failed to persist generated reel. Ensure generated_reels has status/scheduled/published columns.', error);
+    } else {
+      console.error('Failed to persist generated reel', error);
+    }
     return null;
   }
 

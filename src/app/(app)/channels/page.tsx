@@ -18,6 +18,12 @@ type Channel = {
   durationDefault?: number | null;
   ctaDefault?: string | null;
   baseHashtags?: string[] | null;
+  styleRules?: string | null;
+  visualStyle?: string | null;
+  postingFrequency?: string | null;
+  brandColors?: string[] | null;
+  brandFonts?: string[] | null;
+  endScreenTemplate?: string | null;
   characterName?: string | null;
   characterImages?: string[] | null;
   logoUrl?: string | null;
@@ -52,6 +58,12 @@ const defaultForm = {
   durationDefault: "",
   ctaDefault: "",
   baseHashtags: "",
+  styleRules: "",
+  visualStyle: "",
+  postingFrequency: "",
+  brandColors: "",
+  brandFonts: "",
+  endScreenTemplate: "",
   characterName: "",
   characterImages: "",
   logoUrl: "",
@@ -85,6 +97,9 @@ export default function ChannelsPage() {
         c.topic,
         c.audience,
         c.contentType,
+        c.postingFrequency,
+        c.styleRules,
+        c.visualStyle,
         c.characterName,
       ]
         .filter(Boolean)
@@ -149,6 +164,12 @@ export default function ChannelsPage() {
       topic: channel.topic || "",
       audience: channel.audience || "",
       contentType: channel.contentType || "",
+      styleRules: channel.styleRules || "",
+      visualStyle: channel.visualStyle || "",
+      postingFrequency: channel.postingFrequency || "",
+      brandColors: (channel.brandColors || []).join(", "),
+      brandFonts: (channel.brandFonts || []).join(", "),
+      endScreenTemplate: channel.endScreenTemplate || "",
       durationDefault: channel.durationDefault?.toString() ?? "",
       ctaDefault: channel.ctaDefault || "",
       baseHashtags: (channel.baseHashtags || []).join(", "),
@@ -176,6 +197,14 @@ export default function ChannelsPage() {
       .map((v) => v.trim().replace(/^#/, ""))
       .filter(Boolean)
       .map((v) => `#${v}`);
+    const brandColors = form.brandColors
+      .split(",")
+      .map((v) => v.trim())
+      .filter(Boolean);
+    const brandFonts = form.brandFonts
+      .split(",")
+      .map((v) => v.trim())
+      .filter(Boolean);
 
     const payload = {
       name: form.name.trim(),
@@ -187,6 +216,12 @@ export default function ChannelsPage() {
       topic: form.topic || null,
       audience: form.audience || null,
       contentType: form.contentType || null,
+      styleRules: form.styleRules || null,
+      visualStyle: form.visualStyle || null,
+      postingFrequency: form.postingFrequency || null,
+      brandColors,
+      brandFonts,
+      endScreenTemplate: form.endScreenTemplate || null,
       durationDefault:
         form.durationDefault === "" ? null : Number.isFinite(Number(form.durationDefault)) ? Number(form.durationDefault) : null,
       ctaDefault: form.ctaDefault || null,
@@ -567,6 +602,78 @@ export default function ChannelsPage() {
                 </label>
                 <label className="block text-sm font-semibold text-dark dark:text-dark-7">
                   <div className="flex items-center gap-2">
+                    <span>Posting cadence</span>
+                    <span className="text-xs font-normal text-gray-6 dark:text-dark-6">(daily, M/W/F, weekends)</span>
+                  </div>
+                  <input
+                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+                    placeholder="e.g., Daily at 5pm or M/W/F"
+                    value={form.postingFrequency}
+                    onChange={(e) => setForm((prev) => ({ ...prev, postingFrequency: e.target.value }))}
+                  />
+                </label>
+                <label className="block text-sm font-semibold text-dark dark:text-dark-7 md:col-span-2">
+                  <div className="flex items-center gap-2">
+                    <span>Content style rules</span>
+                    <span className="text-xs font-normal text-gray-6 dark:text-dark-6">(must-follow voice/structure)</span>
+                  </div>
+                  <textarea
+                    className="mt-2 h-20 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+                    placeholder="Hook first, then conflict, then payoff. Keep kid-friendly jokes."
+                    value={form.styleRules}
+                    onChange={(e) => setForm((prev) => ({ ...prev, styleRules: e.target.value }))}
+                  />
+                </label>
+                <label className="block text-sm font-semibold text-dark dark:text-dark-7 md:col-span-2">
+                  <div className="flex items-center gap-2">
+                    <span>Visual style rules</span>
+                    <span className="text-xs font-normal text-gray-6 dark:text-dark-6">(colors, overlays, transitions)</span>
+                  </div>
+                  <textarea
+                    className="mt-2 h-20 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+                    placeholder="Bright orange + purple gradients, bold subtitles, meme stickers."
+                    value={form.visualStyle}
+                    onChange={(e) => setForm((prev) => ({ ...prev, visualStyle: e.target.value }))}
+                  />
+                </label>
+                <label className="block text-sm font-semibold text-dark dark:text-dark-7">
+                  <div className="flex items-center gap-2">
+                    <span>Brand colors</span>
+                    <span className="text-xs font-normal text-gray-6 dark:text-dark-6">(comma separated)</span>
+                  </div>
+                  <input
+                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+                    placeholder="#F97316, #7C3AED"
+                    value={form.brandColors}
+                    onChange={(e) => setForm((prev) => ({ ...prev, brandColors: e.target.value }))}
+                  />
+                </label>
+                <label className="block text-sm font-semibold text-dark dark:text-dark-7">
+                  <div className="flex items-center gap-2">
+                    <span>Brand fonts</span>
+                    <span className="text-xs font-normal text-gray-6 dark:text-dark-6">(comma separated)</span>
+                  </div>
+                  <input
+                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+                    placeholder="Poppins, Satoshi"
+                    value={form.brandFonts}
+                    onChange={(e) => setForm((prev) => ({ ...prev, brandFonts: e.target.value }))}
+                  />
+                </label>
+                <label className="block text-sm font-semibold text-dark dark:text-dark-7 md:col-span-2">
+                  <div className="flex items-center gap-2">
+                    <span>End screen / template</span>
+                    <span className="text-xs font-normal text-gray-6 dark:text-dark-6">(optional)</span>
+                  </div>
+                  <input
+                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+                    placeholder="End screen prompt or URL"
+                    value={form.endScreenTemplate}
+                    onChange={(e) => setForm((prev) => ({ ...prev, endScreenTemplate: e.target.value }))}
+                  />
+                </label>
+                <label className="block text-sm font-semibold text-dark dark:text-dark-7">
+                  <div className="flex items-center gap-2">
                     <span>Channel logo URL</span>
                     <span className="text-xs font-normal text-gray-6 dark:text-dark-6">(optional)</span>
                   </div>
@@ -714,7 +821,10 @@ export default function ChannelsPage() {
                   <p><strong>Persona:</strong> {detailRow.personaId || "—"}</p>
                   <p><strong>Tone:</strong> {detailRow.tone || "—"}</p>
                   <p><strong>Style:</strong> {detailRow.style || "—"}</p>
+                  <p><strong>Posting cadence:</strong> {detailRow.postingFrequency || "—"}</p>
                   <p><strong>Default duration:</strong> {detailRow.durationDefault ?? "—"} sec</p>
+                  <p><strong>Style rules:</strong> {detailRow.styleRules || "—"}</p>
+                  <p><strong>Visual style:</strong> {detailRow.visualStyle || "—"}</p>
                 </div>
                 <div className="space-y-2 text-sm text-gray-7 dark:text-dark-7">
                   <p><strong>CTA:</strong> {detailRow.ctaDefault || "—"}</p>
@@ -722,6 +832,15 @@ export default function ChannelsPage() {
                     <strong>Base hashtags:</strong>{" "}
                     {detailRow.baseHashtags && detailRow.baseHashtags.length ? detailRow.baseHashtags.join(", ") : "—"}
                   </p>
+                  <p>
+                    <strong>Brand colors:</strong>{" "}
+                    {detailRow.brandColors && detailRow.brandColors.length ? detailRow.brandColors.join(", ") : "—"}
+                  </p>
+                  <p>
+                    <strong>Brand fonts:</strong>{" "}
+                    {detailRow.brandFonts && detailRow.brandFonts.length ? detailRow.brandFonts.join(", ") : "—"}
+                  </p>
+                  <p><strong>End screen:</strong> {detailRow.endScreenTemplate || "—"}</p>
                   <p><strong>Character:</strong> {detailRow.characterName || "—"}</p>
                   {detailRow.characterImages && detailRow.characterImages.length > 0 && (
                     <div className="flex flex-wrap gap-2">
