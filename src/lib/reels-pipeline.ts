@@ -1,6 +1,7 @@
 import { supabaseAdmin } from '@/lib/supabase';
 import { generateCompletion, type LlmProvider } from '@/lib/openai';
 import { pickProvider } from '@/lib/llm-provider';
+import { getChannel, type ChannelRecord } from '@/lib/channel-service';
 import type { User } from '@supabase/supabase-js';
 import type { PostgrestError } from '@supabase/supabase-js';
 
@@ -148,14 +149,28 @@ async function generateScriptFromIdea(options: {
   durationSec: number;
   personaId?: string | null;
   provider?: LlmProvider;
+  channel?: ChannelRecord | null;
 }): Promise<string> {
-  const { idea, tone, platform, durationSec, provider } = options;
+  const { idea, tone, platform, durationSec, provider, channel } = options;
+  const channelLines: string[] = [];
+  if (channel) {
+    channelLines.push(`Channel: ${channel.name}`);
+    if (channel.topic) channelLines.push(`Channel topic/niche: ${channel.topic}`);
+    if (channel.audience) channelLines.push(`Audience: ${channel.audience}`);
+    if (channel.styleRules) channelLines.push(`Content rules: ${channel.styleRules}`);
+    if (channel.visualStyle) channelLines.push(`Visual style: ${channel.visualStyle}`);
+    if (channel.baseHashtags?.length) channelLines.push(`Preferred hashtags: ${channel.baseHashtags.join(', ')}`);
+    if (channel.ctaDefault) channelLines.push(`Preferred CTA: ${channel.ctaDefault}`);
+  }
+
   const prompt = [
     `Write a ${durationSec}-second vertical video script for ${platform}.`,
     `Tone: ${tone}.`,
     `Idea: ${idea}.`,
+    'Keep it on-topic for the channel and avoid going off-theme.',
     'Return the script as plain text with clear voiceover lines.',
     'Avoid scene numbers; keep it concise and punchy.',
+    ...channelLines,
   ].join(' ');
 
   const text = await generateCompletion(prompt, { temperature: 0.65, maxTokens: 500, provider });
@@ -324,27 +339,40 @@ async function triggerRenderer(options: {
 export async function startReelGeneration(user: User, payload: GeneratePayload): Promise<ReelGenerationResult> {
   const idea = normalizeText(payload.idea);
   const scriptTextInput = normalizeText(payload.scriptText);
-  const tone = normalizeTone(payload.tone);
-  const platform = normalizePlatform(payload.platform);
-  const durationSec = clampDuration(payload.durationSec);
-  const style = normalizeText(payload.style) || null;
-  const personaId = normalizeText(payload.personaId) || null;
   const channelId = normalizeText(payload.channelId) || null;
   const provider = pickProvider({ bodyProvider: null, user });
 
-  if (!idea && !scriptTextInput) {
-    throw new HttpError('Provide either an idea or a script to generate a reel.', 422);
+  const channel = channelId ? await getChannel(user.id, channelId) : null;
+  if (channelId && !channel) {
+    throw new HttpError('Channel not found for this user.', 404);
+  }
+
+  const platform = normalizePlatform(payload.platform ?? channel?.platform ?? null);
+  const tone = normalizeTone(payload.tone ?? channel?.tone ?? null);
+  const style = normalizeText(payload.style ?? channel?.visualStyle ?? channel?.style ?? null) || null;
+  const durationSec = clampDuration(payload.durationSec ?? channel?.durationDefault ?? null);
+  const personaId = normalizeText(payload.personaId ?? channel?.personaId ?? null) || null;
+
+  const ideaSeed = idea || channel?.topic || '';
+  const ideaForPrompt =
+    channel?.topic && idea && !idea.toLowerCase().includes(channel.topic.toLowerCase())
+      ? `${idea}. Keep it aligned to: ${channel.topic}`
+      : ideaSeed;
+
+  if (!ideaForPrompt && !scriptTextInput) {
+    throw new HttpError('Provide either an idea, a channel topic, or a script to generate a reel.', 422);
   }
 
   let finalScript = scriptTextInput;
   if (!finalScript) {
     finalScript = await generateScriptFromIdea({
-      idea,
+      idea: ideaForPrompt,
       tone,
       platform,
       durationSec,
       personaId: personaId || undefined,
       provider,
+      channel,
     });
   }
 
@@ -356,7 +384,7 @@ export async function startReelGeneration(user: User, payload: GeneratePayload):
     tone,
     style,
     durationSec,
-    inputPrompt: idea || null,
+    inputPrompt: idea || channel?.topic || null,
     text: finalScript,
   });
 

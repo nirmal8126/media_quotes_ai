@@ -37,6 +37,13 @@ type Channel = {
   tone?: string | null;
   style?: string | null;
   durationDefault?: number | null;
+  topic?: string | null;
+};
+type ChannelIdea = {
+  id: string;
+  channelId: string;
+  idea: string;
+  source?: string | null;
 };
 
 type Status =
@@ -103,6 +110,13 @@ export default function AiReelsPage() {
   const [statusFilter, setStatusFilter] = useState<string>("");
   const [dateFrom, setDateFrom] = useState<string>("");
   const [dateTo, setDateTo] = useState<string>("");
+  const selectedChannel = useMemo(
+    () => channels.find((c) => c.id === form.channelId),
+    [channels, form.channelId]
+  );
+  const [channelIdeas, setChannelIdeas] = useState<ChannelIdea[]>([]);
+  const [ideasLoading, setIdeasLoading] = useState(false);
+  const [ideasError, setIdeasError] = useState<string | null>(null);
 
   const filteredHistory = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -201,6 +215,28 @@ export default function AiReelsPage() {
     }
   };
 
+  const loadChannelIdeas = async (channelId: string) => {
+    if (!channelId) {
+      setChannelIdeas([]);
+      setIdeasError(null);
+      return;
+    }
+    setIdeasLoading(true);
+    setIdeasError(null);
+    try {
+      const res = await fetch(`/api/channels/ideas?channelId=${encodeURIComponent(channelId)}`, { cache: "no-store" });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(body?.error || "Unable to load ideas.");
+      }
+      setChannelIdeas(Array.isArray(body.ideas) ? body.ideas : []);
+    } catch (err) {
+      setIdeasError((err as Error).message || "Unable to load ideas.");
+    } finally {
+      setIdeasLoading(false);
+    }
+  };
+
   useEffect(() => {
     void loadChannels();
   }, []);
@@ -209,12 +245,18 @@ export default function AiReelsPage() {
     void loadHistory();
   }, [channelFilter, platformFilter, toneFilter, statusFilter, dateFrom, dateTo]);
 
+  useEffect(() => {
+    void loadChannelIdeas(form.channelId);
+  }, [form.channelId]);
+
   const handleGenerate = async () => {
     if (status.type === "loading") return;
     if (!form.idea.trim() && !form.scriptText.trim()) {
       setStatus({
         type: "error",
-        message: "Provide either an idea or a script.",
+        message: selectedChannel?.topic
+          ? "Provide an idea or leave it blank to rely on channel topic."
+          : "Provide either an idea or a script.",
       });
       return;
     }
@@ -598,6 +640,92 @@ export default function AiReelsPage() {
         )}
       </div>
 
+      <div className="rounded-2xl border border-gray-3 bg-white p-4 shadow-card-2 dark:border-stroke-dark dark:bg-dark-2">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.35em] text-primary">Channel idea library</p>
+            <h2 className="text-lg font-bold text-dark dark:text-dark-8">
+              {selectedChannel ? selectedChannel.name : "Select a channel"}
+            </h2>
+            <p className="text-sm text-gray-6 dark:text-dark-6">
+              Save or generate ideas for the selected channel. Click “Use” to fill the idea field.
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <button
+              className="rounded-lg border border-gray-3 px-3 py-2 text-sm font-semibold text-gray-7 transition hover:bg-gray-1 dark:border-stroke-dark dark:text-dark-7 dark:hover:bg-dark-3 disabled:opacity-60"
+              onClick={() => void loadChannelIdeas(form.channelId)}
+              disabled={!form.channelId || ideasLoading}
+            >
+              {ideasLoading ? "Loading..." : "Refresh ideas"}
+            </button>
+            <button
+              className="rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-white transition hover:bg-primary/90 disabled:opacity-60"
+              onClick={async () => {
+                if (!form.channelId) return;
+                setIdeasLoading(true);
+                setIdeasError(null);
+                try {
+                  const res = await fetch("/api/channels/ideas", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ channelId: form.channelId, generate: true, count: 6 }),
+                  });
+                  const body = await res.json().catch(() => ({}));
+                  if (!res.ok) {
+                    throw new Error(body?.error || "Unable to generate ideas.");
+                  }
+                  setChannelIdeas(Array.isArray(body.ideas) ? body.ideas : []);
+                } catch (err) {
+                  setIdeasError((err as Error).message || "Unable to generate ideas.");
+                } finally {
+                  setIdeasLoading(false);
+                }
+              }}
+              disabled={!form.channelId || ideasLoading}
+            >
+              Generate ideas
+            </button>
+          </div>
+        </div>
+        {!form.channelId ? (
+          <div className="mt-4 rounded-lg border border-dashed border-gray-3 p-4 text-sm text-gray-6 dark:border-stroke-dark dark:text-dark-6">
+            Select a channel to view or generate ideas.
+          </div>
+        ) : ideasError ? (
+          <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">{ideasError}</div>
+        ) : (
+          <div className="mt-4 grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+            {ideasLoading && channelIdeas.length === 0 ? (
+              <div className="rounded-lg border border-gray-3 p-4 text-sm text-gray-6 dark:border-stroke-dark dark:text-dark-6">
+                Loading ideas...
+              </div>
+            ) : channelIdeas.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-gray-3 p-4 text-sm text-gray-6 dark:border-stroke-dark dark:text-dark-6">
+                No ideas saved yet. Generate or add one manually by typing in the Idea field and saving a reel.
+              </div>
+            ) : (
+              channelIdeas.map((idea) => (
+                <div key={idea.id} className="flex flex-col justify-between rounded-lg border border-gray-3 p-3 shadow-sm dark:border-stroke-dark">
+                  <div className="text-sm text-dark dark:text-dark-8">{idea.idea}</div>
+                  <div className="mt-3 flex items-center justify-between text-xs text-gray-6 dark:text-dark-6">
+                    <span className="rounded-full bg-gray-1 px-2 py-1 font-semibold uppercase text-gray-7 dark:bg-dark-3 dark:text-dark-7">
+                      {idea.source || "user"}
+                    </span>
+                    <button
+                      className="text-primary hover:underline"
+                      onClick={() => setForm((prev) => ({ ...prev, idea: idea.idea }))}
+                    >
+                      Use
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        )}
+      </div>
+
       {showModal && (
         <ModalPortal>
           <div
@@ -632,7 +760,9 @@ export default function AiReelsPage() {
                 <label className="block text-sm font-semibold text-dark dark:text-dark-7">
                   <div className="flex items-center gap-2">
                     <span>Idea</span>
-                    <span className="text-xs font-normal text-gray-6 dark:text-dark-6">(what the reel should cover)</span>
+                    <span className="text-xs font-normal text-gray-6 dark:text-dark-6">
+                      (what the reel should cover) {selectedChannel?.topic ? `Channel: ${selectedChannel.topic}` : ""}
+                    </span>
                   </div>
                   <textarea
                     className="mt-2 h-28 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
@@ -687,7 +817,10 @@ export default function AiReelsPage() {
                           typeof selected?.durationDefault === "number" &&
                           Number.isFinite(selected.durationDefault)
                             ? selected.durationDefault
-                            : prev.durationSec,
+                          : prev.durationSec,
+                        idea:
+                          prev.idea.trim() ||
+                          (selected?.topic ? `Topic: ${selected.topic}` : ""),
                       }));
                     }}
                     disabled={channelLoading}
@@ -699,6 +832,13 @@ export default function AiReelsPage() {
                       </option>
                     ))}
                     </select>
+                  {selectedChannel && (
+                    <p className="mt-2 text-xs text-gray-6 dark:text-dark-6">
+                      Defaults applied: platform {selectedChannel.platform || "—"}, tone{" "}
+                      {selectedChannel.tone || "—"}, style {selectedChannel.style || "—"}, duration{" "}
+                      {selectedChannel.durationDefault ?? "—"}s.
+                    </p>
+                  )}
                 </label>
 
                 <label className="block text-sm font-semibold text-dark dark:text-dark-7">
