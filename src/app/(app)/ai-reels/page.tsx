@@ -769,7 +769,7 @@ export default function AiReelsPage() {
         )}
       </div>
 
-      {result?.variants || result?.storyboard ? (
+      {result?.variants || (result?.storyboard && result.storyboard.length > 0) ? (
         <div className="rounded-2xl border border-gray-3 bg-white p-4 shadow-card-2 dark:border-stroke-dark dark:bg-dark-2">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
@@ -825,7 +825,10 @@ export default function AiReelsPage() {
               <div className="space-y-2 rounded-lg border border-gray-3 p-3 dark:border-stroke-dark">
                 <div className="text-sm font-semibold text-dark dark:text-dark-8">Storyboard (up to 5 scenes)</div>
                 <ol className="space-y-2 text-sm text-gray-7 dark:text-dark-7">
-                  {result.storyboard.slice(0, 5).map((scene, idx) => (
+                  {result.storyboard
+                    .filter((scene) => scene.text && scene.text.length > 6)
+                    .slice(0, 5)
+                    .map((scene, idx) => (
                     <li key={`scene-${idx}`} className="rounded-lg bg-gray-1/60 p-2 dark:bg-dark-3/70">
                       <div className="text-xs font-semibold uppercase text-gray-6 dark:text-dark-6">
                         {scene.label || `Scene ${idx + 1}`} {scene.durationMs ? `• ${Math.round(scene.durationMs / 1000)}s` : ""}

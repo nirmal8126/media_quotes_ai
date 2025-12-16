@@ -226,6 +226,25 @@ export async function generateStoryboard(options: {
 
   const raw = await generateCompletion(prompt, { temperature: 0.6, maxTokens: 600, provider });
 
+  const normalize = (items: Array<any>) =>
+    items
+      .map((scene) => {
+        if (typeof scene === 'string') {
+          return { label: undefined, text: scene.trim() };
+        }
+        if (scene && typeof scene === 'object') {
+          return {
+            label: (scene.label || '').trim() || undefined,
+            text: (scene.text || '').trim(),
+            durationMs: scene.durationMs ?? undefined,
+            visualSuggestion: (scene.visualSuggestion || '').trim() || undefined,
+          };
+        }
+        return null;
+      })
+      .filter((s) => s && s.text && s.text.length > 6)
+      .slice(0, 8) as Array<{ label?: string; text: string; durationMs?: number; visualSuggestion?: string }>;
+
   try {
     const parsed = JSON.parse(raw) as Array<{
       label?: string;
@@ -234,25 +253,18 @@ export async function generateStoryboard(options: {
       visualSuggestion?: string;
     }>;
     if (Array.isArray(parsed)) {
-      return parsed
-        .map((scene) => ({
-          label: (scene.label || '').trim() || undefined,
-          text: (scene.text || '').trim(),
-          durationMs: scene.durationMs ?? undefined,
-          visualSuggestion: (scene.visualSuggestion || '').trim() || undefined,
-        }))
-        .filter((s) => s.text)
-        .slice(0, 8);
+      const normalized = normalize(parsed);
+      if (normalized.length) return normalized;
     }
   } catch {
     // fall through
   }
 
-  return raw
+  const splitFallback = raw
     .split(/\n+/)
-    .filter((line) => line.trim())
-    .slice(0, 8)
-    .map((text) => ({ label: undefined, text: text.trim() }));
+    .map((line) => line.trim())
+    .filter((line) => line.length > 6);
+  return normalize(splitFallback);
 }
 
 export async function generateHashtagList(tone: string, platform: string, provider?: LlmProvider) {
