@@ -178,6 +178,7 @@ export default function AiReelsPage() {
   const [competitors, setCompetitors] = useState<string>("");
   const [competitorInsights, setCompetitorInsights] = useState<CompetitorInsight[]>([]);
   const [competitorStatus, setCompetitorStatus] = useState<Status>({ type: "idle" });
+  const [autoRunStatus, setAutoRunStatus] = useState<Status>({ type: "idle" });
 
   const filteredHistory = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -982,6 +983,18 @@ export default function AiReelsPage() {
               ) : (
                 <div className="text-xs text-gray-5">No competitor data yet</div>
               )}
+              {autoRunStatus.type !== "idle" && autoRunStatus.message ? (
+                <div
+                  className={cn(
+                    "mt-3 rounded-lg border px-3 py-2 text-sm",
+                    autoRunStatus.type === "error"
+                      ? "border-red-200 bg-red-50 text-red-700"
+                      : "border-emerald-200 bg-emerald-50 text-emerald-700"
+                  )}
+                >
+                  {autoRunStatus.message}
+                </div>
+              ) : null}
             </div>
           </div>
         </div>
@@ -1032,6 +1045,26 @@ export default function AiReelsPage() {
               disabled={!form.channelId || ideasLoading}
             >
               Generate ideas
+            </button>
+            <button
+              className="rounded-lg border border-gray-3 px-3 py-2 text-sm font-semibold text-gray-7 transition hover:bg-gray-1 dark:border-stroke-dark dark:text-dark-7 dark:hover:bg-dark-3 disabled:opacity-60"
+              onClick={async () => {
+                setAutoRunStatus({ type: "loading", message: "Auto-running..." });
+                try {
+                  const res = await fetch("/api/automation/auto-run", { method: "POST" });
+                  const body = await res.json().catch(() => ({}));
+                  if (!res.ok) {
+                    throw new Error(body?.error || "Auto-run failed.");
+                  }
+                  setAutoRunStatus({ type: "success", message: body?.message || "Auto-run complete." });
+                  await loadHistory();
+                } catch (err) {
+                  setAutoRunStatus({ type: "error", message: (err as Error).message || "Unable to auto-run." });
+                }
+              }}
+              disabled={autoRunStatus.type === "loading"}
+            >
+              {autoRunStatus.type === "loading" ? "Auto-running..." : "Run auto-generation"}
             </button>
             <div className="flex items-center gap-2">
               <input
