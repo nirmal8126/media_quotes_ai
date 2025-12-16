@@ -16,6 +16,11 @@ export type ReelRecord = {
   platform?: string | null;
   tone?: string | null;
   style?: string | null;
+  template?: string | null;
+  brandColors?: string[] | null;
+  brandFonts?: string[] | null;
+  logoUrl?: string | null;
+  endScreenTemplate?: string | null;
   durationSec?: number | null;
   status: ReelStatus;
   rendererJobId?: string | null;
@@ -34,6 +39,11 @@ export type ScriptRecord = {
   platform?: string | null;
   tone?: string | null;
   style?: string | null;
+  template?: string | null;
+  brandColors?: string[] | null;
+  brandFonts?: string[] | null;
+  logoUrl?: string | null;
+  endScreenTemplate?: string | null;
   durationSec?: number | null;
   inputPrompt?: string | null;
   text: string;
@@ -56,6 +66,7 @@ type GeneratePayload = {
   durationSec?: number;
   withVoiceover?: boolean;
   reelType?: string;
+  template?: string;
   visual?: {
     videoStyle?: string;
     background?: string;
@@ -66,6 +77,12 @@ type GeneratePayload = {
     aiVoiceId?: string | null;
     musicUploadId?: string | null;
     trendingAudioId?: string | null;
+  };
+  brand?: {
+    colors?: string[];
+    fonts?: string[];
+    logoUrl?: string | null;
+    endScreenTemplate?: string | null;
   };
   channelId?: string | null;
 };
@@ -113,6 +130,11 @@ function mapScript(row: Record<string, any>): ScriptRecord {
     platform: row.platform ?? null,
     tone: row.tone ?? null,
     style: row.style ?? null,
+    template: row.template ?? null,
+    brandColors: row.brand_colors ?? null,
+    brandFonts: row.brand_fonts ?? null,
+    logoUrl: row.logo_url ?? null,
+    endScreenTemplate: row.end_screen_template ?? null,
     durationSec: row.duration_sec ?? null,
     inputPrompt: row.input_prompt ?? null,
     text: row.text ?? row.script ?? '',
@@ -131,6 +153,11 @@ function mapReel(row: Record<string, any>): ReelRecord {
     platform: row.platform ?? null,
     tone: row.tone ?? null,
     style: row.style ?? null,
+    template: row.template ?? null,
+    brandColors: row.brand_colors ?? null,
+    brandFonts: row.brand_fonts ?? null,
+    logoUrl: row.logo_url ?? null,
+    endScreenTemplate: row.end_screen_template ?? null,
     durationSec: row.duration_sec ?? null,
     status: (row.status as ReelStatus) ?? 'RENDERING',
     rendererJobId: row.renderer_job_id ?? null,
@@ -187,6 +214,11 @@ async function insertScriptRecord(payload: {
   platform?: string | null;
   tone?: string | null;
   style?: string | null;
+  template?: string | null;
+  brandColors?: string[] | null;
+  brandFonts?: string[] | null;
+  logoUrl?: string | null;
+  endScreenTemplate?: string | null;
   durationSec?: number | null;
   channelId?: string | null;
   inputPrompt?: string | null;
@@ -201,6 +233,11 @@ async function insertScriptRecord(payload: {
       platform: payload.platform || null,
       tone: payload.tone || null,
       style: payload.style || null,
+      template: payload.template || null,
+      brand_colors: payload.brandColors || null,
+      brand_fonts: payload.brandFonts || null,
+      logo_url: payload.logoUrl || null,
+      end_screen_template: payload.endScreenTemplate || null,
       duration_sec: payload.durationSec ?? null,
       input_prompt: payload.inputPrompt || null,
       text: payload.text,
@@ -216,6 +253,10 @@ async function insertScriptRecord(payload: {
         'Table "scripts" is missing. Run the ai_reels_tables.sql migration in docs/sql to create it.',
         500,
       );
+    }
+    const msg = (error.message || '').toLowerCase();
+    if (msg.includes('brand_colors') || msg.includes('template')) {
+      throw new HttpError('Add template/brand columns to scripts via web/docs/sql/ai_reels_tables.sql.', 500);
     }
     throw new HttpError(error.message || 'Unable to save script', 500);
   }
@@ -234,6 +275,11 @@ async function insertReelRecord(payload: {
   platform?: string | null;
   tone?: string | null;
   style?: string | null;
+  template?: string | null;
+  brandColors?: string[] | null;
+  brandFonts?: string[] | null;
+  logoUrl?: string | null;
+  endScreenTemplate?: string | null;
   durationSec?: number | null;
   channelId?: string | null;
   status: ReelStatus;
@@ -252,6 +298,11 @@ async function insertReelRecord(payload: {
       platform: payload.platform || null,
       tone: payload.tone || null,
       style: payload.style || null,
+      template: payload.template || null,
+      brand_colors: payload.brandColors || null,
+      brand_fonts: payload.brandFonts || null,
+      logo_url: payload.logoUrl || null,
+      end_screen_template: payload.endScreenTemplate || null,
       duration_sec: payload.durationSec ?? null,
       status: payload.status,
       renderer_job_id: payload.rendererJobId || null,
@@ -270,6 +321,10 @@ async function insertReelRecord(payload: {
         'Table "reels" is missing. Run the ai_reels_tables.sql migration in docs/sql to create it.',
         500,
       );
+    }
+    const msg = (error.message || '').toLowerCase();
+    if (msg.includes('brand_colors') || msg.includes('template')) {
+      throw new HttpError('Add template/brand columns to reels via web/docs/sql/ai_reels_tables.sql.', 500);
     }
     throw new HttpError(error.message || 'Unable to save reel record', 500);
   }
@@ -321,6 +376,13 @@ function defaultAssets(jobId: string) {
 async function triggerRenderer(options: {
   scriptText: string;
   style?: string | null;
+  template?: string | null;
+  brand?: {
+    colors?: string[] | null;
+    fonts?: string[] | null;
+    logoUrl?: string | null;
+    endScreenTemplate?: string | null;
+  } | null;
   durationSec: number;
   withVoiceover?: boolean;
 }) {
@@ -352,6 +414,11 @@ export async function startReelGeneration(user: User, payload: GeneratePayload):
   const style = normalizeText(payload.style ?? channel?.visualStyle ?? channel?.style ?? null) || null;
   const durationSec = clampDuration(payload.durationSec ?? channel?.durationDefault ?? null);
   const personaId = normalizeText(payload.personaId ?? channel?.personaId ?? null) || null;
+  const template = normalizeText(payload.template ?? channel?.style ?? null) || null;
+  const brandColors = payload.brand?.colors ?? channel?.brandColors ?? null;
+  const brandFonts = payload.brand?.fonts ?? channel?.brandFonts ?? null;
+  const logoUrl = payload.brand?.logoUrl ?? channel?.logoUrl ?? null;
+  const endScreenTemplate = payload.brand?.endScreenTemplate ?? channel?.endScreenTemplate ?? null;
 
   const ideaSeed = idea || channel?.topic || '';
   const ideaForPrompt =
@@ -383,6 +450,11 @@ export async function startReelGeneration(user: User, payload: GeneratePayload):
     platform,
     tone,
     style,
+    template,
+    brandColors,
+    brandFonts,
+    logoUrl,
+    endScreenTemplate,
     durationSec,
     inputPrompt: idea || channel?.topic || null,
     text: finalScript,
@@ -391,6 +463,8 @@ export async function startReelGeneration(user: User, payload: GeneratePayload):
   const rendererJob = await triggerRenderer({
     scriptText: finalScript,
     style,
+    template,
+    brand: { colors: brandColors, fonts: brandFonts, logoUrl, endScreenTemplate },
     durationSec,
     withVoiceover: payload.withVoiceover !== false,
   });
@@ -404,6 +478,11 @@ export async function startReelGeneration(user: User, payload: GeneratePayload):
     platform,
     tone,
     style,
+    template,
+    brandColors,
+    brandFonts,
+    logoUrl,
+    endScreenTemplate,
     durationSec,
     status: reelStatus,
     rendererJobId: rendererJob.id,

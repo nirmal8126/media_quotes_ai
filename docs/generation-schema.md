@@ -37,6 +37,11 @@ These are the “source of truth” shapes to use in product/UI, agent logic, an
 - `status`: `queued` | `rendering` | `failed` | `completed`
 - `videoUrl?`, `thumbnailUrl?`, `error?`, `scenes?`
 
+## Rendering Templates & Brand Kits (Phase 5)
+- Templates: `template` on reel payload can be one of `meme`, `cinematic`, `cartoon`, `talking_head`, `minimal`. Map to render-time visual presets (bg, font, animations).
+- Brand kit: optional metadata attached to reel payload: `{ brandColors?: string[], brandFonts?: string[], logoUrl?: string | null, endScreenTemplate?: string | null }`.
+- Rendering payload should pass template + brand kit to the renderer. If renderer is stubbed, keep placeholders but store template/brand in `reels` for future re-renders.
+
 ## Normalizers (src/lib/generation-normalize.ts)
 - `normalizeScriptCaptionRequest(input)` → applies defaults, trims strings, clamps variations.
 - `normalizeReelRequest(input)` → applies defaults for reel type, visual, audio, resolution, and script source.

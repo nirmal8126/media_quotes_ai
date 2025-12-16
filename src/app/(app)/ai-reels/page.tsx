@@ -43,6 +43,11 @@ type Channel = {
   handle?: string | null;
   tone?: string | null;
   style?: string | null;
+  template?: string | null;
+  brandColors?: string[] | null;
+  brandFonts?: string[] | null;
+  logoUrl?: string | null;
+  endScreenTemplate?: string | null;
   durationDefault?: number | null;
   topic?: string | null;
 };
@@ -75,7 +80,10 @@ const styles = [
   "bold",
   "fast-cut",
   "cartoon",
+  "meme",
+  "talking_head",
 ];
+const templates = ["cinematic", "cartoon", "meme", "talking_head", "minimal"];
 
 const defaultForm = {
   idea: "",
@@ -83,10 +91,15 @@ const defaultForm = {
   platform: "INSTAGRAM",
   tone: "motivational",
   style: "cinematic",
+  template: "cinematic",
   personaId: "",
   durationSec: 15,
   withVoiceover: true,
   channelId: "",
+  brandColors: "",
+  brandFonts: "",
+  logoUrl: "",
+  endScreenTemplate: "",
 };
 
 function ModalPortal({ children }: { children: React.ReactNode }) {
@@ -276,7 +289,23 @@ export default function AiReelsPage() {
       const res = await fetch("/api/reels/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...form, multiVariants: true, storyboard: true }),
+        body: JSON.stringify({
+          ...form,
+          multiVariants: true,
+          storyboard: true,
+          brand: {
+            colors: form.brandColors
+              .split(",")
+              .map((c) => c.trim())
+              .filter(Boolean),
+            fonts: form.brandFonts
+              .split(",")
+              .map((f) => f.trim())
+              .filter(Boolean),
+            logoUrl: form.logoUrl || null,
+            endScreenTemplate: form.endScreenTemplate || null,
+          },
+        }),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -899,6 +928,7 @@ export default function AiReelsPage() {
                           : prev.platform,
                         tone: selected?.tone || prev.tone,
                         style: selected?.style || prev.style,
+                        template: selected?.template || prev.template,
                         durationSec:
                           typeof selected?.durationDefault === "number" &&
                           Number.isFinite(selected.durationDefault)
@@ -907,6 +937,10 @@ export default function AiReelsPage() {
                         idea:
                           prev.idea.trim() ||
                           (selected?.topic ? `Topic: ${selected.topic}` : ""),
+                        brandColors: (selected?.brandColors || []).join(", "),
+                        brandFonts: (selected?.brandFonts || []).join(", "),
+                        logoUrl: selected?.logoUrl || prev.logoUrl,
+                        endScreenTemplate: selected?.endScreenTemplate || prev.endScreenTemplate,
                       }));
                     }}
                     disabled={channelLoading}
@@ -942,6 +976,25 @@ export default function AiReelsPage() {
                     {platforms.map((p) => (
                       <option key={p} value={p}>
                         {p}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="block text-sm font-semibold text-dark dark:text-dark-7">
+                  <div className="flex items-center gap-2">
+                    <span>Template</span>
+                    <span className="text-xs font-normal text-gray-6 dark:text-dark-6">(meme, cinematic, etc.)</span>
+                  </div>
+                  <select
+                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+                    value={form.template}
+                    onChange={(e) =>
+                      setForm((prev) => ({ ...prev, template: e.target.value }))
+                    }
+                  >
+                    {templates.map((t) => (
+                      <option key={t} value={t}>
+                        {t}
                       </option>
                     ))}
                   </select>
@@ -1018,6 +1071,62 @@ export default function AiReelsPage() {
                         durationSec:
                           Number(e.target.value) || defaultForm.durationSec,
                       }))
+                    }
+                  />
+                </label>
+                <label className="block text-sm font-semibold text-dark dark:text-dark-7">
+                  <div className="flex items-center gap-2">
+                    <span>Brand colors</span>
+                    <span className="text-xs font-normal text-gray-6 dark:text-dark-6">(comma separated)</span>
+                  </div>
+                  <input
+                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+                    placeholder="#F97316, #7C3AED"
+                    value={form.brandColors}
+                    onChange={(e) =>
+                      setForm((prev) => ({ ...prev, brandColors: e.target.value }))
+                    }
+                  />
+                </label>
+                <label className="block text-sm font-semibold text-dark dark:text-dark-7">
+                  <div className="flex items-center gap-2">
+                    <span>Brand fonts</span>
+                    <span className="text-xs font-normal text-gray-6 dark:text-dark-6">(comma separated)</span>
+                  </div>
+                  <input
+                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+                    placeholder="Poppins, Satoshi"
+                    value={form.brandFonts}
+                    onChange={(e) =>
+                      setForm((prev) => ({ ...prev, brandFonts: e.target.value }))
+                    }
+                  />
+                </label>
+                <label className="block text-sm font-semibold text-dark dark:text-dark-7">
+                  <div className="flex items-center gap-2">
+                    <span>Logo URL</span>
+                    <span className="text-xs font-normal text-gray-6 dark:text-dark-6">(optional)</span>
+                  </div>
+                  <input
+                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+                    placeholder="https://example.com/logo.png"
+                    value={form.logoUrl}
+                    onChange={(e) =>
+                      setForm((prev) => ({ ...prev, logoUrl: e.target.value }))
+                    }
+                  />
+                </label>
+                <label className="block text-sm font-semibold text-dark dark:text-dark-7">
+                  <div className="flex items-center gap-2">
+                    <span>End screen template</span>
+                    <span className="text-xs font-normal text-gray-6 dark:text-dark-6">(optional)</span>
+                  </div>
+                  <input
+                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+                    placeholder="CTA + logo end card"
+                    value={form.endScreenTemplate}
+                    onChange={(e) =>
+                      setForm((prev) => ({ ...prev, endScreenTemplate: e.target.value }))
                     }
                   />
                 </label>
