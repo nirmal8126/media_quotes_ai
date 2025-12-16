@@ -230,31 +230,29 @@ async function insertScriptRecord(payload: {
   inputPrompt?: string | null;
   text: string;
 }): Promise<ScriptRecord> {
-  const { data, error } = await supabaseAdmin
-    .from('scripts')
-    .insert({
-      user_id: payload.userId,
-      channel_id: payload.channelId || null,
-      persona_id: payload.personaId || null,
-      platform: payload.platform || null,
-      tone: payload.tone || null,
-      style: payload.style || null,
-      template: payload.template || null,
-      brand_colors: payload.brandColors || null,
-      brand_fonts: payload.brandFonts || null,
-      logo_url: payload.logoUrl || null,
-      end_screen_template: payload.endScreenTemplate || null,
-      audio_voice_id: payload.audioVoiceId || null,
-      music_track_id: payload.musicTrackId || null,
-      trending_audio_id: payload.trendingAudioId || null,
-      duration_sec: payload.durationSec ?? null,
-      input_prompt: payload.inputPrompt || null,
-      text: payload.text,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    })
-    .select('*')
-    .maybeSingle();
+  const fullPayload = {
+    user_id: payload.userId,
+    channel_id: payload.channelId || null,
+    persona_id: payload.personaId || null,
+    platform: payload.platform || null,
+    tone: payload.tone || null,
+    style: payload.style || null,
+    template: payload.template || null,
+    brand_colors: payload.brandColors || null,
+    brand_fonts: payload.brandFonts || null,
+    logo_url: payload.logoUrl || null,
+    end_screen_template: payload.endScreenTemplate || null,
+    audio_voice_id: payload.audioVoiceId || null,
+    music_track_id: payload.musicTrackId || null,
+    trending_audio_id: payload.trendingAudioId || null,
+    duration_sec: payload.durationSec ?? null,
+    input_prompt: payload.inputPrompt || null,
+    text: payload.text,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+
+  let { data, error } = await supabaseAdmin.from('scripts').insert(fullPayload).select('*').maybeSingle();
 
   if (error) {
     if (isMissingTable(error)) {
@@ -264,10 +262,31 @@ async function insertScriptRecord(payload: {
       );
     }
     const msg = (error.message || '').toLowerCase();
-    if (msg.includes('brand_colors') || msg.includes('template')) {
-      throw new HttpError('Add template/brand columns to scripts via web/docs/sql/ai_reels_tables.sql.', 500);
+    if (msg.includes('brand_colors') || msg.includes('template') || msg.includes('logo_url') || msg.includes('audio')) {
+      // Retry without optional columns to keep flow working even if migration not applied
+      const trimmed = {
+        user_id: payload.userId,
+        channel_id: payload.channelId || null,
+        persona_id: payload.personaId || null,
+        platform: payload.platform || null,
+        tone: payload.tone || null,
+        style: payload.style || null,
+        duration_sec: payload.durationSec ?? null,
+        input_prompt: payload.inputPrompt || null,
+        text: payload.text,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+      const retry = await supabaseAdmin.from('scripts').insert(trimmed).select('*').maybeSingle();
+      if (!retry.error && retry.data) {
+        data = retry.data;
+        error = null;
+      } else {
+        throw new HttpError(retry.error?.message || 'Unable to save script', 500);
+      }
+    } else {
+      throw new HttpError(error.message || 'Unable to save script', 500);
     }
-    throw new HttpError(error.message || 'Unable to save script', 500);
   }
 
   if (!data) {
@@ -300,35 +319,33 @@ async function insertReelRecord(payload: {
   thumbnailUrl?: string | null;
   errorMessage?: string | null;
 }): Promise<ReelRecord> {
-  const { data, error } = await supabaseAdmin
-    .from('reels')
-    .insert({
-      user_id: payload.userId,
-      script_id: payload.scriptId,
-      channel_id: payload.channelId || null,
-      persona_id: payload.personaId || null,
-      platform: payload.platform || null,
-      tone: payload.tone || null,
-      style: payload.style || null,
-      template: payload.template || null,
-      brand_colors: payload.brandColors || null,
-      brand_fonts: payload.brandFonts || null,
-      logo_url: payload.logoUrl || null,
-      end_screen_template: payload.endScreenTemplate || null,
-      audio_voice_id: payload.audioVoiceId || null,
-      music_track_id: payload.musicTrackId || null,
-      trending_audio_id: payload.trendingAudioId || null,
-      duration_sec: payload.durationSec ?? null,
-      status: payload.status,
-      renderer_job_id: payload.rendererJobId || null,
-      video_url: payload.videoUrl || null,
-      thumbnail_url: payload.thumbnailUrl || null,
-      error_message: payload.errorMessage || null,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    })
-    .select('*')
-    .maybeSingle();
+  const fullInsert = {
+    user_id: payload.userId,
+    script_id: payload.scriptId,
+    channel_id: payload.channelId || null,
+    persona_id: payload.personaId || null,
+    platform: payload.platform || null,
+    tone: payload.tone || null,
+    style: payload.style || null,
+    template: payload.template || null,
+    brand_colors: payload.brandColors || null,
+    brand_fonts: payload.brandFonts || null,
+    logo_url: payload.logoUrl || null,
+    end_screen_template: payload.endScreenTemplate || null,
+    audio_voice_id: payload.audioVoiceId || null,
+    music_track_id: payload.musicTrackId || null,
+    trending_audio_id: payload.trendingAudioId || null,
+    duration_sec: payload.durationSec ?? null,
+    status: payload.status,
+    renderer_job_id: payload.rendererJobId || null,
+    video_url: payload.videoUrl || null,
+    thumbnail_url: payload.thumbnailUrl || null,
+    error_message: payload.errorMessage || null,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+
+  let { data, error } = await supabaseAdmin.from('reels').insert(fullInsert).select('*').maybeSingle();
 
   if (error) {
     if (isMissingTable(error)) {
@@ -338,10 +355,35 @@ async function insertReelRecord(payload: {
       );
     }
     const msg = (error.message || '').toLowerCase();
-    if (msg.includes('brand_colors') || msg.includes('template')) {
-      throw new HttpError('Add template/brand columns to reels via web/docs/sql/ai_reels_tables.sql.', 500);
+    if (msg.includes('brand_colors') || msg.includes('template') || msg.includes('logo_url') || msg.includes('audio')) {
+      // Retry without optional columns if migration not applied
+      const trimmed = {
+        user_id: payload.userId,
+        script_id: payload.scriptId,
+        channel_id: payload.channelId || null,
+        persona_id: payload.personaId || null,
+        platform: payload.platform || null,
+        tone: payload.tone || null,
+        style: payload.style || null,
+        duration_sec: payload.durationSec ?? null,
+        status: payload.status,
+        renderer_job_id: payload.rendererJobId || null,
+        video_url: payload.videoUrl || null,
+        thumbnail_url: payload.thumbnailUrl || null,
+        error_message: payload.errorMessage || null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+      const retry = await supabaseAdmin.from('reels').insert(trimmed).select('*').maybeSingle();
+      if (!retry.error && retry.data) {
+        data = retry.data;
+        error = null;
+      } else {
+        throw new HttpError(retry.error?.message || 'Unable to save reel record', 500);
+      }
+    } else {
+      throw new HttpError(error.message || 'Unable to save reel record', 500);
     }
-    throw new HttpError(error.message || 'Unable to save reel record', 500);
   }
 
   if (!data) {
