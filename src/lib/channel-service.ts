@@ -66,6 +66,11 @@ function missingTableMessage() {
   return 'Table "channels" is missing. Add it in Supabase before using channel-specific reels.';
 }
 
+function isMissingLanguageColumn(error?: { message?: string | null }) {
+  const message = error?.message?.toLowerCase() ?? '';
+  return message.includes('language') && message.includes('channel');
+}
+
 export async function listChannels(userId: string): Promise<ChannelRecord[]> {
   const { data, error } = await supabaseAdmin
     .from('channels')
@@ -129,45 +134,49 @@ export async function createChannel(userId: string, payload: {
   defaults?: Record<string, unknown> | null;
 }): Promise<ChannelRecord> {
   const now = new Date().toISOString();
-  const { data, error } = await supabaseAdmin
-    .from('channels')
-    .insert({
-      user_id: userId,
-      name: payload.name.trim(),
-      platform: payload.platform || null,
-      handle: payload.handle || null,
-      persona_id: payload.personaId || null,
-      tone: payload.tone || null,
-      style: payload.style || null,
-      topic: payload.topic || null,
-      character_name: payload.characterName || null,
-      character_images: payload.characterImages || null,
-      logo_url: payload.logoUrl || null,
-      audience: payload.audience || null,
-      content_type: payload.contentType || null,
-      language: payload.language || null,
-      style_rules: payload.styleRules || null,
-      visual_style: payload.visualStyle || null,
-      posting_frequency: payload.postingFrequency || null,
-      brand_colors: payload.brandColors || null,
-      brand_fonts: payload.brandFonts || null,
-      end_screen_template: payload.endScreenTemplate || null,
-      duration_default: payload.durationDefault ?? null,
-      cta_default: payload.ctaDefault || null,
-      base_hashtags: payload.baseHashtags || null,
-      defaults: payload.defaults || null,
-      created_at: now,
-      updated_at: now,
-    })
-    .select('*')
-    .maybeSingle();
+  const baseInsert = {
+    user_id: userId,
+    name: payload.name.trim(),
+    platform: payload.platform || null,
+    handle: payload.handle || null,
+    persona_id: payload.personaId || null,
+    tone: payload.tone || null,
+    style: payload.style || null,
+    topic: payload.topic || null,
+    character_name: payload.characterName || null,
+    character_images: payload.characterImages || null,
+    logo_url: payload.logoUrl || null,
+    audience: payload.audience || null,
+    content_type: payload.contentType || null,
+    language: payload.language || null,
+    style_rules: payload.styleRules || null,
+    visual_style: payload.visualStyle || null,
+    posting_frequency: payload.postingFrequency || null,
+    brand_colors: payload.brandColors || null,
+    brand_fonts: payload.brandFonts || null,
+    end_screen_template: payload.endScreenTemplate || null,
+    duration_default: payload.durationDefault ?? null,
+    cta_default: payload.ctaDefault || null,
+    base_hashtags: payload.baseHashtags || null,
+    defaults: payload.defaults || null,
+    created_at: now,
+    updated_at: now,
+  };
+
+  let { data, error } = await supabaseAdmin.from('channels').insert(baseInsert).select('*').maybeSingle();
+
+  if (error && isMissingLanguageColumn(error)) {
+    // Fallback for environments that have not yet added the language column
+    const { language, ...withoutLanguage } = baseInsert;
+    ({ data, error } = await supabaseAdmin.from('channels').insert(withoutLanguage).select('*').maybeSingle());
+  }
 
   if (error) {
     const message = error.message?.toLowerCase() ?? '';
     if (message.includes('relation') && message.includes('channels')) {
       throw new Error(missingTableMessage());
     }
-    const missingColumns = ['style_rules', 'visual_style', 'posting_frequency', 'brand_colors', 'brand_fonts', 'end_screen_template'];
+    const missingColumns = ['style_rules', 'visual_style', 'posting_frequency', 'brand_colors', 'brand_fonts', 'end_screen_template', 'language'];
     if (missingColumns.some((col) => message.includes(col))) {
       throw new Error('Channels table is missing identity/brand columns. Run docs/sql/channels.sql in Supabase.');
     }
@@ -234,7 +243,7 @@ export async function updateChannel(userId: string, channelId: string, payload: 
   if (payload.baseHashtags !== undefined) updates.base_hashtags = payload.baseHashtags;
   if (payload.defaults !== undefined) updates.defaults = payload.defaults;
 
-  const { data, error } = await supabaseAdmin
+  let { data, error } = await supabaseAdmin
     .from('channels')
     .update(updates)
     .eq('user_id', userId)
@@ -242,12 +251,23 @@ export async function updateChannel(userId: string, channelId: string, payload: 
     .select('*')
     .maybeSingle();
 
+  if (error && isMissingLanguageColumn(error)) {
+    const { language, ...withoutLanguage } = updates;
+    ({ data, error } = await supabaseAdmin
+      .from('channels')
+      .update(withoutLanguage)
+      .eq('user_id', userId)
+      .eq('id', channelId)
+      .select('*')
+      .maybeSingle());
+  }
+
   if (error) {
     const message = error.message?.toLowerCase() ?? '';
     if (message.includes('relation') && message.includes('channels')) {
       throw new Error(missingTableMessage());
     }
-    const missingColumns = ['style_rules', 'visual_style', 'posting_frequency', 'brand_colors', 'brand_fonts', 'end_screen_template'];
+    const missingColumns = ['style_rules', 'visual_style', 'posting_frequency', 'brand_colors', 'brand_fonts', 'end_screen_template', 'language'];
     if (missingColumns.some((col) => message.includes(col))) {
       throw new Error('Channels table is missing identity/brand columns. Run docs/sql/channels.sql in Supabase.');
     }
