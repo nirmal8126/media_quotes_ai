@@ -565,7 +565,7 @@ export default function ReelCustomizePage() {
 
                       {!isCollapsed && (
                         <>
-                          <div className="mt-3 grid gap-2 md:grid-cols-2">
+                          <div className="mt-3 space-y-3">
                             <div className="space-y-2 text-xs font-semibold text-gray-600 dark:text-gray-300">
                               <input
                                 id={`scene-upload-${idx}`}
@@ -631,7 +631,7 @@ export default function ReelCustomizePage() {
                             </div>
                           </div>
                           <div className="mt-2">
-                            <p className="text-xs font-semibold text-gray-600 dark:text-gray-300">Zoom style</p>
+                            <p className="text-xs font-semibold text-gray-600 dark:text-gray-300">Zoom</p>
                             <div className="mt-1 flex flex-wrap gap-2">
                               {[
                                 { label: "None", hint: "Static", value: "None" },
@@ -1142,7 +1142,7 @@ export default function ReelCustomizePage() {
 
             <div className="sticky top-4 rounded-xl border border-gray-200 bg-white p-3 shadow-card-2 dark:border-white/10 dark:bg-gray-800">
               <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
-                <span>Live preview</span>
+                <span className="font-semibold text-gray-700 dark:text-gray-200">Live Preview</span>
                 <span>Higher quality on export</span>
               </div>
               <div className="mt-2 aspect-[9/16] w-full overflow-hidden rounded-lg bg-gradient-to-br from-gray-200 to-gray-100 dark:from-gray-900 dark:to-gray-950">
