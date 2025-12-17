@@ -29,6 +29,12 @@ export const NAV_DATA = [
         items: [],
       },
       {
+        title: "AI Videos",
+        url: "/ai-videos",
+        icon: Icons.Video,
+        items: [],
+      },
+      {
         title: "Channels",
         url: "/channels",
         icon: Icons.Table,

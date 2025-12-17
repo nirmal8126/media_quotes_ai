@@ -20,6 +20,8 @@ const PORT = Number(process.env.PORT || 4001);
 const API_KEY = process.env.RENDERER_API_KEY || "dev-renderer-key";
 const MEDIA_BASE = process.env.MEDIA_CDN_BASE_URL || `http://localhost:${PORT}/media`;
 const MEDIA_DIR = path.join(__dirname, "..", "renderer-media");
+const RENDERS_DIR = path.join(MEDIA_DIR, "renders");
+const PREVIEWS_DIR = path.join(MEDIA_DIR, "previews");
 
 const FALLBACK_VIDEO = [
   path.join(__dirname, "..", "public", "assets", "dummy", "fallback-video.mp4"),
@@ -63,20 +65,27 @@ async function handleRender(req, res, body) {
     return sendJson(res, 401, { error: "Unauthorized" });
   }
 
+  ensureDir(MEDIA_DIR);
+  ensureDir(RENDERS_DIR);
+  ensureDir(PREVIEWS_DIR);
+
   const jobId = `job_${Date.now()}`;
   const videoName = `${jobId}.mp4`;
   const thumbName = `${jobId}.jpg`;
 
   const videoSrc = pickExisting(FALLBACK_VIDEO);
   const thumbSrc = pickExisting(FALLBACK_THUMB);
-  await copyFileSafe(videoSrc || "", path.join(MEDIA_DIR, videoName));
-  await copyFileSafe(thumbSrc || "", path.join(MEDIA_DIR, thumbName));
+  const renderPath = path.join(RENDERS_DIR, videoName);
+  const previewPath = path.join(PREVIEWS_DIR, videoName);
+  await copyFileSafe(videoSrc || "", renderPath);
+  await copyFileSafe(videoSrc || "", previewPath);
+  await copyFileSafe(thumbSrc || "", path.join(PREVIEWS_DIR, thumbName));
 
   sendJson(res, 200, {
     jobId,
     status: "ready",
-    videoUrl: `${MEDIA_BASE}/${videoName}`,
-    thumbnailUrl: `${MEDIA_BASE}/${thumbName}`,
+    videoUrl: `${MEDIA_BASE}/renders/${videoName}`,
+    thumbnailUrl: `${MEDIA_BASE}/previews/${thumbName}`,
   });
 }
 
