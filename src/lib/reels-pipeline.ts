@@ -422,6 +422,13 @@ async function updateReelStatus(reelId: string, userId: string, updates: Partial
 }
 
 function defaultAssets(jobId: string) {
+  const mediaCdn = process.env.MEDIA_CDN_BASE_URL?.replace(/\/$/, '');
+  if (mediaCdn) {
+    return {
+      videoUrl: `${mediaCdn}/renders/${jobId}.mp4`,
+      thumbnailUrl: `${mediaCdn}/renders/${jobId}.jpg`,
+    };
+  }
   const fallbackVideo =
     process.env.DEFAULT_REEL_VIDEO_URL ??
     'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4';
@@ -436,6 +443,7 @@ function defaultAssets(jobId: string) {
 
 async function triggerRenderer(options: {
   scriptText: string;
+  language?: string | null;
   style?: string | null;
   template?: string | null;
   brand?: {
@@ -468,6 +476,7 @@ async function triggerRenderer(options: {
           apiKey: ttsKey,
           mediaBaseUrl: process.env.MEDIA_CDN_BASE_URL,
           mediaDir: process.env.MEDIA_DIR || undefined,
+          language: options.language || undefined,
         });
       } catch (err) {
         // eslint-disable-next-line no-console
@@ -605,6 +614,7 @@ export async function startReelGeneration(user: User, payload: GeneratePayload):
 
   const rendererJob = await triggerRenderer({
     scriptText: finalScript,
+    language,
     style,
     template,
     brand: { colors: brandColors, fonts: brandFonts, logoUrl, endScreenTemplate },

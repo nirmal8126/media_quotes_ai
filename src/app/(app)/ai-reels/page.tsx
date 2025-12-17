@@ -129,6 +129,7 @@ const defaultForm = {
   withVoiceover: true,
   channelId: "",
   language: "",
+  // Branding fields now read-only from channel; keep them for payload but hide in UI
   brandColors: "",
   brandFonts: "",
   logoUrl: "",
@@ -168,6 +169,7 @@ export default function AiReelsPage() {
   const [trendingAudioId, setTrendingAudioId] = useState<string>("");
   const [languageQuery, setLanguageQuery] = useState(labelForLanguage(defaultForm.language));
   const [showLanguageList, setShowLanguageList] = useState(false);
+  const [showChannelDefaults, setShowChannelDefaults] = useState(false);
   const selectedChannel = useMemo(
     () => channels.find((c) => c.id === form.channelId),
     [channels, form.channelId]
@@ -389,28 +391,58 @@ export default function AiReelsPage() {
       type: "loading",
       message: "Generating script and starting render...",
     });
-    const languageValue = (form.language || languageQuery || "").trim();
+    const channelDefaults = selectedChannel
+      ? {
+          platform: selectedChannel.platform || form.platform,
+          tone: selectedChannel.tone || form.tone,
+          style: selectedChannel.style || form.style,
+          template: selectedChannel.template || form.template,
+          durationSec: selectedChannel.durationDefault ?? form.durationSec,
+          language: selectedChannel.language || form.language,
+          brandColors: (selectedChannel.brandColors || []).join(", "),
+          brandFonts: (selectedChannel.brandFonts || []).join(", "),
+          logoUrl: selectedChannel.logoUrl || form.logoUrl,
+          endScreenTemplate: selectedChannel.endScreenTemplate || form.endScreenTemplate,
+          topic: selectedChannel.topic || form.idea,
+        }
+      : null;
+
+    const languageValue = (
+      channelDefaults?.language ||
+      form.language ||
+      languageQuery ||
+      ""
+    ).trim();
     const normalizedLanguage = languageValue ? resolveLanguageCode(languageValue) : undefined;
+
+    const payloadDuration = Number(channelDefaults?.durationSec ?? form.durationSec) || 15;
+
     try {
       const res = await fetch("/api/reels/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...form,
+          ...(channelDefaults ? channelDefaults : {}),
+          idea: channelDefaults?.topic || form.idea,
           language: normalizedLanguage,
+          tone: channelDefaults?.tone || form.tone,
+          style: channelDefaults?.style || form.style,
+          template: channelDefaults?.template || form.template,
+          durationSec: payloadDuration,
           multiVariants: true,
           storyboard: true,
           brand: {
-            colors: form.brandColors
+            colors: (channelDefaults?.brandColors || form.brandColors)
               .split(",")
               .map((c) => c.trim())
               .filter(Boolean),
-            fonts: form.brandFonts
+            fonts: (channelDefaults?.brandFonts || form.brandFonts)
               .split(",")
               .map((f) => f.trim())
               .filter(Boolean),
-            logoUrl: form.logoUrl || null,
-            endScreenTemplate: form.endScreenTemplate || null,
+            logoUrl: channelDefaults?.logoUrl || form.logoUrl || null,
+            endScreenTemplate: channelDefaults?.endScreenTemplate || form.endScreenTemplate || null,
           },
           audio: {
             aiVoiceId: voiceId || null,
