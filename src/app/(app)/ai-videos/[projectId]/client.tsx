@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { labelForLanguage } from "@/lib/languages";
+import { cn } from "@/lib/utils";
 
 type Scene = {
   id: string;
@@ -44,6 +45,7 @@ export default function AiVideoEditorClient() {
   const [mediaByScene, setMediaByScene] = useState<Record<string, SceneMedia[]>>({});
   const [mediaLoading, setMediaLoading] = useState(false);
   const [uploadingScene, setUploadingScene] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<"settings" | "music" | "media" | "captions">("media");
 
   const sortedScenes = useMemo(
     () => [...scenes].sort((a, b) => a.sceneIndex - b.sceneIndex),
@@ -234,151 +236,215 @@ export default function AiVideoEditorClient() {
 
   return (
     <div className="space-y-8">
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.25em] text-primary">AI Videos</p>
           <h1 className="text-2xl font-bold text-dark dark:text-white">{project.title}</h1>
           <p className="text-sm text-gray-6 dark:text-dark-6">
-            {project.videoType === "shorts" ? "Shorts/Reel" : "Long-form"} · {labelForLanguage(project.language) || project.language || "en"}
+            {project.videoType === "shorts" ? "Shorts/Reel" : "Long-form"} ·{" "}
+            {labelForLanguage(project.language) || project.language || "en"}
           </p>
         </div>
-        <Link href="/ai-videos" className="rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-7 transition hover:border-primary hover:text-primary dark:border-dark-3 dark:text-dark-5">
-          Back to AI Videos
-        </Link>
+        <div className="flex flex-wrap items-center gap-2">
+          <Link
+            href="/ai-videos"
+            className="rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-7 transition hover:border-primary hover:text-primary dark:border-dark-3 dark:text-dark-5"
+          >
+            Back to AI Videos
+          </Link>
+          <button
+            onClick={() => router.push("/ai-videos")}
+            className="rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-white transition hover:bg-primary/90"
+          >
+            Preview list
+          </button>
+        </div>
       </div>
 
       {status.message && (
         <p
           className={`text-sm ${
-            status.type === "error" ? "text-red-500" : status.type === "success" ? "text-green-600" : "text-gray-6"
+            status.type === "error"
+              ? "text-red-500"
+              : status.type === "success"
+                ? "text-green-600"
+                : "text-gray-6"
           }`}
         >
           {status.message}
         </p>
       )}
 
-      <div className="space-y-4">
-        {sortedScenes.map((scene) => (
-          <div key={scene.id} className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-dark-3 dark:bg-dark-2">
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-semibold text-gray-5 dark:text-dark-5">Scene {scene.sceneIndex + 1}</span>
-                <input
-                  value={scene.label || ""}
-                  onChange={(e) =>
-                    setScenes((prev) =>
-                      prev.map((s) => (s.id === scene.id ? { ...s, label: e.target.value } : s)),
-                    )
-                  }
-                  placeholder="Label"
-                  className="rounded-md border border-gray-200 px-2 py-1 text-xs dark:border-dark-3 dark:bg-dark-2"
-                />
-              </div>
-              <div className="flex items-center gap-2">
-                <input
-                  type="number"
-                  min={5}
-                  value={scene.durationMs ? Math.round(scene.durationMs / 1000) : ""}
-                  onChange={(e) =>
-                    setScenes((prev) =>
-                      prev.map((s) =>
-                        s.id === scene.id ? { ...s, durationMs: Number(e.target.value) * 1000 } : s,
-                      ),
-                    )
-                  }
-                  placeholder="sec"
-                  className="w-20 rounded-md border border-gray-200 px-2 py-1 text-xs dark:border-dark-3 dark:bg-dark-2"
-                />
-                <button
-                  type="button"
-                  onClick={() => void regenerateScene(scene)}
-                  disabled={regen[scene.id]}
-                  className="rounded-md border border-primary/30 px-3 py-1 text-xs font-semibold text-primary transition hover:border-primary disabled:opacity-60"
-                >
-                  {regen[scene.id] ? "Regenerating..." : "Regenerate"}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void saveScene(scene)}
-                  disabled={saving[scene.id]}
-                  className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white transition hover:bg-primary/90 disabled:opacity-60"
-                >
-                  {saving[scene.id] ? "Saving..." : "Save"}
-                </button>
-              </div>
-            </div>
-            <div className="mt-3 space-y-2">
-              <textarea
-                value={scene.script || ""}
-                onChange={(e) =>
-                  setScenes((prev) => prev.map((s) => (s.id === scene.id ? { ...s, script: e.target.value } : s)))
-                }
-                rows={4}
-                className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-primary dark:border-dark-3 dark:bg-dark-2"
-              />
-              <input
-                value={scene.prompt || ""}
-                onChange={(e) =>
-                  setScenes((prev) => prev.map((s) => (s.id === scene.id ? { ...s, prompt: e.target.value } : s)))
-                }
-                placeholder="Visual prompt / suggestion"
-                className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-primary dark:border-dark-3 dark:bg-dark-2"
-              />
-              <div className="rounded-lg border border-dashed border-gray-200 p-3 text-xs text-gray-6 dark:border-dark-3 dark:text-dark-5">
-                <p className="font-semibold text-dark dark:text-white">Media</p>
-                {mediaLoading && <p className="text-xs text-gray-5">Loading media...</p>}
-                {mediaByScene[scene.id]?.length ? (
-                  <ul className="mt-2 space-y-1">
-                    {mediaByScene[scene.id].map((m) => (
-                      <li key={m.id} className="flex items-center justify-between gap-2 rounded-md bg-white px-2 py-1 shadow-sm dark:bg-dark-3">
-                        <span className="text-[11px] text-gray-6 dark:text-dark-5">
-                          {m.mediaType} · {m.source || "upload"}
-                        </span>
-                        <a href={m.url} className="text-primary underline" target="_blank" rel="noreferrer">
-                          Open
-                        </a>
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="mt-1 text-[11px] text-gray-5">No media yet.</p>
-                )}
-                <div className="mt-2 flex flex-col gap-2">
+      <div className="space-y-4 rounded-2xl border border-gray-200 bg-white p-4 shadow-card-2 dark:border-dark-3 dark:bg-dark-2">
+        <div className="flex flex-wrap gap-2 border-b border-gray-200 pb-3 text-sm font-semibold text-gray-6 dark:border-dark-3 dark:text-dark-5">
+          {(["settings", "music", "media", "captions"] as const).map((tab) => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              className={cn(
+                "rounded-full px-3 py-1",
+                activeTab === tab
+                  ? "bg-primary/10 text-primary"
+                  : "border border-transparent hover:border-primary/30",
+              )}
+            >
+              {tab === "settings" ? "Settings" : tab === "music" ? "Music" : tab === "media" ? "Media" : "Captions"}
+            </button>
+          ))}
+        </div>
+
+        {activeTab === "settings" && (
+          <div className="space-y-2 text-sm text-gray-6 dark:text-dark-6">
+            <p>Project ID: {project.id}</p>
+            <p>Status: {project.status}</p>
+            <p>Language: {labelForLanguage(project.language) || project.language || "en"}</p>
+            <p>Use this tab to adjust future global settings (templates, aspect ratios, colors).</p>
+          </div>
+        )}
+
+        {activeTab === "music" && (
+          <div className="space-y-2 text-sm text-gray-6 dark:text-dark-6">
+            <p>Music selection coming soon. Attach audio via media or add a track here.</p>
+          </div>
+        )}
+
+        {activeTab === "captions" && (
+          <div className="space-y-2 text-sm text-gray-6 dark:text-dark-6">
+            <p>Captions are generated during render; edit per-scene text in Media.</p>
+          </div>
+        )}
+
+        {activeTab === "media" && (
+          <div className="space-y-4">
+            {sortedScenes.map((scene) => (
+              <div
+                key={scene.id}
+                className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-dark-3 dark:bg-dark-2"
+              >
+                <div className="flex items-center justify-between gap-3">
                   <div className="flex items-center gap-2">
+                    <span className="text-xs font-semibold text-gray-5 dark:text-dark-5">
+                      Scene {scene.sceneIndex + 1}
+                    </span>
                     <input
-                      placeholder="https://example.com/media.mp4"
-                      onBlur={(e) => {
-                        const url = e.target.value;
-                        if (url.trim()) {
-                          void saveMedia(scene, url.trim(), "video");
-                          e.target.value = "";
-                        }
-                      }}
-                      className="w-full rounded-md border border-gray-200 px-2 py-1 text-xs dark:border-dark-3 dark:bg-dark-2"
+                      value={scene.label || ""}
+                      onChange={(e) =>
+                        setScenes((prev) =>
+                          prev.map((s) => (s.id === scene.id ? { ...s, label: e.target.value } : s)),
+                        )
+                      }
+                      placeholder="Label"
+                      className="rounded-md border border-gray-200 px-2 py-1 text-xs dark:border-dark-3 dark:bg-dark-2"
                     />
-                    <span className="text-[11px] text-gray-5">Paste URL</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <input
-                      type="file"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (file) {
-                          void handleFileUpload(scene, file);
-                          e.target.value = "";
-                        }
-                      }}
-                      className="w-full rounded-md border border-gray-200 px-2 py-1 text-xs dark:border-dark-3 dark:bg-dark-2 file:mr-2 file:rounded file:border-0 file:bg-primary/10 file:px-2 file:py-1 file:text-primary"
+                      type="number"
+                      min={5}
+                      value={scene.durationMs ? Math.round(scene.durationMs / 1000) : ""}
+                      onChange={(e) =>
+                        setScenes((prev) =>
+                          prev.map((s) =>
+                            s.id === scene.id ? { ...s, durationMs: Number(e.target.value) * 1000 } : s,
+                          ),
+                        )
+                      }
+                      placeholder="sec"
+                      className="w-20 rounded-md border border-gray-200 px-2 py-1 text-xs dark:border-dark-3 dark:bg-dark-2"
                     />
-                    {uploadingScene === scene.id && (
-                      <span className="text-[11px] text-gray-5">Uploading...</span>
+                    <button
+                      type="button"
+                      onClick={() => void regenerateScene(scene)}
+                      disabled={regen[scene.id]}
+                      className="rounded-md border border-primary/30 px-3 py-1 text-xs font-semibold text-primary transition hover:border-primary disabled:opacity-60"
+                    >
+                      {regen[scene.id] ? "Regenerating..." : "Regenerate"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void saveScene(scene)}
+                      disabled={saving[scene.id]}
+                      className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white transition hover:bg-primary/90 disabled:opacity-60"
+                    >
+                      {saving[scene.id] ? "Saving..." : "Save"}
+                    </button>
+                  </div>
+                </div>
+                <div className="mt-3 space-y-2">
+                  <textarea
+                    value={scene.script || ""}
+                    onChange={(e) =>
+                      setScenes((prev) => prev.map((s) => (s.id === scene.id ? { ...s, script: e.target.value } : s)))
+                    }
+                    rows={4}
+                    className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-primary dark:border-dark-3 dark:bg-dark-2"
+                  />
+                  <input
+                    value={scene.prompt || ""}
+                    onChange={(e) =>
+                      setScenes((prev) => prev.map((s) => (s.id === scene.id ? { ...s, prompt: e.target.value } : s)))
+                    }
+                    placeholder="Visual prompt / suggestion"
+                    className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-primary dark:border-dark-3 dark:bg-dark-2"
+                  />
+                  <div className="rounded-lg border border-dashed border-gray-200 p-3 text-xs text-gray-6 dark:border-dark-3 dark:text-dark-5">
+                    <p className="font-semibold text-dark dark:text-white">Media</p>
+                    {mediaLoading && <p className="text-xs text-gray-5">Loading media...</p>}
+                    {mediaByScene[scene.id]?.length ? (
+                      <ul className="mt-2 space-y-1">
+                        {mediaByScene[scene.id].map((m) => (
+                          <li
+                            key={m.id}
+                            className="flex items-center justify-between gap-2 rounded-md bg-white px-2 py-1 shadow-sm dark:bg-dark-3"
+                          >
+                            <span className="text-[11px] text-gray-6 dark:text-dark-5">
+                              {m.mediaType} · {m.source || "upload"}
+                            </span>
+                            <a href={m.url} className="text-primary underline" target="_blank" rel="noreferrer">
+                              Open
+                            </a>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="mt-1 text-[11px] text-gray-5">No media yet.</p>
                     )}
+                    <div className="mt-2 flex flex-col gap-2">
+                      <div className="flex items-center gap-2">
+                        <input
+                          placeholder="https://example.com/media.mp4"
+                          onBlur={(e) => {
+                            const url = e.target.value;
+                            if (url.trim()) {
+                              void saveMedia(scene, url.trim(), "video");
+                              e.target.value = "";
+                            }
+                          }}
+                          className="w-full rounded-md border border-gray-200 px-2 py-1 text-xs dark:border-dark-3 dark:bg-dark-2"
+                        />
+                        <span className="text-[11px] text-gray-5">Paste URL</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="file"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              void handleFileUpload(scene, file);
+                              e.target.value = "";
+                            }
+                          }}
+                          className="w-full rounded-md border border-gray-200 px-2 py-1 text-xs dark:border-dark-3 dark:bg-dark-2 file:mr-2 file:rounded file:border-0 file:bg-primary/10 file:px-2 file:py-1 file:text-primary"
+                        />
+                        {uploadingScene === scene.id && <span className="text-[11px] text-gray-5">Uploading...</span>}
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
+            ))}
           </div>
-        ))}
+        )}
       </div>
     </div>
   );

@@ -1,20 +1,28 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { labelForLanguage, languageOptions, resolveLanguageCode } from "@/lib/languages";
 import { cn } from "@/lib/utils";
-import Link from "next/link";
+import { createPortal } from "react-dom";
 
 type Project = {
   id: string;
   title: string;
   videoType: string;
-  contentFormat?: string | null;
-  inputMode?: string | null;
   language?: string | null;
-  durationSeconds?: number | null;
   status: string;
   createdAt?: string | null;
+};
+
+type Scene = {
+  id: string;
+  projectId: string;
+  sceneIndex: number;
+  label?: string | null;
+  script?: string | null;
+  durationMs?: number | null;
 };
 
 type Voice = {
@@ -30,17 +38,7 @@ type RenderJob = {
   status: string;
   previewUrl?: string | null;
   outputUrl?: string | null;
-  createdAt?: string | null;
   error?: string | null;
-};
-
-type Scene = {
-  id: string;
-  projectId: string;
-  sceneIndex: number;
-  label?: string | null;
-  script?: string | null;
-  durationMs?: number | null;
 };
 
 const contentFormats = [
@@ -67,34 +65,80 @@ const longDurations = [
   { value: 900, label: "15 min" },
 ];
 
+function ModalPortal({ children }: { children: React.ReactNode }) {
+  if (typeof document === "undefined") return null;
+  return createPortal(children, document.body);
+}
+
+function formatDate(value?: string | null) {
+  if (!value) return "—";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return value;
+  return d.toLocaleString();
+}
+
 export default function AiVideosClientPage() {
+  const router = useRouter();
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [loadingProjects, setLoadingProjects] = useState(false);
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const [jobsByProject, setJobsByProject] = useState<Record<string, RenderJob[]>>({});
+  const [scenesByProject, setScenesByProject] = useState<Record<string, Scene[]>>({});
+  const [showModal, setShowModal] = useState(false);
+  const [status, setStatus] = useState<{ type: "idle" | "loading" | "error" | "success"; message?: string }>({
+    type: "idle",
+  });
+  const [rendering, setRendering] = useState<string | null>(null);
+  const [generatingScenes, setGeneratingScenes] = useState<string | null>(null);
+  const [voices, setVoices] = useState<Voice[]>([]);
+  const [loadingVoices, setLoadingVoices] = useState(false);
+  const [voiceId, setVoiceId] = useState<string>("");
+
+  // form state
   const [videoType, setVideoType] = useState<"shorts" | "longform">("shorts");
-  const [contentFormat, setContentFormat] = useState<string>("faceless");
+  const [contentFormat, setContentFormat] = useState("faceless");
   const [title, setTitle] = useState("");
   const [inputMode, setInputMode] = useState<"topic" | "prompt" | "script">("topic");
   const [topic, setTopic] = useState("");
   const [prompt, setPrompt] = useState("");
   const [script, setScript] = useState("");
   const [languageQuery, setLanguageQuery] = useState(labelForLanguage("en"));
+  const [showLanguageList, setShowLanguageList] = useState(false);
   const [durationSeconds, setDurationSeconds] = useState<number>(30);
   const [selectedSources, setSelectedSources] = useState<string[]>(["ai_images"]);
-  const [voices, setVoices] = useState<Voice[]>([]);
-  const [voiceId, setVoiceId] = useState<string>("");
-  const [loadingVoices, setLoadingVoices] = useState(false);
-  const [status, setStatus] = useState<{ type: "idle" | "loading" | "error" | "success"; message?: string }>({
-    type: "idle",
-  });
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [loadingProjects, setLoadingProjects] = useState(false);
-  const [jobsByProject, setJobsByProject] = useState<Record<string, RenderJob[]>>({});
-  const [rendering, setRendering] = useState<string | null>(null);
-  const [scenesByProject, setScenesByProject] = useState<Record<string, Scene[]>>({});
-  const [generatingScenes, setGeneratingScenes] = useState<string | null>(null);
-  const [polling, setPolling] = useState<NodeJS.Timeout | null>(null);
-
-  const currentDurations = useMemo(() => (videoType === "shorts" ? shortDurations : longDurations), [videoType]);
 
   const selectedLanguage = useMemo(() => resolveLanguageCode(languageQuery || "en"), [languageQuery]);
+  const filteredLanguages = useMemo(() => {
+    if (!showLanguageList) return [];
+    const term = (languageQuery || "").trim().toLowerCase();
+    if (!term || term === "choose a language...") return languageOptions;
+
+    const exactMatch = languageOptions.some(
+      (lang) => lang.label.toLowerCase() === term || lang.code.toLowerCase() === term,
+    );
+    if (exactMatch) return languageOptions;
+
+    return languageOptions.filter(
+      (lang) => lang.label.toLowerCase().includes(term) || lang.code.toLowerCase().includes(term),
+    );
+  }, [languageQuery, showLanguageList]);
+  const currentDurations = useMemo(() => (videoType === "shorts" ? shortDurations : longDurations), [videoType]);
+  const filteredProjects = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    if (!term) return projects;
+    return projects.filter((p) => {
+      const text = `${p.title} ${p.videoType} ${p.language} ${p.status}`.toLowerCase();
+      return text.includes(term);
+    });
+  }, [projects, search]);
+  const pageCount = Math.max(1, Math.ceil(filteredProjects.length / pageSize));
+  const currentPage = Math.min(page, pageCount);
+  const pagedProjects = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return filteredProjects.slice(start, start + pageSize);
+  }, [filteredProjects, currentPage, pageSize]);
 
   function toggleSource(value: string) {
     setSelectedSources((prev) => (prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value]));
@@ -166,13 +210,6 @@ export default function AiVideosClientPage() {
       void loadJobs(p.id);
       void loadScenes(p.id);
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projects]);
-
-  useEffect(() => {
-    if (polling) {
-      clearInterval(polling);
-    }
     const interval = setInterval(() => {
       projects
         .filter((p) => p.status !== "ready")
@@ -181,12 +218,10 @@ export default function AiVideosClientPage() {
           void loadScenes(p.id);
         });
     }, 8000);
-    setPolling(interval);
     return () => clearInterval(interval);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projects.length]);
+  }, [projects]);
 
-  async function handleSubmit(event: React.FormEvent) {
+  async function handleCreateAndEdit(event: React.FormEvent) {
     event.preventDefault();
     setStatus({ type: "loading", message: "Creating project..." });
     const payload = {
@@ -211,432 +246,497 @@ export default function AiVideosClientPage() {
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body?.error || "Unable to create project");
-      setStatus({ type: "success", message: "Project created. Proceed to script & scene generation." });
-      setTitle("");
-      setTopic("");
-      setPrompt("");
-      setScript("");
-      setSelectedSources(["ai_images"]);
-      await loadProjects();
+      const projectId = body.project?.id as string;
+      if (projectId) {
+        await fetch("/api/video-scenes/generate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ projectId }),
+        }).catch(() => {});
+        setShowModal(false);
+        router.push(`/ai-videos/${projectId}`);
+      }
     } catch (err) {
       setStatus({ type: "error", message: (err as Error).message || "Failed to create project" });
-    }
-  }
-
-  async function handleRender(projectId: string) {
-    setRendering(projectId);
-    try {
-      const res = await fetch("/api/video-render", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId }),
-      });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body?.error || "Unable to create render job");
-      await loadJobs(projectId);
-      setStatus({ type: "success", message: "Render job queued" });
-    } catch (err) {
-      setStatus({ type: "error", message: (err as Error).message || "Failed to start render" });
     } finally {
-      setRendering(null);
+      setStatus((prev) => (prev.type === "loading" ? { type: "idle" } : prev));
     }
   }
 
   async function handleGenerateScenes(projectId: string) {
     setGeneratingScenes(projectId);
     try {
-      const res = await fetch("/api/video-scenes/generate", {
+      await fetch("/api/video-scenes/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ projectId }),
       });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body?.error || "Unable to generate scenes");
       await loadScenes(projectId);
-      setStatus({ type: "success", message: "Script and scenes generated" });
+      setStatus({ type: "success", message: "Scenes refreshed" });
     } catch (err) {
-      setStatus({ type: "error", message: (err as Error).message || "Failed to generate scenes" });
+      setStatus({ type: "error", message: (err as Error).message });
     } finally {
       setGeneratingScenes(null);
     }
   }
 
+  async function handleRender(projectId: string) {
+    setRendering(projectId);
+    try {
+      await fetch("/api/video-render", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId }),
+      });
+      await loadJobs(projectId);
+      setStatus({ type: "success", message: "Render started" });
+    } catch (err) {
+      setStatus({ type: "error", message: (err as Error).message });
+    } finally {
+      setRendering(null);
+    }
+  }
+
   return (
-    <div className="space-y-10">
-      <header className="flex flex-col gap-3">
-        <p className="text-xs font-semibold uppercase tracking-[0.25em] text-primary">AI Videos</p>
-        <h1 className="text-3xl font-bold text-dark dark:text-white">Multi-step AI video creator</h1>
-        <p className="max-w-3xl text-sm text-gray-6 dark:text-dark-6">
-          Guided wizard for Shorts and long-form videos with language-aware scripts, narrator voices, visual sourcing,
-          and per-scene customization. This page creates the project draft; next screens will handle script, scenes, and
-          rendering.
-        </p>
-      </header>
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-gray-200 bg-white p-5 shadow-card-2 dark:border-dark-3 dark:bg-dark-2">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.25em] text-primary">AI Videos</p>
+          <h1 className="text-2xl font-bold text-dark dark:text-white">Generated AI Videos</h1>
+          <p className="text-sm text-gray-6 dark:text-dark-6">View generated videos and create new ones.</p>
+        </div>
+        <button
+          onClick={() => {
+            setShowModal(true);
+            setStatus({ type: "idle" });
+          }}
+          className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-primary/90"
+        >
+          + Generate AI Video
+        </button>
+      </div>
 
-      <form onSubmit={handleSubmit} className="grid gap-6 lg:grid-cols-3">
-        <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-card-2 dark:border-dark-3 dark:bg-dark-2 lg:col-span-2 space-y-6">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div>
-              <label className="text-sm font-medium text-dark dark:text-white">Video type</label>
-              <div className="mt-2 grid grid-cols-2 gap-2">
-                {[
-                  { value: "shorts", label: "Shorts / Reels" },
-                  { value: "longform", label: "Long-form" },
-                ].map((item) => (
-                  <button
-                    type="button"
-                    key={item.value}
-                    onClick={() => {
-                      setVideoType(item.value as "shorts" | "longform");
-                      setDurationSeconds(item.value === "shorts" ? 30 : 300);
-                    }}
-                    className={`rounded-xl border px-3 py-3 text-sm font-semibold transition ${
-                      videoType === item.value
-                        ? "border-primary bg-primary/10 text-primary"
-                        : "border-gray-200 text-gray-700 dark:border-dark-3 dark:text-dark-5"
-                    }`}
-                  >
-                    {item.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div>
-              <label className="text-sm font-medium text-dark dark:text-white">Content format</label>
-              <div className="mt-2 grid grid-cols-3 gap-2">
-                {contentFormats.map((fmt) => (
-                  <button
-                    type="button"
-                    key={fmt.value}
-                    onClick={() => setContentFormat(fmt.value)}
-                    className={`rounded-xl border px-3 py-3 text-xs font-semibold transition ${
-                      contentFormat === fmt.value
-                        ? "border-primary bg-primary/10 text-primary"
-                        : "border-gray-200 text-gray-700 dark:border-dark-3 dark:text-dark-5"
-                    }`}
-                  >
-                    {fmt.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-dark dark:text-white">Project title</label>
-              <input
-                required
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="Project Regular Gazelle"
-                className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-primary dark:border-dark-3 dark:bg-dark-2"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-dark dark:text-white">Language</label>
-              <input
-                value={languageQuery}
-                onChange={(e) => setLanguageQuery(e.target.value)}
-                list="video-language-options"
-                placeholder="English"
-                className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-primary dark:border-dark-3 dark:bg-dark-2"
-              />
-              <datalist id="video-language-options">
-                {languageOptions.map((lang) => (
-                  <option key={lang.code} value={lang.label} />
-                ))}
-              </datalist>
-              <p className="text-xs text-gray-5 dark:text-dark-5">Voices and script generation follow this language.</p>
-            </div>
-          </div>
-
-          <div className="space-y-3">
-            <label className="text-sm font-medium text-dark dark:text-white">Content input</label>
-            <div className="flex flex-wrap gap-2">
-              {[
-                { value: "topic", label: "Popular Topic" },
-                { value: "prompt", label: "Prompt" },
-                { value: "script", label: "Script" },
-              ].map((tab) => (
-                <button
-                  key={tab.value}
-                  type="button"
-                  onClick={() => setInputMode(tab.value as typeof inputMode)}
-                  className={`rounded-full border px-3 py-1 text-xs font-semibold transition ${
-                    inputMode === tab.value
-                      ? "border-primary bg-primary/10 text-primary"
-                      : "border-gray-200 text-gray-7 dark:border-dark-3 dark:text-dark-5"
-                  }`}
-                >
-                  {tab.label}
-                </button>
-              ))}
-            </div>
-
-            {inputMode === "topic" && (
-              <select
-                value={topic}
-                onChange={(e) => setTopic(e.target.value)}
-                className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-primary dark:border-dark-3 dark:bg-dark-2"
-              >
-                <option value="">Choose a topic</option>
-                {[
-                  "Motivational Story",
-                  "Scary Story",
-                  "Interesting Facts",
-                  "Historical Events",
-                  "Science Discoveries",
-                  "Technology Trends",
-                  "Health Tips",
-                  "Travel Destinations",
-                  "Cooking Recipes",
-                  "Art & Culture",
-                  "Sports Highlights",
-                ].map((opt) => (
-                  <option key={opt} value={opt}>
-                    {opt}
-                  </option>
-                ))}
-              </select>
-            )}
-
-            {inputMode === "prompt" && (
-              <textarea
-                value={prompt}
-                onChange={(e) => setPrompt(e.target.value)}
-                rows={3}
-                placeholder="top 5 biggest airplanes"
-                className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-primary dark:border-dark-3 dark:bg-dark-2"
-              />
-            )}
-
-            {inputMode === "script" && (
-              <textarea
-                value={script}
-                onChange={(e) => setScript(e.target.value)}
-                rows={5}
-                placeholder="Paste your full script..."
-                className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-primary dark:border-dark-3 dark:bg-dark-2"
-              />
-            )}
-          </div>
-
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-dark dark:text-white">Duration</label>
-              <div className="grid grid-cols-3 gap-2">
-                {currentDurations.map((dur) => (
-                  <button
-                    key={dur.value}
-                    type="button"
-                    onClick={() => setDurationSeconds(dur.value)}
-                    className={`rounded-xl border px-3 py-3 text-xs font-semibold transition ${
-                      durationSeconds === dur.value
-                        ? "border-primary bg-primary/10 text-primary"
-                        : "border-gray-200 text-gray-700 dark:border-dark-3 dark:text-dark-5"
-                    }`}
-                  >
-                    {dur.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-dark dark:text-white">Narrator voice</label>
-              <div className="rounded-xl border border-gray-200 bg-white p-3 dark:border-dark-3 dark:bg-dark-2">
-                {loadingVoices && <p className="text-xs text-gray-5">Loading voices...</p>}
-                {!loadingVoices && voices.length === 0 && (
-                  <p className="text-xs text-gray-5">No voices for {labelForLanguage(selectedLanguage) || selectedLanguage}</p>
-                )}
-                <div className="space-y-2">
-                  {voices.map((v) => (
-                    <label key={v.id} className="flex items-center gap-2 rounded-lg border border-transparent px-2 py-1 hover:border-primary/40">
-                      <input
-                        type="radio"
-                        name="voice"
-                        value={v.id}
-                        checked={voiceId === v.id}
-                        onChange={() => setVoiceId(v.id)}
-                      />
-                      <span className="text-sm text-dark dark:text-white">
-                        {v.name}
-                        {v.tone ? ` · ${v.tone}` : ""}
-                        {v.gender ? ` · ${v.gender}` : ""}
-                      </span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-dark dark:text-white">Video sources</label>
-            <div className="flex flex-wrap gap-2">
-              {videoSources.map((src) => (
-                <button
-                  type="button"
-                  key={src.value}
-                  onClick={() => toggleSource(src.value)}
-                  className={`rounded-full border px-3 py-1 text-xs font-semibold transition ${
-                    selectedSources.includes(src.value)
-                      ? "border-primary bg-primary/10 text-primary"
-                      : "border-gray-200 text-gray-7 dark:border-dark-3 dark:text-dark-5"
-                  }`}
-                >
-                  {src.label}
-                </button>
-              ))}
-            </div>
-            <p className="text-xs text-gray-5 dark:text-dark-5">
-              Used to decide AI image prompts vs gameplay/viral sourcing in the next steps.
-            </p>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <button
-              type="submit"
-              disabled={status.type === "loading"}
-              className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white transition hover:bg-primary/90 disabled:opacity-60"
+      <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-card-2 dark:border-dark-3 dark:bg-dark-2">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-center gap-2 text-sm text-gray-6 dark:text-dark-6">
+            <span>Show</span>
+            <select
+              value={pageSize}
+              onChange={(e) => {
+                setPageSize(Number(e.target.value));
+                setPage(1);
+              }}
+              className="h-10 rounded-lg border border-gray-200 bg-white px-3 text-sm outline-none focus:border-primary dark:border-dark-3 dark:bg-dark-2"
             >
-              {status.type === "loading" ? "Creating..." : "Create project"}
-            </button>
-            {status.message && (
-              <span
-                className={`text-sm ${
-                  status.type === "error" ? "text-red-500" : status.type === "success" ? "text-green-600" : "text-gray-6"
-                }`}
-              >
-                {status.message}
-              </span>
-            )}
+              {[5, 10, 20, 50].map((size) => (
+                <option key={size} value={size}>
+                  {size}
+                </option>
+              ))}
+            </select>
+            <span>entries</span>
           </div>
-        </section>
-
-        <aside className="space-y-4">
-          <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-card-2 dark:border-dark-3 dark:bg-dark-2">
-            <h2 className="text-lg font-semibold text-dark dark:text-white">Existing projects</h2>
-            {loadingProjects && <p className="mt-2 text-sm text-gray-6 dark:text-dark-6">Loading...</p>}
-            {!loadingProjects && projects.length === 0 && (
-              <p className="mt-2 text-sm text-gray-6 dark:text-dark-6">No projects yet.</p>
-            )}
-            <ul className="mt-3 space-y-3">
-              {projects.map((p) => (
-                <li key={p.id} className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm dark:border-dark-3 dark:bg-dark-2">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="font-semibold text-dark dark:text-white">{p.title}</span>
-                    <span className={cn(
-                      "rounded-full px-2 py-0.5 text-xs font-semibold",
+          <div className="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-6 shadow-sm dark:border-dark-3 dark:bg-dark-2">
+            <span className="text-gray-4">Search</span>
+            <input
+              value={search}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                setPage(1);
+              }}
+              placeholder="(script, id, status)"
+              className="w-52 bg-transparent text-sm outline-none"
+            />
+          </div>
+        </div>
+        {loadingProjects ? (
+          <p className="text-sm text-gray-6 dark:text-dark-6">Loading...</p>
+        ) : filteredProjects.length === 0 ? (
+          <p className="text-sm text-gray-6 dark:text-dark-6">No projects yet.</p>
+        ) : (
+          <div className="space-y-3">
+            <div className="grid grid-cols-12 bg-gray-50 px-3 py-2 text-xs font-semibold uppercase text-gray-5 dark:bg-dark-3 dark:text-dark-5">
+              <div className="col-span-6">Script / ID</div>
+              <div className="col-span-2 text-center">Status</div>
+              <div className="col-span-2">Created</div>
+              <div className="col-span-2 text-right">Actions</div>
+            </div>
+            {pagedProjects.map((p) => (
+              <div key={p.id} className="grid grid-cols-12 items-center border-b border-gray-100 px-3 py-3 last:border-0 dark:border-dark-3">
+                <div className="col-span-6 pr-3">
+                  <p className="text-sm font-semibold text-dark dark:text-white">{p.title}</p>
+                  <p className="text-[12px] text-gray-5 dark:text-dark-5">ID: {p.id}</p>
+                  <p className="text-[12px] text-gray-5 dark:text-dark-5">
+                    {p.videoType === "shorts" ? "SHORTS" : "LONGFORM"} · {labelForLanguage(p.language) || p.language || "en"}
+                  </p>
+                  {jobsByProject[p.id]?.[0]?.id && (
+                    <p className="text-[12px] text-gray-5 dark:text-dark-5">Job: {jobsByProject[p.id][0].id}</p>
+                  )}
+                </div>
+                <div className="col-span-2 text-center">
+                  <span
+                    className={cn(
+                      "rounded-full px-3 py-1 text-xs font-semibold",
                       p.status === "ready"
                         ? "bg-emerald-100 text-emerald-700"
                         : p.status === "rendering"
                           ? "bg-amber-100 text-amber-700"
                           : p.status === "failed"
                             ? "bg-red-100 text-red-700"
-                            : "bg-primary/10 text-primary"
-                    )}>
-                      {p.status}
-                    </span>
-                  </div>
-                  <p className="text-xs text-gray-6 dark:text-dark-6">
-                    {p.videoType === "shorts" ? "Shorts" : "Long-form"} · {labelForLanguage(p.language) || p.language || "en"}
-                  </p>
-                  <div className="mt-2 flex flex-wrap items-center gap-2">
-                    <Link
-                      href={`/ai-videos/${p.id}`}
-                      className="rounded-md border border-gray-200 px-3 py-1 text-xs font-semibold text-gray-7 transition hover:border-primary hover:text-primary dark:border-dark-3 dark:text-dark-5"
-                    >
-                      Open editor
-                    </Link>
-                    <button
-                      type="button"
-                      onClick={() => void handleGenerateScenes(p.id)}
-                      disabled={generatingScenes === p.id}
-                      className="rounded-md border border-primary/30 px-3 py-1 text-xs font-semibold text-primary transition hover:border-primary disabled:opacity-60"
-                    >
-                      {generatingScenes === p.id ? "Generating..." : "Generate script + scenes"}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => void handleRender(p.id)}
-                      disabled={rendering === p.id}
-                      className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white transition hover:bg-primary/90 disabled:opacity-60"
-                    >
-                      {rendering === p.id ? "Queuing..." : "Render video"}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        void loadJobs(p.id);
-                        void loadScenes(p.id);
-                      }}
-                      className="rounded-md border border-gray-200 px-3 py-1 text-xs font-semibold text-gray-7 transition hover:border-primary hover:text-primary dark:border-dark-3 dark:text-dark-5"
-                    >
-                      Refresh status
-                    </button>
-                  </div>
-                  {scenesByProject[p.id] && scenesByProject[p.id].length > 0 && (
-                    <ul className="mt-2 space-y-1">
-                      {scenesByProject[p.id].slice(0, 4).map((scene) => (
-                        <li key={scene.id} className="rounded-md bg-white px-2 py-1 text-xs text-gray-6 shadow-sm dark:bg-dark-3 dark:text-dark-5">
-                          <span className="font-semibold text-dark dark:text-white">{scene.label || `Scene ${scene.sceneIndex + 1}`}</span>
-                          {scene.durationMs ? (
-                            <span className="ml-2 text-gray-5 dark:text-dark-5">· {(scene.durationMs / 1000).toFixed(0)}s</span>
-                          ) : null}
-                          <div className="text-[11px] text-gray-5 dark:text-dark-5 line-clamp-2">{scene.script}</div>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                    {jobsByProject[p.id] && jobsByProject[p.id].length > 0 && (
-                      <ul className="mt-2 space-y-1">
-                        {jobsByProject[p.id].slice(0, 3).map((job) => (
-                          <li key={job.id} className="rounded-md bg-white px-2 py-1 text-xs text-gray-6 shadow-sm dark:bg-dark-3 dark:text-dark-5">
-                            <span className="font-semibold text-dark dark:text-white">{job.status}</span>
-                            {job.outputUrl && (
-                              <a
-                                href={job.outputUrl}
-                                className="ml-2 text-primary underline"
-                                target="_blank"
-                                rel="noreferrer"
-                              >
-                                Output
-                              </a>
-                            )}
-                            {!job.outputUrl && job.previewUrl && (
-                              <a
-                                href={job.previewUrl}
-                                className="ml-2 text-primary underline"
-                                target="_blank"
-                                rel="noreferrer"
-                              >
-                                Preview
-                              </a>
-                            )}
-                            {job.error && <span className="ml-2 text-red-500">{job.error}</span>}
-                          </li>
-                        ))}
-                      </ul>
+                            : "bg-primary/10 text-primary",
                     )}
-                  </li>
-                ))}
-              </ul>
+                  >
+                    {p.status.toUpperCase()}
+                  </span>
+                </div>
+                <div className="col-span-2 text-sm text-gray-6 dark:text-dark-6">{formatDate(p.createdAt)}</div>
+                <div className="col-span-2 flex justify-end gap-2">
+                  <Link
+                    href={`/ai-videos/${p.id}`}
+                    className="rounded-md border border-gray-200 px-3 py-1 text-xs font-semibold text-gray-7 transition hover:border-primary hover:text-primary dark:border-dark-3 dark:text-dark-5"
+                  >
+                    Detail
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void loadJobs(p.id);
+                      void loadScenes(p.id);
+                    }}
+                    className="rounded-md border border-gray-200 px-3 py-1 text-xs font-semibold text-gray-7 transition hover:border-primary hover:text-primary dark:border-dark-3 dark:text-dark-5"
+                  >
+                    Refresh
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleRender(p.id)}
+                    disabled={rendering === p.id}
+                    className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white transition hover:bg-primary/90 disabled:opacity-60"
+                  >
+                    {rendering === p.id ? "Rendering..." : "Render"}
+                  </button>
+                </div>
+              </div>
+            ))}
+            <div className="flex items-center justify-between pt-2 text-sm text-gray-6 dark:text-dark-6">
+              <span>
+                Showing {(currentPage - 1) * pageSize + 1} to{" "}
+                {Math.min(currentPage * pageSize, filteredProjects.length)} of {filteredProjects.length} entries
+              </span>
+              <div className="flex items-center gap-2 text-xs">
+                <button
+                  className="rounded border border-gray-200 px-2 py-1 hover:border-primary hover:text-primary dark:border-dark-3"
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                >
+                  Previous
+                </button>
+                <span>
+                  Page {currentPage} of {pageCount}
+                </span>
+                <button
+                  className="rounded border border-gray-200 px-2 py-1 hover:border-primary hover:text-primary dark:border-dark-3"
+                  onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
+                  disabled={currentPage === pageCount}
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {showModal && (
+        <ModalPortal>
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center overflow-y-auto bg-black/70 p-4 md:p-8">
+            <div className="relative z-[10000] flex w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-dark-3 dark:bg-dark-2">
+            <button
+              onClick={() => setShowModal(false)}
+              className="absolute right-4 top-4 rounded-full px-3 py-1 text-sm text-gray-5 transition hover:bg-gray-100 hover:text-primary dark:hover:bg-dark-3"
+            >
+              Close
+            </button>
+
+            <div className="px-8 pt-6 pb-2">
+              <p className="text-xs font-semibold uppercase tracking-[0.25em] text-primary">Generate</p>
+              <h2 className="text-xl font-semibold text-dark dark:text-white">New AI video</h2>
+              <p className="text-sm text-gray-6 dark:text-dark-6">Fill details to generate script & scenes.</p>
             </div>
 
-            <div className="rounded-2xl border border-dashed border-primary/40 bg-primary/5 p-4 text-sm text-primary">
-              <h3 className="text-base font-semibold text-primary">Next wiring</h3>
-              <ul className="mt-2 list-disc space-y-1 pl-5">
-                <li>Step screens for script → scenes → media mapping</li>
-                <li>Render job kickoff (audio + captions + timeline)</li>
-                <li>Customization tabs for captions/music/media</li>
-              </ul>
+            <form onSubmit={handleCreateAndEdit} className="flex-1 space-y-4 overflow-y-auto px-8 pb-6">
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <p className="text-sm font-medium text-dark dark:text-white">Video type</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {[
+                      { value: "shorts", label: "Shorts / Reels" },
+                      { value: "longform", label: "Long-form" },
+                    ].map((item) => (
+                      <button
+                        type="button"
+                        key={item.value}
+                        onClick={() => {
+                          setVideoType(item.value as "shorts" | "longform");
+                          setDurationSeconds(item.value === "shorts" ? 30 : 300);
+                        }}
+                        className={`rounded-lg border px-3 py-3 text-sm font-semibold transition ${
+                          videoType === item.value
+                            ? "border-primary bg-primary/10 text-primary"
+                            : "border-gray-200 text-gray-700 dark:border-dark-3 dark:text-dark-5"
+                        }`}
+                      >
+                        {item.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <p className="text-sm font-medium text-dark dark:text-white">Content format</p>
+                  <div className="grid grid-cols-3 gap-2">
+                    {contentFormats.map((fmt) => (
+                      <button
+                        type="button"
+                        key={fmt.value}
+                        onClick={() => setContentFormat(fmt.value)}
+                        className={`rounded-lg border px-3 py-3 text-xs font-semibold transition ${
+                          contentFormat === fmt.value
+                            ? "border-primary bg-primary/10 text-primary"
+                            : "border-gray-200 text-gray-700 dark:border-dark-3 dark:text-dark-5"
+                        }`}
+                      >
+                        {fmt.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <p className="text-sm font-medium text-dark dark:text-white">Title</p>
+                  <input
+                    required
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
+                    placeholder="Project Regular Gazelle"
+                    className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-primary dark:border-dark-3 dark:bg-dark-2"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <p className="text-sm font-medium text-dark dark:text-white">Language</p>
+                  <div className="relative">
+                    <input
+                      value={languageQuery}
+                      onChange={(e) => {
+                        setLanguageQuery(e.target.value);
+                        setShowLanguageList(true);
+                      }}
+                      onFocus={() => setShowLanguageList(true)}
+                      onBlur={() => setTimeout(() => setShowLanguageList(false), 100)}
+                      placeholder="Choose a language..."
+                      className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-primary dark:border-dark-3 dark:bg-dark-2"
+                    />
+                    {showLanguageList && (
+                      <div className="absolute z-50 mt-1 max-h-48 w-full overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg dark:border-dark-3 dark:bg-dark-2">
+                        {filteredLanguages.map((lang) => (
+                          <button
+                            key={lang.code}
+                            type="button"
+                            className="flex w-full items-center justify-between px-3 py-2 text-left text-sm text-gray-7 hover:bg-primary/10 dark:text-dark-5"
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => {
+                              setLanguageQuery(lang.label);
+                              setShowLanguageList(false);
+                            }}
+                          >
+                            <span>{lang.label}</span>
+                            <span className="text-xs text-gray-5 dark:text-dark-5">{lang.code}</span>
+                          </button>
+                        ))}
+                        {!filteredLanguages.length && (
+                          <div className="px-3 py-2 text-xs text-gray-5 dark:text-dark-5">No matches</div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-3">
+                  <p className="text-sm font-medium text-dark dark:text-white">Content input</p>
+                  <div className="flex flex-wrap gap-2">
+                    {[
+                      { value: "topic", label: "Popular Topic" },
+                      { value: "prompt", label: "Prompt" },
+                      { value: "script", label: "Script" },
+                    ].map((tab) => (
+                      <button
+                        key={tab.value}
+                        type="button"
+                        onClick={() => setInputMode(tab.value as typeof inputMode)}
+                        className={`rounded-full border px-3 py-1 text-xs font-semibold transition ${
+                          inputMode === tab.value
+                            ? "border-primary bg-primary/10 text-primary"
+                            : "border-gray-200 text-gray-7 dark:border-dark-3 dark:text-dark-5"
+                        }`}
+                      >
+                        {tab.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {inputMode === "topic" && (
+                    <select
+                      value={topic}
+                      onChange={(e) => setTopic(e.target.value)}
+                      className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-primary dark:border-dark-3 dark:bg-dark-2"
+                    >
+                      <option value="">Choose a topic</option>
+                      {[
+                        "Motivational Story",
+                        "Scary Story",
+                        "Interesting Facts",
+                        "Historical Events",
+                        "Science Discoveries",
+                        "Technology Trends",
+                        "Health Tips",
+                        "Travel Destinations",
+                        "Cooking Recipes",
+                        "Art & Culture",
+                        "Sports Highlights",
+                      ].map((opt) => (
+                        <option key={opt} value={opt}>
+                          {opt}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+
+                  {inputMode === "prompt" && (
+                    <textarea
+                      value={prompt}
+                      onChange={(e) => setPrompt(e.target.value)}
+                      rows={3}
+                      placeholder="top 5 biggest airplanes"
+                      className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-primary dark:border-dark-3 dark:bg-dark-2"
+                    />
+                  )}
+
+                  {inputMode === "script" && (
+                    <textarea
+                      value={script}
+                      onChange={(e) => setScript(e.target.value)}
+                      rows={5}
+                      placeholder="Paste your full script..."
+                      className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-primary dark:border-dark-3 dark:bg-dark-2"
+                    />
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <p className="text-sm font-medium text-dark dark:text-white">Duration</p>
+                  <div className="grid grid-cols-3 gap-2">
+                    {currentDurations.map((dur) => (
+                      <button
+                        key={dur.value}
+                        type="button"
+                        onClick={() => setDurationSeconds(dur.value)}
+                        className={`rounded-lg border px-3 py-3 text-xs font-semibold transition ${
+                          durationSeconds === dur.value
+                            ? "border-primary bg-primary/10 text-primary"
+                            : "border-gray-200 text-gray-700 dark:border-dark-3 dark:text-dark-5"
+                        }`}
+                      >
+                        {dur.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <p className="text-sm font-medium text-dark dark:text-white">Narrator voice</p>
+                  <div className="rounded-lg border border-gray-200 bg-white p-3 dark:border-dark-3 dark:bg-dark-2">
+                    {loadingVoices && <p className="text-xs text-gray-5">Loading voices...</p>}
+                    {!loadingVoices && voices.length === 0 && (
+                      <p className="text-xs text-gray-5">
+                        No voices for {labelForLanguage(selectedLanguage) || selectedLanguage}
+                      </p>
+                    )}
+                    <div className="space-y-2">
+                      {voices.map((v) => (
+                        <label
+                          key={v.id}
+                          className="flex items-center gap-2 rounded-lg border border-transparent px-2 py-1 hover:border-primary/40"
+                        >
+                          <input
+                            type="radio"
+                            name="voice"
+                            value={v.id}
+                            checked={voiceId === v.id}
+                            onChange={() => setVoiceId(v.id)}
+                          />
+                          <span className="text-sm text-dark dark:text-white">
+                            {v.name}
+                            {v.tone ? ` · ${v.tone}` : ""}
+                            {v.gender ? ` · ${v.gender}` : ""}
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <p className="text-sm font-medium text-dark dark:text-white">Video sources</p>
+                  <div className="flex flex-wrap gap-2">
+                    {videoSources.map((src) => (
+                      <button
+                        type="button"
+                        key={src.value}
+                        onClick={() => toggleSource(src.value)}
+                        className={`rounded-full border px-3 py-1 text-xs font-semibold transition ${
+                          selectedSources.includes(src.value)
+                            ? "border-primary bg-primary/10 text-primary"
+                            : "border-gray-200 text-gray-7 dark:border-dark-3 dark:text-dark-5"
+                        }`}
+                      >
+                        {src.label}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-xs text-gray-5 dark:text-dark-5">
+                    Used to decide AI image prompts vs gameplay/viral sourcing.
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-4 grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowModal(false)}
+                  className="w-full rounded-lg border border-gray-200 px-4 py-3 text-sm font-semibold text-gray-7 transition hover:border-primary hover:text-primary dark:border-dark-3 dark:text-dark-5"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={status.type === "loading"}
+                  className="w-full rounded-lg bg-primary px-4 py-3 text-sm font-semibold text-white transition hover:bg-primary/90 disabled:opacity-60"
+                >
+                  {status.type === "loading" ? "Working..." : "Generate & Edit"}
+                </button>
+              </div>
+            </form>
             </div>
-          </aside>
-        </form>
-      </div>
-    );
-  }
+          </div>
+        </ModalPortal>
+      )}
+    </div>
+  );
+}
