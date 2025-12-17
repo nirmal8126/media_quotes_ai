@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 import { labelForLanguage, languageOptions, resolveLanguageCode } from "@/lib/languages";
+import { useRouter } from "next/navigation";
 
 type ReelHistoryItem = {
   id: string;
@@ -137,6 +138,7 @@ function ModalPortal({ children }: { children: React.ReactNode }) {
 }
 
 export default function AiReelsPage() {
+  const router = useRouter();
   const [form, setForm] = useState({ ...defaultForm });
   const [status, setStatus] = useState<Status>({ type: "idle" });
   const [result, setResult] = useState<ReelState | null>(null);
@@ -144,7 +146,6 @@ export default function AiReelsPage() {
   const [history, setHistory] = useState<ReelHistoryItem[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
-  const [detailRow, setDetailRow] = useState<ReelHistoryItem | null>(null);
   const [deleteRow, setDeleteRow] = useState<ReelHistoryItem | null>(null);
   const [deleteStatus, setDeleteStatus] = useState<Status>({ type: "idle" });
   const [search, setSearch] = useState("");
@@ -453,6 +454,9 @@ export default function AiReelsPage() {
       });
       setShowModal(false);
       await loadHistory();
+      if (body.reel?.id) {
+        router.push(`/reels/${body.reel.id}/customize`);
+      }
     } catch (err) {
       setStatus({
         type: "error",
@@ -747,7 +751,7 @@ export default function AiReelsPage() {
                         <div className="flex flex-wrap justify-end gap-2">
                           <button
                             className="rounded-md border border-gray-3 px-3 py-2 text-xs font-semibold text-gray-7 transition hover:bg-gray-1 dark:border-stroke-dark dark:text-dark-7 dark:hover:bg-dark-2"
-                            onClick={() => setDetailRow(item)}
+                            onClick={() => router.push(`/reels/${item.id}/customize`)}
                           >
                             Detail
                           </button>
@@ -1565,121 +1569,6 @@ export default function AiReelsPage() {
                 >
                   {status.type === "loading" ? "Working..." : "Generate Reel"}
                 </button>
-              </div>
-            </div>
-          </div>
-        </ModalPortal>
-      )}
-
-      {detailRow && (
-        <ModalPortal>
-          <div
-            className="fixed inset-0 z-[20000] flex items-start justify-center bg-black/60 px-4 py-12"
-            role="dialog"
-            aria-modal="true"
-          >
-            <div className="mt-4 max-h-[85vh] w-full max-w-4xl overflow-y-auto rounded-2xl bg-white p-6 shadow-card-2 dark:bg-dark-2 dark:border dark:border-stroke-dark">
-              <div className="mb-4 flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.35em] text-primary">
-                    Detail
-                  </p>
-                  <h2 className="text-xl font-bold text-dark dark:text-dark-8">
-                    Reel {detailRow.id}
-                  </h2>
-                  <div className="mt-1 flex flex-wrap gap-2 text-xs text-gray-6 dark:text-dark-6">
-                    {detailRow.status && (
-                      <span
-                        className={cn(
-                          "rounded-full px-2 py-1 font-semibold uppercase",
-                          detailRow.status === "READY"
-                            ? "bg-green-100 text-green-700"
-                            : detailRow.status === "FAILED"
-                            ? "bg-red-100 text-red-700"
-                            : "bg-amber-100 text-amber-700"
-                        )}
-                      >
-                        {detailRow.status}
-                      </span>
-                    )}
-                    {detailRow.rendererJobId && (
-                      <span className="text-xs text-gray-6 dark:text-dark-6">
-                        Job: {detailRow.rendererJobId}
-                      </span>
-                    )}
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setDetailRow(null)}
-                  className="rounded-full bg-gray-1 px-3 py-1 text-sm font-semibold text-gray-7 hover:bg-gray-2 dark:bg-dark-3 dark:text-dark-7 dark:hover:bg-dark-4"
-                >
-                  Close
-                </button>
-              </div>
-
-              <div className="mt-2 grid gap-4 md:grid-cols-[1.1fr,0.9fr]">
-                <div className="rounded-xl border border-gray-3 bg-black/5 p-3 dark:border-stroke-dark dark:bg-dark-2">
-                  {detailRow.videoUrl ? (
-                    <video
-                      controls
-                      className="h-[320px] w-full overflow-hidden rounded-lg border border-gray-3 object-cover dark:border-stroke-dark"
-                      src={detailRow.videoUrl ?? undefined}
-                      poster={detailRow.thumbnailUrl ?? undefined}
-                    />
-                  ) : detailRow.thumbnailUrl ? (
-                    <img
-                      src={detailRow.thumbnailUrl}
-                      alt="Reel thumbnail"
-                      className="h-[320px] w-full rounded-lg border border-gray-3 object-cover dark:border-stroke-dark"
-                    />
-                  ) : (
-                    <div className="flex h-[320px] items-center justify-center rounded-lg border border-dashed border-gray-3 text-sm text-gray-6 dark:border-stroke-dark dark:text-dark-6">
-                      No preview yet
-                    </div>
-                  )}
-                  {detailRow.videoUrl && (
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      <a
-                        href={detailRow.videoUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-white transition hover:bg-primary/90"
-                      >
-                        Open video
-                      </a>
-                      {detailRow.thumbnailUrl && (
-                        <a
-                          href={detailRow.thumbnailUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="rounded-md border border-gray-3 px-4 py-2 text-sm font-semibold text-gray-7 transition hover:bg-gray-1 dark:border-stroke-dark dark:text-dark-7 dark:hover:bg-dark-3"
-                        >
-                          Thumbnail
-                        </a>
-                      )}
-                    </div>
-                  )}
-                </div>
-
-                <div className="space-y-3">
-                  <div className="rounded-lg border border-gray-3 bg-white p-3 dark:border-stroke-dark dark:bg-dark-2">
-                    <p className="text-xs font-semibold text-gray-6 dark:text-dark-6">
-                      Script
-                    </p>
-                    <div className="mt-1 whitespace-pre-wrap text-sm text-gray-8 dark:text-dark-8">
-                      {detailRow.scriptText?.trim()
-                        ? detailRow.scriptText
-                        : "—"}
-                    </div>
-                  </div>
-                  <p className="text-xs text-gray-6 dark:text-dark-6">
-                    Created:{" "}
-                    {detailRow.createdAt
-                      ? new Date(detailRow.createdAt).toLocaleString()
-                      : "—"}
-                  </p>
-                </div>
               </div>
             </div>
           </div>
