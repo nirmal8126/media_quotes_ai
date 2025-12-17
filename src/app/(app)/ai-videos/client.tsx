@@ -336,108 +336,153 @@ export default function AiVideosClientPage() {
             </select>
             <span>entries</span>
           </div>
-          <div className="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-6 shadow-sm dark:border-dark-3 dark:bg-dark-2">
-            <span className="text-gray-4">Search</span>
+          <div className="relative flex items-center">
             <input
               value={search}
               onChange={(e) => {
                 setSearch(e.target.value);
                 setPage(1);
               }}
-              placeholder="(script, id, status)"
-              className="w-52 bg-transparent text-sm outline-none"
+              placeholder="Search videos (script, id, status)"
+              className="h-10 w-56 rounded-lg border border-gray-200 bg-white px-3 pl-9 text-sm text-dark outline-none transition focus:border-primary dark:border-dark-3 dark:bg-dark-2 dark:text-dark-8"
+              aria-label="Search videos"
             />
+            <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-4">🔍</span>
           </div>
         </div>
+
         {loadingProjects ? (
           <p className="text-sm text-gray-6 dark:text-dark-6">Loading...</p>
-        ) : filteredProjects.length === 0 ? (
-          <p className="text-sm text-gray-6 dark:text-dark-6">No projects yet.</p>
         ) : (
           <div className="space-y-3">
-            <div className="grid grid-cols-12 bg-gray-50 px-3 py-2 text-xs font-semibold uppercase text-gray-5 dark:bg-dark-3 dark:text-dark-5">
-              <div className="col-span-6">Script / ID</div>
-              <div className="col-span-2 text-center">Status</div>
-              <div className="col-span-2">Created</div>
-              <div className="col-span-2 text-right">Actions</div>
-            </div>
-            {pagedProjects.map((p) => (
-              <div key={p.id} className="grid grid-cols-12 items-center border-b border-gray-100 px-3 py-3 last:border-0 dark:border-dark-3">
-                <div className="col-span-6 pr-3">
-                  <p className="text-sm font-semibold text-dark dark:text-white">{p.title}</p>
-                  <p className="text-[12px] text-gray-5 dark:text-dark-5">ID: {p.id}</p>
-                  <p className="text-[12px] text-gray-5 dark:text-dark-5">
-                    {p.videoType === "shorts" ? "SHORTS" : "LONGFORM"} · {labelForLanguage(p.language) || p.language || "en"}
-                  </p>
-                  {jobsByProject[p.id]?.[0]?.id && (
-                    <p className="text-[12px] text-gray-5 dark:text-dark-5">Job: {jobsByProject[p.id][0].id}</p>
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-left text-sm text-dark dark:text-dark-8">
+                <thead className="bg-gray-50 text-xs font-semibold uppercase text-gray-6 dark:bg-dark-3 dark:text-dark-7">
+                  <tr>
+                    <th className="px-4 py-3">Script / ID</th>
+                    <th className="px-4 py-3 text-center">Status</th>
+                    <th className="px-4 py-3">Created</th>
+                    <th className="px-4 py-3 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100 dark:divide-dark-3">
+                  {filteredProjects.length === 0 ? (
+                    <tr>
+                      <td colSpan={4} className="px-4 py-10 text-center text-gray-6 dark:text-dark-6">
+                        No projects yet.
+                      </td>
+                    </tr>
+                  ) : pagedProjects.length === 0 ? (
+                    <tr>
+                      <td colSpan={4} className="px-4 py-10 text-center text-gray-6 dark:text-dark-6">
+                        No results match your search.
+                      </td>
+                    </tr>
+                  ) : (
+                    pagedProjects.map((p) => {
+                      const scenes = scenesByProject[p.id] ?? [];
+                      const firstScript = scenes[0]?.script?.trim();
+                      const preview = firstScript
+                        ? `${firstScript.slice(0, 140)}${firstScript.length > 140 ? "..." : ""}`
+                        : p.title || "—";
+                      const job = jobsByProject[p.id]?.[0];
+
+                      return (
+                        <tr key={p.id} className="align-top hover:bg-gray-50/60 dark:hover:bg-dark-3/70">
+                          <td className="px-4 py-3 text-sm text-gray-7 dark:text-dark-7">
+                            <div className="line-clamp-2 font-medium text-dark dark:text-dark-8">{preview}</div>
+                            <div className="text-xs text-gray-6 dark:text-dark-6">ID: {p.id}</div>
+                            <div className="text-[11px] text-gray-5 dark:text-dark-6">
+                              {(p.videoType === "shorts" ? "SHORTS" : "LONGFORM") +
+                                " • " +
+                                (labelForLanguage(p.language) || p.language || "en")}
+                            </div>
+                            {job?.id ? (
+                              <div className="text-[11px] text-gray-5 dark:text-dark-6">Job: {job.id}</div>
+                            ) : null}
+                          </td>
+                          <td className="px-4 py-3 text-center align-top">
+                            <span
+                              className={cn(
+                                "inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold",
+                                p.status === "ready"
+                                  ? "bg-green-100 text-green-700"
+                                  : p.status === "rendering"
+                                    ? "bg-amber-100 text-amber-700"
+                                    : p.status === "failed"
+                                      ? "bg-red-100 text-red-700"
+                                      : "bg-gray-2 text-gray-7 dark:bg-dark-3 dark:text-dark-7",
+                              )}
+                            >
+                              {p.status?.toUpperCase() || "UNKNOWN"}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 align-top text-sm text-gray-7 dark:text-dark-7">
+                            {formatDate(p.createdAt)}
+                          </td>
+                          <td className="px-4 py-3 align-top">
+                            <div className="flex flex-wrap justify-end gap-2">
+                              <Link
+                                href={`/ai-videos/${p.id}`}
+                                className="rounded-md border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-7 transition hover:bg-gray-50 dark:border-dark-3 dark:text-dark-7 dark:hover:bg-dark-2"
+                              >
+                                Detail
+                              </Link>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  void loadJobs(p.id);
+                                  void loadScenes(p.id);
+                                }}
+                                className="rounded-md border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-7 transition hover:bg-gray-50 dark:border-dark-3 dark:text-dark-7 dark:hover:bg-dark-2"
+                              >
+                                Refresh
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => void handleRender(p.id)}
+                                disabled={rendering === p.id}
+                                className="rounded-md bg-primary px-3 py-2 text-xs font-semibold text-white transition hover:bg-primary/90 disabled:opacity-60"
+                              >
+                                {rendering === p.id ? "Rendering..." : "Render"}
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
                   )}
-                </div>
-                <div className="col-span-2 text-center">
-                  <span
-                    className={cn(
-                      "rounded-full px-3 py-1 text-xs font-semibold",
-                      p.status === "ready"
-                        ? "bg-emerald-100 text-emerald-700"
-                        : p.status === "rendering"
-                          ? "bg-amber-100 text-amber-700"
-                          : p.status === "failed"
-                            ? "bg-red-100 text-red-700"
-                            : "bg-primary/10 text-primary",
-                    )}
-                  >
-                    {p.status.toUpperCase()}
-                  </span>
-                </div>
-                <div className="col-span-2 text-sm text-gray-6 dark:text-dark-6">{formatDate(p.createdAt)}</div>
-                <div className="col-span-2 flex justify-end gap-2">
-                  <Link
-                    href={`/ai-videos/${p.id}`}
-                    className="rounded-md border border-gray-200 px-3 py-1 text-xs font-semibold text-gray-7 transition hover:border-primary hover:text-primary dark:border-dark-3 dark:text-dark-5"
-                  >
-                    Detail
-                  </Link>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      void loadJobs(p.id);
-                      void loadScenes(p.id);
-                    }}
-                    className="rounded-md border border-gray-200 px-3 py-1 text-xs font-semibold text-gray-7 transition hover:border-primary hover:text-primary dark:border-dark-3 dark:text-dark-5"
-                  >
-                    Refresh
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void handleRender(p.id)}
-                    disabled={rendering === p.id}
-                    className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white transition hover:bg-primary/90 disabled:opacity-60"
-                  >
-                    {rendering === p.id ? "Rendering..." : "Render"}
-                  </button>
-                </div>
+                </tbody>
+              </table>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-gray-6 dark:text-dark-6">
+              <div>
+                Showing{" "}
+                {filteredProjects.length === 0
+                  ? 0
+                  : (currentPage - 1) * pageSize + 1}{" "}
+                to{" "}
+                {filteredProjects.length === 0
+                  ? 0
+                  : Math.min(currentPage * pageSize, filteredProjects.length)}{" "}
+                of {filteredProjects.length} entries
               </div>
-            ))}
-            <div className="flex items-center justify-between pt-2 text-sm text-gray-6 dark:text-dark-6">
-              <span>
-                Showing {(currentPage - 1) * pageSize + 1} to{" "}
-                {Math.min(currentPage * pageSize, filteredProjects.length)} of {filteredProjects.length} entries
-              </span>
-              <div className="flex items-center gap-2 text-xs">
+              <div className="flex items-center gap-2">
                 <button
-                  className="rounded border border-gray-200 px-2 py-1 hover:border-primary hover:text-primary dark:border-dark-3"
+                  className="rounded-md border border-gray-200 px-3 py-1 text-sm font-semibold text-gray-7 transition hover:bg-gray-50 disabled:opacity-60 dark:border-dark-3 dark:text-dark-7 dark:hover:bg-dark-3"
                   onClick={() => setPage((p) => Math.max(1, p - 1))}
-                  disabled={currentPage === 1}
+                  disabled={currentPage <= 1}
                 >
                   Previous
                 </button>
-                <span>
+                <span className="text-xs text-gray-5 dark:text-dark-6">
                   Page {currentPage} of {pageCount}
                 </span>
                 <button
-                  className="rounded border border-gray-200 px-2 py-1 hover:border-primary hover:text-primary dark:border-dark-3"
+                  className="rounded-md border border-gray-200 px-3 py-1 text-sm font-semibold text-gray-7 transition hover:bg-gray-50 disabled:opacity-60 dark:border-dark-3 dark:text-dark-7 dark:hover:bg-dark-3"
                   onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
-                  disabled={currentPage === pageCount}
+                  disabled={currentPage >= pageCount}
                 >
                   Next
                 </button>
@@ -449,121 +494,142 @@ export default function AiVideosClientPage() {
 
       {showModal && (
         <ModalPortal>
-          <div className="fixed inset-0 z-[9999] flex items-center justify-center overflow-y-auto bg-black/70 p-4 md:p-8">
-            <div className="relative z-[10000] flex w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-dark-3 dark:bg-dark-2">
-            <button
-              onClick={() => setShowModal(false)}
-              className="absolute right-4 top-4 rounded-full px-3 py-1 text-sm text-gray-5 transition hover:bg-gray-100 hover:text-primary dark:hover:bg-dark-3"
+          <div className="fixed inset-0 z-[9999] flex items-start justify-center overflow-y-auto bg-black/70 px-4 py-10 backdrop-blur-sm md:px-8">
+            <div
+              role="dialog"
+              aria-modal="true"
+              className="relative z-[10000] w-full max-w-5xl overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-dark-3 dark:bg-dark-2"
             >
-              Close
-            </button>
+              <button
+                onClick={() => setShowModal(false)}
+                className="absolute right-4 top-4 rounded-full px-3 py-1 text-sm text-gray-5 transition hover:bg-gray-100 hover:text-primary dark:hover:bg-dark-3"
+              >
+                Close
+              </button>
 
-            <div className="px-8 pt-6 pb-2">
-              <p className="text-xs font-semibold uppercase tracking-[0.25em] text-primary">Generate</p>
-              <h2 className="text-xl font-semibold text-dark dark:text-white">New AI video</h2>
-              <p className="text-sm text-gray-6 dark:text-dark-6">Fill details to generate script & scenes.</p>
-            </div>
-
-            <form onSubmit={handleCreateAndEdit} className="flex-1 space-y-4 overflow-y-auto px-8 pb-6">
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="space-y-2">
-                  <p className="text-sm font-medium text-dark dark:text-white">Video type</p>
-                  <div className="grid grid-cols-2 gap-2">
-                    {[
-                      { value: "shorts", label: "Shorts / Reels" },
-                      { value: "longform", label: "Long-form" },
-                    ].map((item) => (
-                      <button
-                        type="button"
-                        key={item.value}
-                        onClick={() => {
-                          setVideoType(item.value as "shorts" | "longform");
-                          setDurationSeconds(item.value === "shorts" ? 30 : 300);
-                        }}
-                        className={`rounded-lg border px-3 py-3 text-sm font-semibold transition ${
-                          videoType === item.value
-                            ? "border-primary bg-primary/10 text-primary"
-                            : "border-gray-200 text-gray-700 dark:border-dark-3 dark:text-dark-5"
-                        }`}
-                      >
-                        {item.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <p className="text-sm font-medium text-dark dark:text-white">Content format</p>
-                  <div className="grid grid-cols-3 gap-2">
-                    {contentFormats.map((fmt) => (
-                      <button
-                        type="button"
-                        key={fmt.value}
-                        onClick={() => setContentFormat(fmt.value)}
-                        className={`rounded-lg border px-3 py-3 text-xs font-semibold transition ${
-                          contentFormat === fmt.value
-                            ? "border-primary bg-primary/10 text-primary"
-                            : "border-gray-200 text-gray-700 dark:border-dark-3 dark:text-dark-5"
-                        }`}
-                      >
-                        {fmt.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
+              <div className="px-8 pt-6 pb-2">
+                <p className="text-xs font-semibold uppercase tracking-[0.25em] text-primary">Generate</p>
+                <h2 className="text-xl font-semibold text-dark dark:text-white">New AI video</h2>
+                <p className="text-sm text-gray-6 dark:text-dark-6">Fill details to generate script & scenes.</p>
               </div>
 
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="space-y-2">
-                  <p className="text-sm font-medium text-dark dark:text-white">Title</p>
-                  <input
-                    required
-                    value={title}
-                    onChange={(e) => setTitle(e.target.value)}
-                    placeholder="Project Regular Gazelle"
-                    className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-primary dark:border-dark-3 dark:bg-dark-2"
-                  />
+              <form
+                onSubmit={handleCreateAndEdit}
+                className="flex-1 space-y-4 overflow-y-auto px-8 pb-6"
+                style={{ maxHeight: "75vh" }}
+              >
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium text-dark dark:text-white">Video type</p>
+                    <div className="grid grid-cols-2 gap-2">
+                      {[
+                        { value: "shorts", label: "Shorts / Reels" },
+                        { value: "longform", label: "Long-form" },
+                      ].map((item) => (
+                        <button
+                          type="button"
+                          key={item.value}
+                          onClick={() => {
+                            setVideoType(item.value as "shorts" | "longform");
+                            setDurationSeconds(item.value === "shorts" ? 30 : 300);
+                          }}
+                          className={`rounded-lg border px-3 py-3 text-sm font-semibold transition ${
+                            videoType === item.value
+                              ? "border-primary bg-primary/10 text-primary"
+                              : "border-gray-200 text-gray-700 dark:border-dark-3 dark:text-dark-5"
+                          }`}
+                        >
+                          {item.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium text-dark dark:text-white">Content format</p>
+                    <div className="grid grid-cols-3 gap-2">
+                      {contentFormats.map((fmt) => (
+                        <button
+                          type="button"
+                          key={fmt.value}
+                          onClick={() => setContentFormat(fmt.value)}
+                          className={`rounded-lg border px-3 py-3 text-xs font-semibold transition ${
+                            contentFormat === fmt.value
+                              ? "border-primary bg-primary/10 text-primary"
+                              : "border-gray-200 text-gray-700 dark:border-dark-3 dark:text-dark-5"
+                          }`}
+                        >
+                          {fmt.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                 </div>
 
-                <div className="space-y-2">
-                  <p className="text-sm font-medium text-dark dark:text-white">Language</p>
-                  <div className="relative">
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium text-dark dark:text-white">Title</p>
                     <input
-                      value={languageQuery}
-                      onChange={(e) => {
-                        setLanguageQuery(e.target.value);
-                        setShowLanguageList(true);
-                      }}
-                      onFocus={() => setShowLanguageList(true)}
-                      onBlur={() => setTimeout(() => setShowLanguageList(false), 100)}
-                      placeholder="Choose a language..."
+                      required
+                      value={title}
+                      onChange={(e) => setTitle(e.target.value)}
+                      placeholder="Project Regular Gazelle"
                       className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-primary dark:border-dark-3 dark:bg-dark-2"
                     />
-                    {showLanguageList && (
-                      <div className="absolute z-50 mt-1 max-h-48 w-full overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg dark:border-dark-3 dark:bg-dark-2">
-                        {filteredLanguages.map((lang) => (
-                          <button
-                            key={lang.code}
-                            type="button"
-                            className="flex w-full items-center justify-between px-3 py-2 text-left text-sm text-gray-7 hover:bg-primary/10 dark:text-dark-5"
-                            onMouseDown={(e) => e.preventDefault()}
-                            onClick={() => {
-                              setLanguageQuery(lang.label);
-                              setShowLanguageList(false);
-                            }}
-                          >
-                            <span>{lang.label}</span>
-                            <span className="text-xs text-gray-5 dark:text-dark-5">{lang.code}</span>
-                          </button>
-                        ))}
-                        {!filteredLanguages.length && (
-                          <div className="px-3 py-2 text-xs text-gray-5 dark:text-dark-5">No matches</div>
-                        )}
-                      </div>
-                    )}
+                  </div>
+
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium text-dark dark:text-white">Language</p>
+                    <div className="relative">
+                      <input
+                        value={languageQuery}
+                        onChange={(e) => {
+                          setLanguageQuery(e.target.value);
+                          setShowLanguageList(true);
+                        }}
+                        onFocus={() => setShowLanguageList(true)}
+                        onClick={() => setShowLanguageList(true)}
+                        onBlur={() => setTimeout(() => setShowLanguageList(false), 120)}
+                        placeholder="Choose a language..."
+                        autoComplete="off"
+                        className="w-full rounded-lg border border-gray-200 bg-white px-3 pr-10 py-2 text-sm outline-none focus:border-primary dark:border-dark-3 dark:bg-dark-2"
+                      />
+                      <button
+                        type="button"
+                        aria-label="Show languages"
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          setShowLanguageList((prev) => !prev);
+                        }}
+                        className="absolute right-1.5 top-1/2 -translate-y-1/2 flex h-8 w-8 items-center justify-center rounded-md text-gray-6 transition hover:bg-gray-100 dark:text-dark-6 dark:hover:bg-dark-3"
+                      >
+                        ▼
+                      </button>
+                      {showLanguageList && (
+                        <div className="absolute z-50 mt-1 max-h-56 w-full overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg dark:border-dark-3 dark:bg-dark-2">
+                          {!filteredLanguages.length && (
+                            <div className="px-3 py-2 text-xs text-gray-5 dark:text-dark-5">No matches</div>
+                          )}
+                          {filteredLanguages.map((lang) => (
+                            <button
+                              key={lang.code}
+                              type="button"
+                              className="flex w-full items-center justify-between px-3 py-2 text-left text-sm text-gray-7 hover:bg-primary/10 dark:text-dark-5 dark:hover:bg-dark-3"
+                              onMouseDown={(e) => e.preventDefault()}
+                              onClick={() => {
+                                setLanguageQuery(lang.label);
+                                setShowLanguageList(false);
+                              }}
+                            >
+                              <span>{lang.label}</span>
+                              <span className="text-xs text-gray-5 dark:text-dark-5">{lang.code.toUpperCase()}</span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
-              </div>
 
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-3">

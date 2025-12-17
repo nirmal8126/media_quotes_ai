@@ -19,6 +19,7 @@ export async function POST(request: Request) {
       : Number.isFinite(Number(sceneIndexRaw))
         ? Number(sceneIndexRaw)
         : null;
+  const promptText = (body.prompt as string | undefined)?.trim();
 
   if (!projectId || sceneIndex === null) {
     const response = NextResponse.json({ error: "projectId and sceneIndex are required" }, { status: 400 });
@@ -36,7 +37,7 @@ export async function POST(request: Request) {
 
     const scenes = await listScenes(projectId);
     const target = scenes.find((s) => s.sceneIndex === sceneIndex);
-    const sourceText = (body.script as string | undefined)?.trim() || target?.script || "";
+    const sourceText = promptText || (body.script as string | undefined)?.trim() || target?.script || "";
     const language = (body.language as string | undefined)?.trim() || project.language || "en";
     const tone = (body.tone as string | undefined)?.trim() || project.contentFormat || "default";
 

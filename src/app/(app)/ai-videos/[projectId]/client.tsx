@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { labelForLanguage } from "@/lib/languages";
 import { cn } from "@/lib/utils";
+import { createPortal } from "react-dom";
 
 type Scene = {
   id: string;
@@ -33,6 +34,11 @@ type SceneMedia = {
   url: string;
 };
 
+function ModalPortal({ children }: { children: React.ReactNode }) {
+  if (typeof document === "undefined") return null;
+  return createPortal(children, document.body);
+}
+
 export default function AiVideoEditorClient() {
   const { projectId } = useParams<{ projectId: string }>();
   const router = useRouter();
@@ -46,6 +52,9 @@ export default function AiVideoEditorClient() {
   const [mediaLoading, setMediaLoading] = useState(false);
   const [uploadingScene, setUploadingScene] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"settings" | "music" | "media" | "captions">("media");
+  const [sectionModalOpen, setSectionModalOpen] = useState(false);
+  const [sectionPrompt, setSectionPrompt] = useState("");
+  const [activeScene, setActiveScene] = useState<Scene | null>(null);
 
   const sortedScenes = useMemo(
     () => [...scenes].sort((a, b) => a.sceneIndex - b.sceneIndex),
@@ -207,6 +216,7 @@ export default function AiVideoEditorClient() {
           projectId,
           sceneIndex: scene.sceneIndex,
           script: scene.script,
+          prompt: sectionPrompt || scene.script,
           language: project?.language ?? "en",
         }),
       });
@@ -218,6 +228,9 @@ export default function AiVideoEditorClient() {
       setStatus({ type: "error", message: (err as Error).message });
     } finally {
       setRegen((prev) => ({ ...prev, [scene.id]: false }));
+      setSectionModalOpen(false);
+      setActiveScene(null);
+      setSectionPrompt("");
     }
   }
 
@@ -235,12 +248,12 @@ export default function AiVideoEditorClient() {
   }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-8 bg-gray-900 p-4 text-white">
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.25em] text-primary">AI Videos</p>
-          <h1 className="text-2xl font-bold text-dark dark:text-white">{project.title}</h1>
-          <p className="text-sm text-gray-6 dark:text-dark-6">
+          <h1 className="text-2xl font-bold text-white">{project.title}</h1>
+          <p className="text-sm text-gray-300">
             {project.videoType === "shorts" ? "Shorts/Reel" : "Long-form"} ·{" "}
             {labelForLanguage(project.language) || project.language || "en"}
           </p>
@@ -248,15 +261,15 @@ export default function AiVideoEditorClient() {
         <div className="flex flex-wrap items-center gap-2">
           <Link
             href="/ai-videos"
-            className="rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-7 transition hover:border-primary hover:text-primary dark:border-dark-3 dark:text-dark-5"
+            className="rounded-lg border border-gray-700 px-3 py-2 text-sm font-semibold text-gray-200 transition hover:border-primary hover:text-primary"
           >
             Back to AI Videos
           </Link>
           <button
-            onClick={() => router.push("/ai-videos")}
+            onClick={() => void handleRender(project.id)}
             className="rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-white transition hover:bg-primary/90"
           >
-            Preview list
+            Generate video
           </button>
         </div>
       </div>
@@ -275,8 +288,8 @@ export default function AiVideoEditorClient() {
         </p>
       )}
 
-      <div className="space-y-4 rounded-2xl border border-gray-200 bg-white p-4 shadow-card-2 dark:border-dark-3 dark:bg-dark-2">
-        <div className="flex flex-wrap gap-2 border-b border-gray-200 pb-3 text-sm font-semibold text-gray-6 dark:border-dark-3 dark:text-dark-5">
+      <div className="space-y-4 rounded-2xl border border-gray-800 bg-gray-800 p-4 shadow-card-2">
+        <div className="flex flex-wrap gap-2 border-b border-gray-700 pb-3 text-sm font-semibold text-gray-300">
           {(["settings", "music", "media", "captions"] as const).map((tab) => (
             <button
               key={tab}
@@ -294,7 +307,7 @@ export default function AiVideoEditorClient() {
         </div>
 
         {activeTab === "settings" && (
-          <div className="space-y-2 text-sm text-gray-6 dark:text-dark-6">
+          <div className="space-y-2 text-sm text-gray-200">
             <p>Project ID: {project.id}</p>
             <p>Status: {project.status}</p>
             <p>Language: {labelForLanguage(project.language) || project.language || "en"}</p>
@@ -303,13 +316,13 @@ export default function AiVideoEditorClient() {
         )}
 
         {activeTab === "music" && (
-          <div className="space-y-2 text-sm text-gray-6 dark:text-dark-6">
+          <div className="space-y-2 text-sm text-gray-200">
             <p>Music selection coming soon. Attach audio via media or add a track here.</p>
           </div>
         )}
 
         {activeTab === "captions" && (
-          <div className="space-y-2 text-sm text-gray-6 dark:text-dark-6">
+          <div className="space-y-2 text-sm text-gray-200">
             <p>Captions are generated during render; edit per-scene text in Media.</p>
           </div>
         )}
@@ -319,13 +332,11 @@ export default function AiVideoEditorClient() {
             {sortedScenes.map((scene) => (
               <div
                 key={scene.id}
-                className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-dark-3 dark:bg-dark-2"
+                className="rounded-2xl border border-gray-700 bg-gray-850 p-4 shadow-sm"
               >
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex items-center gap-2">
-                    <span className="text-xs font-semibold text-gray-5 dark:text-dark-5">
-                      Scene {scene.sceneIndex + 1}
-                    </span>
+                    <span className="text-xs font-semibold text-gray-400">Section {scene.sceneIndex + 1}</span>
                     <input
                       value={scene.label || ""}
                       onChange={(e) =>
@@ -333,8 +344,8 @@ export default function AiVideoEditorClient() {
                           prev.map((s) => (s.id === scene.id ? { ...s, label: e.target.value } : s)),
                         )
                       }
-                      placeholder="Label"
-                      className="rounded-md border border-gray-200 px-2 py-1 text-xs dark:border-dark-3 dark:bg-dark-2"
+                      placeholder="Section title"
+                      className="rounded-md border border-gray-600 bg-gray-800 px-2 py-1 text-xs text-white"
                     />
                   </div>
                   <div className="flex items-center gap-2">
@@ -350,15 +361,17 @@ export default function AiVideoEditorClient() {
                         )
                       }
                       placeholder="sec"
-                      className="w-20 rounded-md border border-gray-200 px-2 py-1 text-xs dark:border-dark-3 dark:bg-dark-2"
+                      className="w-20 rounded-md border border-gray-600 bg-gray-800 px-2 py-1 text-xs text-white"
                     />
                     <button
                       type="button"
-                      onClick={() => void regenerateScene(scene)}
-                      disabled={regen[scene.id]}
-                      className="rounded-md border border-primary/30 px-3 py-1 text-xs font-semibold text-primary transition hover:border-primary disabled:opacity-60"
+                      onClick={() => {
+                        setActiveScene(scene);
+                        setSectionModalOpen(true);
+                      }}
+                      className="rounded-md border border-primary/40 px-3 py-1 text-xs font-semibold text-primary transition hover:border-primary"
                     >
-                      {regen[scene.id] ? "Regenerating..." : "Regenerate"}
+                      Edit using AI
                     </button>
                     <button
                       type="button"
@@ -377,7 +390,7 @@ export default function AiVideoEditorClient() {
                       setScenes((prev) => prev.map((s) => (s.id === scene.id ? { ...s, script: e.target.value } : s)))
                     }
                     rows={4}
-                    className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-primary dark:border-dark-3 dark:bg-dark-2"
+                    className="w-full rounded-lg border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-white outline-none focus:border-primary"
                   />
                   <input
                     value={scene.prompt || ""}
@@ -385,7 +398,7 @@ export default function AiVideoEditorClient() {
                       setScenes((prev) => prev.map((s) => (s.id === scene.id ? { ...s, prompt: e.target.value } : s)))
                     }
                     placeholder="Visual prompt / suggestion"
-                    className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-primary dark:border-dark-3 dark:bg-dark-2"
+                    className="w-full rounded-lg border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-white outline-none focus:border-primary"
                   />
                   <div className="rounded-lg border border-dashed border-gray-200 p-3 text-xs text-gray-6 dark:border-dark-3 dark:text-dark-5">
                     <p className="font-semibold text-dark dark:text-white">Media</p>
@@ -395,9 +408,9 @@ export default function AiVideoEditorClient() {
                         {mediaByScene[scene.id].map((m) => (
                           <li
                             key={m.id}
-                            className="flex items-center justify-between gap-2 rounded-md bg-white px-2 py-1 shadow-sm dark:bg-dark-3"
+                            className="flex items-center justify-between gap-2 rounded-md bg-gray-800 px-2 py-1 shadow-sm"
                           >
-                            <span className="text-[11px] text-gray-6 dark:text-dark-5">
+                            <span className="text-[11px] text-gray-300">
                               {m.mediaType} · {m.source || "upload"}
                             </span>
                             <a href={m.url} className="text-primary underline" target="_blank" rel="noreferrer">
@@ -407,7 +420,7 @@ export default function AiVideoEditorClient() {
                         ))}
                       </ul>
                     ) : (
-                      <p className="mt-1 text-[11px] text-gray-5">No media yet.</p>
+                      <p className="mt-1 text-[11px] text-gray-400">No media yet.</p>
                     )}
                     <div className="mt-2 flex flex-col gap-2">
                       <div className="flex items-center gap-2">
@@ -420,9 +433,9 @@ export default function AiVideoEditorClient() {
                               e.target.value = "";
                             }
                           }}
-                          className="w-full rounded-md border border-gray-200 px-2 py-1 text-xs dark:border-dark-3 dark:bg-dark-2"
+                          className="w-full rounded-md border border-gray-600 bg-gray-800 px-2 py-1 text-xs text-white"
                         />
-                        <span className="text-[11px] text-gray-5">Paste URL</span>
+                        <span className="text-[11px] text-gray-400">Paste URL</span>
                       </div>
                       <div className="flex items-center gap-2">
                         <input
@@ -434,7 +447,7 @@ export default function AiVideoEditorClient() {
                               e.target.value = "";
                             }
                           }}
-                          className="w-full rounded-md border border-gray-200 px-2 py-1 text-xs dark:border-dark-3 dark:bg-dark-2 file:mr-2 file:rounded file:border-0 file:bg-primary/10 file:px-2 file:py-1 file:text-primary"
+                          className="w-full rounded-md border border-gray-600 bg-gray-800 px-2 py-1 text-xs text-white file:mr-2 file:rounded file:border-0 file:bg-primary/10 file:px-2 file:py-1 file:text-primary"
                         />
                         {uploadingScene === scene.id && <span className="text-[11px] text-gray-5">Uploading...</span>}
                       </div>
@@ -446,6 +459,60 @@ export default function AiVideoEditorClient() {
           </div>
         )}
       </div>
+      {sectionModalOpen && activeScene && (
+        <ModalPortal>
+          <div className="fixed inset-0 z-[20000] flex items-center justify-center bg-black/70 p-4">
+            <div className="w-full max-w-3xl rounded-2xl border border-gray-700 bg-gray-850 p-6 shadow-2xl">
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-semibold text-white">Generate Section Content</h3>
+                <button
+                  onClick={() => {
+                    setSectionModalOpen(false);
+                    setSectionPrompt("");
+                    setActiveScene(null);
+                  }}
+                  className="text-sm text-gray-400 hover:text-primary"
+                >
+                  Close
+                </button>
+              </div>
+              <p className="mt-1 text-sm text-gray-400">
+                Make changes to your section here. Click Generate when you&apos;re done.
+              </p>
+              <div className="mt-4 space-y-2">
+                <label className="text-xs font-semibold text-gray-300">Prompt</label>
+                <textarea
+                  value={sectionPrompt}
+                  onChange={(e) => setSectionPrompt(e.target.value)}
+                  placeholder="Enter a prompt to generate or modify the section content."
+                  rows={4}
+                  className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white outline-none focus:border-primary"
+                />
+              </div>
+              <div className="mt-4 flex items-center justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSectionModalOpen(false);
+                    setSectionPrompt("");
+                    setActiveScene(null);
+                  }}
+                  className="rounded-lg border border-gray-600 px-4 py-2 text-sm font-semibold text-gray-200 hover:border-primary hover:text-primary"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => activeScene && regenerateScene(activeScene)}
+                  className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white transition hover:bg-primary/90"
+                >
+                  Generate Section
+                </button>
+              </div>
+            </div>
+          </div>
+        </ModalPortal>
+      )}
     </div>
   );
 }
