@@ -100,7 +100,7 @@ export default function AiVideosClientPage() {
   const [videoType, setVideoType] = useState<"shorts" | "longform">("shorts");
   const [contentFormat, setContentFormat] = useState("faceless");
   const [title, setTitle] = useState("");
-  const [inputMode, setInputMode] = useState<"topic" | "prompt" | "script">("topic");
+  const [inputMode, setInputMode] = useState<"topic" | "prompt" | "script">("prompt");
   const [topic, setTopic] = useState("");
   const [prompt, setPrompt] = useState("");
   const [script, setScript] = useState("");
@@ -494,92 +494,155 @@ export default function AiVideosClientPage() {
 
       {showModal && (
         <ModalPortal>
-          <div className="fixed inset-0 z-[9999] flex items-start justify-center overflow-y-auto bg-black/70 px-4 py-10 backdrop-blur-sm md:px-8">
+          <div className="fixed inset-0 z-[9999] flex items-start justify-center overflow-y-auto bg-black/80 px-4 py-10 backdrop-blur-sm md:px-8">
             <div
               role="dialog"
               aria-modal="true"
-              className="relative z-[10000] w-full max-w-5xl overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-dark-3 dark:bg-dark-2"
+              className="relative z-[10000] w-full max-w-4xl overflow-hidden rounded-2xl border border-gray-200 bg-white text-dark shadow-2xl dark:border-[#2f3542] dark:bg-[#1f252f] dark:text-white"
             >
               <button
                 onClick={() => setShowModal(false)}
-                className="absolute right-4 top-4 rounded-full px-3 py-1 text-sm text-gray-5 transition hover:bg-gray-100 hover:text-primary dark:hover:bg-dark-3"
+                className="absolute right-4 top-4 rounded-full px-3 py-1 text-sm text-gray-500 transition hover:bg-gray-100 hover:text-primary dark:text-gray-4 dark:hover:bg-white/5 dark:hover:text-white"
               >
                 Close
               </button>
 
               <div className="px-8 pt-6 pb-2">
                 <p className="text-xs font-semibold uppercase tracking-[0.25em] text-primary">Generate</p>
-                <h2 className="text-xl font-semibold text-dark dark:text-white">New AI video</h2>
-                <p className="text-sm text-gray-6 dark:text-dark-6">Fill details to generate script & scenes.</p>
+                <h2 className="text-xl font-semibold">New AI video</h2>
+                <p className="text-sm text-gray-600 dark:text-gray-300">Fill details to generate script & scenes.</p>
               </div>
 
               <form
                 onSubmit={handleCreateAndEdit}
-                className="flex-1 space-y-4 overflow-y-auto px-8 pb-6"
-                style={{ maxHeight: "75vh" }}
+                className="flex-1 space-y-5 overflow-y-auto px-8 pb-8"
+                style={{ maxHeight: "80vh" }}
               >
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div className="space-y-2">
-                    <p className="text-sm font-medium text-dark dark:text-white">Video type</p>
-                    <div className="grid grid-cols-2 gap-2">
-                      {[
-                        { value: "shorts", label: "Shorts / Reels" },
-                        { value: "longform", label: "Long-form" },
-                      ].map((item) => (
-                        <button
-                          type="button"
-                          key={item.value}
-                          onClick={() => {
-                            setVideoType(item.value as "shorts" | "longform");
-                            setDurationSeconds(item.value === "shorts" ? 30 : 300);
-                          }}
-                          className={`rounded-lg border px-3 py-3 text-sm font-semibold transition ${
-                            videoType === item.value
-                              ? "border-primary bg-primary/10 text-primary"
-                              : "border-gray-200 text-gray-700 dark:border-dark-3 dark:text-dark-5"
-                          }`}
-                        >
-                          {item.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-semibold">Project Title</label>
+                  <input
+                    required
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
+                    placeholder="Project Regular Gazelle"
+                    className="w-full rounded-lg border border-gray-300 bg-white px-4 py-3 text-sm text-dark outline-none focus:border-primary dark:border-[#3a4352] dark:bg-[#2a303c] dark:text-white"
+                  />
+                </div>
 
-                  <div className="space-y-2">
-                    <p className="text-sm font-medium text-dark dark:text-white">Content format</p>
-                    <div className="grid grid-cols-3 gap-2">
-                      {contentFormats.map((fmt) => (
-                        <button
-                          type="button"
-                          key={fmt.value}
-                          onClick={() => setContentFormat(fmt.value)}
-                          className={`rounded-lg border px-3 py-3 text-xs font-semibold transition ${
-                            contentFormat === fmt.value
-                              ? "border-primary bg-primary/10 text-primary"
-                              : "border-gray-200 text-gray-700 dark:border-dark-3 dark:text-dark-5"
-                          }`}
-                        >
-                          {fmt.label}
-                        </button>
-                      ))}
-                    </div>
+                <div className="space-y-2">
+                  <p className="text-sm font-semibold">Generation Input</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {[
+                      { value: "prompt", label: "Prompt" },
+                      { value: "script", label: "Script" },
+                    ].map((tab) => (
+                      <button
+                        key={tab.value}
+                        type="button"
+                        onClick={() => setInputMode(tab.value as typeof inputMode)}
+                        className={cn(
+                          "rounded-lg border px-4 py-3 text-sm font-semibold transition",
+                          inputMode === tab.value
+                            ? "border-primary bg-primary/10 text-primary dark:border-primary dark:bg-[#323a47] dark:text-white"
+                            : "border-gray-300 text-gray-600 hover:border-gray-400 dark:border-[#3a4352] dark:text-gray-300",
+                        )}
+                      >
+                        {tab.label}
+                      </button>
+                    ))}
+                  </div>
+                  {inputMode === "prompt" ? (
+                    <textarea
+                      value={prompt}
+                      onChange={(e) => setPrompt(e.target.value)}
+                      rows={4}
+                      placeholder="Enter your prompt here..."
+                      className="w-full rounded-lg border border-gray-300 bg-white px-4 py-3 text-sm text-dark outline-none focus:border-primary dark:border-[#3a4352] dark:bg-[#2a303c] dark:text-white"
+                    />
+                  ) : (
+                    <textarea
+                      value={script}
+                      onChange={(e) => setScript(e.target.value)}
+                      rows={5}
+                      placeholder="Paste your full script..."
+                      className="w-full rounded-lg border border-gray-300 bg-white px-4 py-3 text-sm text-dark outline-none focus:border-primary dark:border-[#3a4352] dark:bg-[#2a303c] dark:text-white"
+                    />
+                  )}
+                </div>
+
+                <div className="space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-sm font-semibold">Narrator voice</p>
+                    <p className="text-xs text-gray-5">Narration</p>
+                  </div>
+                  <div className="space-y-2 rounded-lg border border-gray-300 bg-white p-2 dark:border-[#3a4352] dark:bg-[#2a303c]">
+                    {loadingVoices && <p className="px-2 py-3 text-xs text-gray-500 dark:text-gray-5">Loading voices...</p>}
+                    {!loadingVoices && voices.length === 0 && (
+                      <p className="px-2 py-3 text-xs text-gray-500 dark:text-gray-5">
+                        No voices for {labelForLanguage(selectedLanguage) || selectedLanguage}
+                      </p>
+                    )}
+                    {voices.map((v) => (
+                      <label
+                        key={v.id}
+                        className={cn(
+                          "flex w-full items-center justify-between gap-3 rounded-lg border px-4 py-3 transition",
+                          voiceId === v.id
+                            ? "border-primary bg-primary/5 text-dark dark:border-primary dark:bg-[#323a47] dark:text-white"
+                            : "border-transparent text-gray-800 hover:border-gray-300 dark:text-gray-100 dark:hover:border-[#3a4352]",
+                        )}
+                      >
+                        <div className="flex items-center gap-3">
+                          <span className="flex h-8 w-8 items-center justify-center rounded-full bg-gray-100 text-gray-700 dark:bg-white/10 dark:text-white">▶</span>
+                          <div className="flex flex-wrap items-center gap-2 text-sm">
+                            <span className="font-semibold text-dark dark:text-white">{v.name}</span>
+                            {v.gender ? (
+                              <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600 dark:bg-white/5 dark:text-gray-3">
+                                {v.gender}
+                              </span>
+                            ) : null}
+                            {v.tone ? (
+                              <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600 dark:bg-white/5 dark:text-gray-3">
+                                {v.tone}
+                              </span>
+                            ) : null}
+                            <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600 dark:bg-white/5 dark:text-gray-3">
+                              ~{Math.round(150)} WPM
+                            </span>
+                          </div>
+                        </div>
+                        <input
+                          type="radio"
+                          name="voice"
+                          value={v.id}
+                          checked={voiceId === v.id}
+                          onChange={() => setVoiceId(v.id)}
+                          className="h-4 w-4"
+                        />
+                      </label>
+                    ))}
                   </div>
                 </div>
 
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div className="space-y-2">
-                    <p className="text-sm font-medium text-dark dark:text-white">Title</p>
-                    <input
-                      required
-                      value={title}
-                      onChange={(e) => setTitle(e.target.value)}
-                      placeholder="Project Regular Gazelle"
-                      className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-primary dark:border-dark-3 dark:bg-dark-2"
-                    />
-                  </div>
+                <div className="space-y-3">
+                  <label className="text-sm font-semibold">Duration</label>
+                  <select
+                    value={durationSeconds}
+                    onChange={(e) => setDurationSeconds(Number(e.target.value))}
+                    className="w-full rounded-lg border border-gray-300 bg-white px-4 py-3 text-sm text-dark outline-none focus:border-primary dark:border-[#3a4352] dark:bg-[#2a303c] dark:text-white"
+                  >
+                    {currentDurations.map((dur) => (
+                      <option key={dur.value} value={dur.value} className="text-dark dark:text-white">
+                        {dur.label}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">25 credits will be deducted for this video.</p>
+                </div>
 
+                <div className="grid gap-3 md:grid-cols-2">
                   <div className="space-y-2">
-                    <p className="text-sm font-medium text-dark dark:text-white">Language</p>
+                    <p className="text-sm font-semibold text-gray-700 dark:text-gray-200">Language</p>
                     <div className="relative">
                       <input
                         value={languageQuery}
@@ -592,7 +655,7 @@ export default function AiVideosClientPage() {
                         onBlur={() => setTimeout(() => setShowLanguageList(false), 120)}
                         placeholder="Choose a language..."
                         autoComplete="off"
-                        className="w-full rounded-lg border border-gray-200 bg-white px-3 pr-10 py-2 text-sm outline-none focus:border-primary dark:border-dark-3 dark:bg-dark-2"
+                        className="w-full rounded-lg border border-gray-300 bg-white px-4 pr-10 py-3 text-sm text-dark outline-none focus:border-primary dark:border-[#3a4352] dark:bg-[#2a303c] dark:text-white"
                       />
                       <button
                         type="button"
@@ -601,20 +664,20 @@ export default function AiVideosClientPage() {
                           e.preventDefault();
                           setShowLanguageList((prev) => !prev);
                         }}
-                        className="absolute right-1.5 top-1/2 -translate-y-1/2 flex h-8 w-8 items-center justify-center rounded-md text-gray-6 transition hover:bg-gray-100 dark:text-dark-6 dark:hover:bg-dark-3"
+                        className="absolute right-2 top-1/2 -translate-y-1/2 flex h-8 w-8 items-center justify-center rounded-md text-gray-500 transition hover:bg-gray-100 dark:text-gray-5 dark:hover:bg-white/5"
                       >
                         ▼
                       </button>
                       {showLanguageList && (
-                        <div className="absolute z-50 mt-1 max-h-56 w-full overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg dark:border-dark-3 dark:bg-dark-2">
+                        <div className="absolute z-50 mt-1 max-h-56 w-full overflow-y-auto rounded-lg border border-gray-300 bg-white shadow-xl dark:border-[#3a4352] dark:bg-[#1f252f]">
                           {!filteredLanguages.length && (
-                            <div className="px-3 py-2 text-xs text-gray-5 dark:text-dark-5">No matches</div>
+                            <div className="px-3 py-2 text-xs text-gray-500 dark:text-gray-5">No matches</div>
                           )}
                           {filteredLanguages.map((lang) => (
                             <button
                               key={lang.code}
                               type="button"
-                              className="flex w-full items-center justify-between px-3 py-2 text-left text-sm text-gray-7 hover:bg-primary/10 dark:text-dark-5 dark:hover:bg-dark-3"
+                              className="flex w-full items-center justify-between px-3 py-2 text-left text-sm text-dark hover:bg-gray-50 dark:text-white dark:hover:bg-white/5"
                               onMouseDown={(e) => e.preventDefault()}
                               onClick={() => {
                                 setLanguageQuery(lang.label);
@@ -622,183 +685,58 @@ export default function AiVideosClientPage() {
                               }}
                             >
                               <span>{lang.label}</span>
-                              <span className="text-xs text-gray-5 dark:text-dark-5">{lang.code.toUpperCase()}</span>
+                              <span className="text-xs text-gray-500 dark:text-gray-5">{lang.code.toUpperCase()}</span>
                             </button>
                           ))}
                         </div>
                       )}
                     </div>
                   </div>
-                </div>
-
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="space-y-3">
-                  <p className="text-sm font-medium text-dark dark:text-white">Content input</p>
-                  <div className="flex flex-wrap gap-2">
-                    {[
-                      { value: "topic", label: "Popular Topic" },
-                      { value: "prompt", label: "Prompt" },
-                      { value: "script", label: "Script" },
-                    ].map((tab) => (
-                      <button
-                        key={tab.value}
-                        type="button"
-                        onClick={() => setInputMode(tab.value as typeof inputMode)}
-                        className={`rounded-full border px-3 py-1 text-xs font-semibold transition ${
-                          inputMode === tab.value
-                            ? "border-primary bg-primary/10 text-primary"
-                            : "border-gray-200 text-gray-7 dark:border-dark-3 dark:text-dark-5"
-                        }`}
-                      >
-                        {tab.label}
-                      </button>
-                    ))}
-                  </div>
-
-                  {inputMode === "topic" && (
-                    <select
-                      value={topic}
-                      onChange={(e) => setTopic(e.target.value)}
-                      className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-primary dark:border-dark-3 dark:bg-dark-2"
-                    >
-                      <option value="">Choose a topic</option>
+                  <div className="space-y-2">
+                    <p className="text-sm font-semibold text-gray-700 dark:text-gray-200">Content format</p>
+                    <div className="grid grid-cols-2 gap-2">
                       {[
-                        "Motivational Story",
-                        "Scary Story",
-                        "Interesting Facts",
-                        "Historical Events",
-                        "Science Discoveries",
-                        "Technology Trends",
-                        "Health Tips",
-                        "Travel Destinations",
-                        "Cooking Recipes",
-                        "Art & Culture",
-                        "Sports Highlights",
-                      ].map((opt) => (
-                        <option key={opt} value={opt}>
-                          {opt}
-                        </option>
-                      ))}
-                    </select>
-                  )}
-
-                  {inputMode === "prompt" && (
-                    <textarea
-                      value={prompt}
-                      onChange={(e) => setPrompt(e.target.value)}
-                      rows={3}
-                      placeholder="top 5 biggest airplanes"
-                      className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-primary dark:border-dark-3 dark:bg-dark-2"
-                    />
-                  )}
-
-                  {inputMode === "script" && (
-                    <textarea
-                      value={script}
-                      onChange={(e) => setScript(e.target.value)}
-                      rows={5}
-                      placeholder="Paste your full script..."
-                      className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm outline-none focus:border-primary dark:border-dark-3 dark:bg-dark-2"
-                    />
-                  )}
-                </div>
-
-                <div className="space-y-2">
-                  <p className="text-sm font-medium text-dark dark:text-white">Duration</p>
-                  <div className="grid grid-cols-3 gap-2">
-                    {currentDurations.map((dur) => (
-                      <button
-                        key={dur.value}
-                        type="button"
-                        onClick={() => setDurationSeconds(dur.value)}
-                        className={`rounded-lg border px-3 py-3 text-xs font-semibold transition ${
-                          durationSeconds === dur.value
-                            ? "border-primary bg-primary/10 text-primary"
-                            : "border-gray-200 text-gray-700 dark:border-dark-3 dark:text-dark-5"
-                        }`}
-                      >
-                        {dur.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="space-y-2">
-                  <p className="text-sm font-medium text-dark dark:text-white">Narrator voice</p>
-                  <div className="rounded-lg border border-gray-200 bg-white p-3 dark:border-dark-3 dark:bg-dark-2">
-                    {loadingVoices && <p className="text-xs text-gray-5">Loading voices...</p>}
-                    {!loadingVoices && voices.length === 0 && (
-                      <p className="text-xs text-gray-5">
-                        No voices for {labelForLanguage(selectedLanguage) || selectedLanguage}
-                      </p>
-                    )}
-                    <div className="space-y-2">
-                      {voices.map((v) => (
-                        <label
-                          key={v.id}
-                          className="flex items-center gap-2 rounded-lg border border-transparent px-2 py-1 hover:border-primary/40"
+                        { value: "shorts", label: "Shorts / Reels" },
+                        { value: "longform", label: "Long-form" },
+                      ].map((item) => (
+                        <button
+                          type="button"
+                          key={item.value}
+                          onClick={() => {
+                            setVideoType(item.value as "shorts" | "longform");
+                            setDurationSeconds(item.value === "shorts" ? 30 : 300);
+                          }}
+                          className={cn(
+                            "rounded-lg border px-3 py-3 text-sm font-semibold transition",
+                            videoType === item.value
+                              ? "border-primary bg-primary/10 text-primary dark:border-primary dark:bg-[#323a47] dark:text-white"
+                              : "border-gray-300 text-gray-600 hover:border-gray-400 dark:border-[#3a4352] dark:text-gray-300",
+                          )}
                         >
-                          <input
-                            type="radio"
-                            name="voice"
-                            value={v.id}
-                            checked={voiceId === v.id}
-                            onChange={() => setVoiceId(v.id)}
-                          />
-                          <span className="text-sm text-dark dark:text-white">
-                            {v.name}
-                            {v.tone ? ` · ${v.tone}` : ""}
-                            {v.gender ? ` · ${v.gender}` : ""}
-                          </span>
-                        </label>
+                          {item.label}
+                        </button>
                       ))}
                     </div>
                   </div>
                 </div>
 
-                <div className="space-y-2">
-                  <p className="text-sm font-medium text-dark dark:text-white">Video sources</p>
-                  <div className="flex flex-wrap gap-2">
-                    {videoSources.map((src) => (
-                      <button
-                        type="button"
-                        key={src.value}
-                        onClick={() => toggleSource(src.value)}
-                        className={`rounded-full border px-3 py-1 text-xs font-semibold transition ${
-                          selectedSources.includes(src.value)
-                            ? "border-primary bg-primary/10 text-primary"
-                            : "border-gray-200 text-gray-7 dark:border-dark-3 dark:text-dark-5"
-                        }`}
-                      >
-                        {src.label}
-                      </button>
-                    ))}
-                  </div>
-                  <p className="text-xs text-gray-5 dark:text-dark-5">
-                    Used to decide AI image prompts vs gameplay/viral sourcing.
-                  </p>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setShowModal(false)}
+                    className="w-full rounded-lg border border-gray-300 bg-white px-4 py-3 text-sm font-semibold text-gray-800 transition hover:border-primary hover:text-primary dark:border-dark-4 dark:bg-white/5 dark:text-white dark:hover:bg-white/10"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={status.type === "loading"}
+                    className="w-full rounded-lg bg-primary px-4 py-3 text-sm font-semibold text-white transition hover:bg-primary/90 disabled:opacity-60"
+                  >
+                    {status.type === "loading" ? "Working..." : "Generate a video"}
+                  </button>
                 </div>
-              </div>
-
-              <div className="mt-4 grid grid-cols-2 gap-3">
-                <button
-                  type="button"
-                  onClick={() => setShowModal(false)}
-                  className="w-full rounded-lg border border-gray-200 px-4 py-3 text-sm font-semibold text-gray-7 transition hover:border-primary hover:text-primary dark:border-dark-3 dark:text-dark-5"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={status.type === "loading"}
-                  className="w-full rounded-lg bg-primary px-4 py-3 text-sm font-semibold text-white transition hover:bg-primary/90 disabled:opacity-60"
-                >
-                  {status.type === "loading" ? "Working..." : "Generate & Edit"}
-                </button>
-              </div>
-            </form>
+              </form>
             </div>
           </div>
         </ModalPortal>

@@ -55,11 +55,20 @@ export default function AiVideoEditorClient() {
   const [sectionModalOpen, setSectionModalOpen] = useState(false);
   const [sectionPrompt, setSectionPrompt] = useState("");
   const [activeScene, setActiveScene] = useState<Scene | null>(null);
+  const [rendering, setRendering] = useState(false);
+  const [savingAll, setSavingAll] = useState(false);
 
   const sortedScenes = useMemo(
     () => [...scenes].sort((a, b) => a.sceneIndex - b.sceneIndex),
     [scenes],
   );
+  const expectedDuration = useMemo(() => {
+    const totalMs = sortedScenes.reduce((acc, s) => acc + (s.durationMs || 0), 0);
+    if (totalMs > 0) return totalMs / 1000;
+    const words = sortedScenes.reduce((acc, s) => acc + (s.script?.split(/\s+/).length || 0), 0);
+    const seconds = words / 2.5; // ~150 wpm
+    return Math.round(seconds);
+  }, [sortedScenes]);
 
   async function loadProject() {
     setLoading(true);
@@ -234,6 +243,30 @@ export default function AiVideoEditorClient() {
     }
   }
 
+  async function saveAllScenes() {
+    setSavingAll(true);
+    for (const scene of sortedScenes) {
+      await saveScene(scene);
+    }
+    setSavingAll(false);
+  }
+
+  async function handleRender(projectId: string) {
+    setRendering(true);
+    try {
+      await fetch("/api/video-render", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId }),
+      });
+      setStatus({ type: "success", message: "Generating video! It will take a few minutes..." });
+    } catch (err) {
+      setStatus({ type: "error", message: (err as Error).message });
+    } finally {
+      setRendering(false);
+    }
+  }
+
   if (loading) {
     return <div className="text-sm text-gray-6 dark:text-dark-6">Loading...</div>;
   }
@@ -248,20 +281,28 @@ export default function AiVideoEditorClient() {
   }
 
   return (
-    <div className="space-y-8 bg-gray-900 p-4 text-white">
+    <div className="min-h-screen space-y-8 bg-gray-50 px-4 pb-10 pt-6 text-dark dark:bg-gray-950 dark:text-white md:px-8">
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.25em] text-primary">AI Videos</p>
-          <h1 className="text-2xl font-bold text-white">{project.title}</h1>
-          <p className="text-sm text-gray-300">
-            {project.videoType === "shorts" ? "Shorts/Reel" : "Long-form"} ·{" "}
+          <p className="text-xs font-semibold uppercase tracking-[0.25em] text-primary">Faceless Video</p>
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-bold text-dark dark:text-white">{project.title}</h1>
+            <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary dark:bg-white/10 dark:text-gray-200">
+              Beta
+            </span>
+          </div>
+          <p className="text-sm text-gray-600 dark:text-gray-400">
+            {project.videoType === "shorts" ? "Shorts/Reel" : "Long-form"} •{" "}
             {labelForLanguage(project.language) || project.language || "en"}
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+          <span className="rounded-full bg-gray-100 px-3 py-1 text-xs text-gray-700 dark:bg-white/5 dark:text-gray-300">
+            Expected duration: {expectedDuration ? `${(expectedDuration / 60).toFixed(2)} mins` : "—"}
+          </span>
           <Link
             href="/ai-videos"
-            className="rounded-lg border border-gray-700 px-3 py-2 text-sm font-semibold text-gray-200 transition hover:border-primary hover:text-primary"
+            className="rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700 transition hover:border-primary hover:text-primary dark:border-white/10 dark:text-gray-200"
           >
             Back to AI Videos
           </Link>
@@ -276,29 +317,30 @@ export default function AiVideoEditorClient() {
 
       {status.message && (
         <p
-          className={`text-sm ${
+          className={cn(
+            "rounded-lg px-3 py-2 text-sm",
             status.type === "error"
-              ? "text-red-500"
+              ? "bg-red-50 text-red-600 dark:bg-red-500/10 dark:text-red-400"
               : status.type === "success"
-                ? "text-green-600"
-                : "text-gray-6"
-          }`}
+                ? "bg-green-50 text-green-600 dark:bg-green-500/10 dark:text-green-400"
+                : "bg-gray-100 text-gray-700 dark:bg-white/5 dark:text-gray-300",
+          )}
         >
           {status.message}
         </p>
       )}
 
-      <div className="space-y-4 rounded-2xl border border-gray-800 bg-gray-800 p-4 shadow-card-2">
-        <div className="flex flex-wrap gap-2 border-b border-gray-700 pb-3 text-sm font-semibold text-gray-300">
+      <div className="space-y-4 rounded-2xl border border-gray-200 bg-white p-4 shadow-card-2 dark:border-white/10 dark:bg-gray-900">
+        <div className="flex flex-wrap gap-2 border-b border-gray-100 pb-3 text-sm font-semibold text-gray-700 dark:border-white/5 dark:text-gray-200">
           {(["settings", "music", "media", "captions"] as const).map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
               className={cn(
-                "rounded-full px-3 py-1",
+                "rounded-full px-3 py-1 transition",
                 activeTab === tab
-                  ? "bg-primary/10 text-primary"
-                  : "border border-transparent hover:border-primary/30",
+                  ? "bg-primary/10 text-primary dark:bg-white/10 dark:text-white"
+                  : "border border-transparent text-gray-600 hover:border-gray-200 hover:text-dark dark:text-gray-400 dark:hover:border-white/10",
               )}
             >
               {tab === "settings" ? "Settings" : tab === "music" ? "Music" : tab === "media" ? "Media" : "Captions"}
@@ -306,158 +348,157 @@ export default function AiVideoEditorClient() {
           ))}
         </div>
 
-        {activeTab === "settings" && (
-          <div className="space-y-2 text-sm text-gray-200">
-            <p>Project ID: {project.id}</p>
-            <p>Status: {project.status}</p>
-            <p>Language: {labelForLanguage(project.language) || project.language || "en"}</p>
-            <p>Use this tab to adjust future global settings (templates, aspect ratios, colors).</p>
-          </div>
-        )}
-
-        {activeTab === "music" && (
-          <div className="space-y-2 text-sm text-gray-200">
-            <p>Music selection coming soon. Attach audio via media or add a track here.</p>
-          </div>
-        )}
-
-        {activeTab === "captions" && (
-          <div className="space-y-2 text-sm text-gray-200">
-            <p>Captions are generated during render; edit per-scene text in Media.</p>
-          </div>
-        )}
-
-        {activeTab === "media" && (
+        <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1.1fr)_minmax(420px,1fr)]">
           <div className="space-y-4">
-            {sortedScenes.map((scene) => (
-              <div
-                key={scene.id}
-                className="rounded-2xl border border-gray-700 bg-gray-850 p-4 shadow-sm"
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-semibold text-gray-400">Section {scene.sceneIndex + 1}</span>
-                    <input
-                      value={scene.label || ""}
-                      onChange={(e) =>
-                        setScenes((prev) =>
-                          prev.map((s) => (s.id === scene.id ? { ...s, label: e.target.value } : s)),
-                        )
-                      }
-                      placeholder="Section title"
-                      className="rounded-md border border-gray-600 bg-gray-800 px-2 py-1 text-xs text-white"
-                    />
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="number"
-                      min={5}
-                      value={scene.durationMs ? Math.round(scene.durationMs / 1000) : ""}
-                      onChange={(e) =>
-                        setScenes((prev) =>
-                          prev.map((s) =>
-                            s.id === scene.id ? { ...s, durationMs: Number(e.target.value) * 1000 } : s,
-                          ),
-                        )
-                      }
-                      placeholder="sec"
-                      className="w-20 rounded-md border border-gray-600 bg-gray-800 px-2 py-1 text-xs text-white"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setActiveScene(scene);
-                        setSectionModalOpen(true);
-                      }}
-                      className="rounded-md border border-primary/40 px-3 py-1 text-xs font-semibold text-primary transition hover:border-primary"
-                    >
-                      Edit using AI
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => void saveScene(scene)}
-                      disabled={saving[scene.id]}
-                      className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white transition hover:bg-primary/90 disabled:opacity-60"
-                    >
-                      {saving[scene.id] ? "Saving..." : "Save"}
-                    </button>
-                  </div>
-                </div>
-                <div className="mt-3 space-y-2">
-                  <textarea
-                    value={scene.script || ""}
-                    onChange={(e) =>
-                      setScenes((prev) => prev.map((s) => (s.id === scene.id ? { ...s, script: e.target.value } : s)))
-                    }
-                    rows={4}
-                    className="w-full rounded-lg border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-white outline-none focus:border-primary"
-                  />
-                  <input
-                    value={scene.prompt || ""}
-                    onChange={(e) =>
-                      setScenes((prev) => prev.map((s) => (s.id === scene.id ? { ...s, prompt: e.target.value } : s)))
-                    }
-                    placeholder="Visual prompt / suggestion"
-                    className="w-full rounded-lg border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-white outline-none focus:border-primary"
-                  />
-                  <div className="rounded-lg border border-dashed border-gray-200 p-3 text-xs text-gray-6 dark:border-dark-3 dark:text-dark-5">
-                    <p className="font-semibold text-dark dark:text-white">Media</p>
-                    {mediaLoading && <p className="text-xs text-gray-5">Loading media...</p>}
-                    {mediaByScene[scene.id]?.length ? (
-                      <ul className="mt-2 space-y-1">
-                        {mediaByScene[scene.id].map((m) => (
-                          <li
-                            key={m.id}
-                            className="flex items-center justify-between gap-2 rounded-md bg-gray-800 px-2 py-1 shadow-sm"
-                          >
-                            <span className="text-[11px] text-gray-300">
-                              {m.mediaType} · {m.source || "upload"}
-                            </span>
-                            <a href={m.url} className="text-primary underline" target="_blank" rel="noreferrer">
-                              Open
-                            </a>
-                          </li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <p className="mt-1 text-[11px] text-gray-400">No media yet.</p>
-                    )}
-                    <div className="mt-2 flex flex-col gap-2">
-                      <div className="flex items-center gap-2">
-                        <input
-                          placeholder="https://example.com/media.mp4"
-                          onBlur={(e) => {
-                            const url = e.target.value;
-                            if (url.trim()) {
-                              void saveMedia(scene, url.trim(), "video");
-                              e.target.value = "";
-                            }
-                          }}
-                          className="w-full rounded-md border border-gray-600 bg-gray-800 px-2 py-1 text-xs text-white"
-                        />
-                        <span className="text-[11px] text-gray-400">Paste URL</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="file"
-                          onChange={(e) => {
-                            const file = e.target.files?.[0];
-                            if (file) {
-                              void handleFileUpload(scene, file);
-                              e.target.value = "";
-                            }
-                          }}
-                          className="w-full rounded-md border border-gray-600 bg-gray-800 px-2 py-1 text-xs text-white file:mr-2 file:rounded file:border-0 file:bg-primary/10 file:px-2 file:py-1 file:text-primary"
-                        />
-                        {uploadingScene === scene.id && <span className="text-[11px] text-gray-5">Uploading...</span>}
-                      </div>
+            {activeTab === "settings" && (
+              <div className="space-y-3 text-sm text-gray-700 dark:text-gray-200">
+                <p className="text-sm font-semibold text-dark dark:text-white">Video settings</p>
+                {[
+                  { label: "Caption Position", min: 0, max: 100, defaultValue: 50 },
+                  { label: "Letter Spacing", min: 0, max: 50, defaultValue: 10 },
+                  { label: "Stroke Width", min: 0, max: 12, defaultValue: 3 },
+                  { label: "Font Size", min: 10, max: 72, defaultValue: 32 },
+                ].map((slider) => (
+                  <div key={slider.label} className="space-y-1">
+                    <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
+                      <span>{slider.label}</span>
+                      <span>{slider.defaultValue}</span>
                     </div>
+                    <input
+                      type="range"
+                      min={slider.min}
+                      max={slider.max}
+                      defaultValue={slider.defaultValue}
+                      className="w-full accent-primary"
+                    />
                   </div>
+                ))}
+                <div className="flex items-center gap-3 text-xs text-gray-500 dark:text-gray-400">
+                  <span>Highlight mode</span>
+                  <label className="flex items-center gap-1">
+                    <input type="radio" name="highlight" defaultChecked className="accent-primary" /> Font
+                  </label>
+                  <label className="flex items-center gap-1">
+                    <input type="radio" name="highlight" className="accent-primary" /> Background
+                  </label>
                 </div>
               </div>
-            ))}
+            )}
+
+            {activeTab === "music" && (
+              <div className="space-y-3 text-sm text-gray-700 dark:text-gray-200">
+                <p className="text-sm font-semibold text-dark dark:text-white">Background Music</p>
+                <div className="flex items-center gap-2">
+                  <input
+                    placeholder="Search tracks (e.g. tech, chill, cinematic)"
+                    className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-dark outline-none focus:border-primary dark:border-white/10 dark:bg-black dark:text-white"
+                  />
+                  <button className="rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-white">Search</button>
+                </div>
+                <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-xs text-gray-600 dark:border-white/10 dark:bg-black/40 dark:text-gray-400">
+                  <p>Preview and choose a track. Auto ducking and trim to video length will be applied.</p>
+                </div>
+              </div>
+            )}
+
+            {activeTab === "captions" && (
+              <div className="space-y-2 text-sm text-gray-700 dark:text-gray-200">
+                <p className="text-sm font-semibold text-dark dark:text-white">Captions</p>
+                <p>Captions are generated from narration. Per-word timing appears in the timeline.</p>
+              </div>
+            )}
+
+            {activeTab === "media" && (
+              <div className="space-y-3">
+                <p className="text-sm font-semibold text-dark dark:text-white">Edit Media</p>
+                <div className="space-y-2 rounded-lg border border-gray-200 bg-white p-2 dark:border-white/10 dark:bg-black/60">
+                  {sortedScenes.map((scene) => (
+                    <div
+                      key={scene.id}
+                      className="flex items-center gap-3 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 dark:border-white/5 dark:bg-[#0f0f13]"
+                    >
+                      <div className="flex-1">
+                        <p className="text-xs font-semibold text-gray-700 line-clamp-2 dark:text-gray-100">
+                          {scene.prompt || scene.script || scene.label || `Section ${scene.sceneIndex + 1}`}
+                        </p>
+                        <p className="text-[11px] text-gray-500 dark:text-gray-500">
+                          {scene.durationMs ? `${(scene.durationMs / 1000).toFixed(2)}s` : "00:00:05 - 00:00:10"}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActiveScene(scene);
+                          setSectionModalOpen(true);
+                        }}
+                        className="rounded-md border border-primary/60 px-3 py-1 text-xs font-semibold text-primary transition hover:border-primary"
+                      >
+                        Change
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
-        )}
+
+          <div className="rounded-xl border border-gray-200 bg-white p-3 dark:border-white/10 dark:bg-gray-800">
+            <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
+              <span>Preview only — final video will be higher quality.</span>
+              <span>Any flickering won’t appear in exported video.</span>
+            </div>
+            <div className="mt-2 aspect-video w-full overflow-hidden rounded-lg bg-gradient-to-br from-gray-200 to-gray-100 dark:from-gray-900 dark:to-gray-950">
+              <div className="flex h-full items-center justify-center text-gray-500 dark:text-gray-300">Preview placeholder</div>
+            </div>
+            <div className="mt-2 flex items-center justify-end gap-2">
+              <button className="rounded-lg border border-gray-200 px-3 py-1 text-xs font-semibold text-gray-700 hover:border-primary hover:text-primary dark:border-white/15 dark:text-gray-100 dark:hover:border-white/30">
+                Export
+              </button>
+              <button className="rounded-lg border border-gray-200 px-3 py-1 text-xs font-semibold text-gray-700 hover:border-primary hover:text-primary dark:border-white/15 dark:text-gray-100 dark:hover:border-white/30">
+                Exports
+              </button>
+              <button className="rounded-lg border border-gray-200 px-3 py-1 text-xs font-semibold text-gray-700 hover:border-primary hover:text-primary dark:border-white/15 dark:text-gray-100 dark:hover:border-white/30">
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-4 rounded-xl border border-gray-200 bg-white p-3 dark:border-white/10 dark:bg-gray-800/80">
+          <p className="text-xs font-semibold uppercase text-gray-500 dark:text-gray-300">Timeline</p>
+          <div className="mt-2 h-24 w-full rounded-md bg-gradient-to-r from-gray-200 to-gray-100 dark:from-gray-900 dark:to-gray-950">
+            <div className="flex h-full items-center justify-center text-xs text-gray-500 dark:text-gray-300">
+              Per-word caption timeline placeholder
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-4 flex flex-col gap-3">
+          <div className="rounded-lg border border-gray-200 bg-gray-100 px-4 py-3 text-sm text-gray-700 dark:border-white/10 dark:bg-gray-900 dark:text-gray-200">
+            Generating video! It will take a few minutes...
+          </div>
+          <div className="grid gap-3 md:grid-cols-2">
+            <button
+              type="button"
+              onClick={() => void saveAllScenes()}
+              disabled={savingAll}
+              className="w-full rounded-lg border border-gray-200 bg-white px-4 py-3 text-sm font-semibold text-gray-800 transition hover:border-primary hover:text-primary disabled:opacity-60 dark:border-white/10 dark:bg-white/5 dark:text-white dark:hover:bg-white/10"
+            >
+              {savingAll ? "Saving..." : "Save Script"}
+            </button>
+            <button
+              type="button"
+              onClick={async () => {
+                await saveAllScenes();
+                await handleRender(project.id);
+              }}
+              disabled={rendering}
+              className="w-full rounded-lg bg-primary px-4 py-3 text-sm font-semibold text-white transition hover:bg-primary/90 disabled:opacity-60"
+            >
+              {rendering ? "Generating..." : "Next"}
+            </button>
+          </div>
+        </div>
       </div>
       {sectionModalOpen && activeScene && (
         <ModalPortal>
