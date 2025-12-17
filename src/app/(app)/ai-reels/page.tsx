@@ -129,11 +129,6 @@ const defaultForm = {
   withVoiceover: true,
   channelId: "",
   language: "",
-  // Branding fields now read-only from channel; keep them for payload but hide in UI
-  brandColors: "",
-  brandFonts: "",
-  logoUrl: "",
-  endScreenTemplate: "",
 };
 
 function ModalPortal({ children }: { children: React.ReactNode }) {
@@ -164,12 +159,8 @@ export default function AiReelsPage() {
   const [statusFilter, setStatusFilter] = useState<string>("");
   const [dateFrom, setDateFrom] = useState<string>("");
   const [dateTo, setDateTo] = useState<string>("");
-  const [voiceId, setVoiceId] = useState<string>("");
-  const [musicTrackId, setMusicTrackId] = useState<string>("");
-  const [trendingAudioId, setTrendingAudioId] = useState<string>("");
   const [languageQuery, setLanguageQuery] = useState(labelForLanguage(defaultForm.language));
   const [showLanguageList, setShowLanguageList] = useState(false);
-  const [showChannelDefaults, setShowChannelDefaults] = useState(false);
   const selectedChannel = useMemo(
     () => channels.find((c) => c.id === form.channelId),
     [channels, form.channelId]
@@ -399,10 +390,6 @@ export default function AiReelsPage() {
           template: selectedChannel.template || form.template,
           durationSec: selectedChannel.durationDefault ?? form.durationSec,
           language: selectedChannel.language || form.language,
-          brandColors: (selectedChannel.brandColors || []).join(", "),
-          brandFonts: (selectedChannel.brandFonts || []).join(", "),
-          logoUrl: selectedChannel.logoUrl || form.logoUrl,
-          endScreenTemplate: selectedChannel.endScreenTemplate || form.endScreenTemplate,
           topic: selectedChannel.topic || form.idea,
         }
       : null;
@@ -416,6 +403,20 @@ export default function AiReelsPage() {
     const normalizedLanguage = languageValue ? resolveLanguageCode(languageValue) : undefined;
 
     const payloadDuration = Number(channelDefaults?.durationSec ?? form.durationSec) || 15;
+    const brand = selectedChannel
+      ? {
+          colors: (selectedChannel.brandColors || []).filter(Boolean),
+          fonts: (selectedChannel.brandFonts || []).filter(Boolean),
+          logoUrl: selectedChannel.logoUrl || null,
+          endScreenTemplate: selectedChannel.endScreenTemplate || null,
+        }
+      : null;
+    const hasBrand =
+      !!brand &&
+      ((brand.colors && brand.colors.length > 0) ||
+        (brand.fonts && brand.fonts.length > 0) ||
+        brand.logoUrl ||
+        brand.endScreenTemplate);
 
     try {
       const res = await fetch("/api/reels/generate", {
@@ -432,23 +433,7 @@ export default function AiReelsPage() {
           durationSec: payloadDuration,
           multiVariants: true,
           storyboard: true,
-          brand: {
-            colors: (channelDefaults?.brandColors || form.brandColors)
-              .split(",")
-              .map((c) => c.trim())
-              .filter(Boolean),
-            fonts: (channelDefaults?.brandFonts || form.brandFonts)
-              .split(",")
-              .map((f) => f.trim())
-              .filter(Boolean),
-            logoUrl: channelDefaults?.logoUrl || form.logoUrl || null,
-            endScreenTemplate: channelDefaults?.endScreenTemplate || form.endScreenTemplate || null,
-          },
-          audio: {
-            aiVoiceId: voiceId || null,
-            musicUploadId: musicTrackId || null,
-            trendingAudioId: trendingAudioId || null,
-          },
+          ...(hasBrand ? { brand } : {}),
         }),
       });
       const body = await res.json().catch(() => ({}));
@@ -1340,10 +1325,6 @@ export default function AiReelsPage() {
                         idea:
                           prev.idea.trim() ||
                           (selected?.topic ? `Topic: ${selected.topic}` : ""),
-                        brandColors: (selected?.brandColors || []).join(", "),
-                        brandFonts: (selected?.brandFonts || []).join(", "),
-                        logoUrl: selected?.logoUrl || prev.logoUrl,
-                        endScreenTemplate: selected?.endScreenTemplate || prev.endScreenTemplate,
                       }));
                     }}
                     disabled={channelLoading}
@@ -1355,13 +1336,6 @@ export default function AiReelsPage() {
                       </option>
                     ))}
                     </select>
-                  {selectedChannel && (
-                    <p className="mt-2 text-xs text-gray-6 dark:text-dark-6">
-                      Defaults applied: platform {selectedChannel.platform || "—"}, tone{" "}
-                      {selectedChannel.tone || "—"}, style {selectedChannel.style || "—"}, duration{" "}
-                      {selectedChannel.durationDefault ?? "—"}s.
-                    </p>
-                  )}
                 </label>
 
                 <label className="block text-sm font-semibold text-dark dark:text-dark-7">
@@ -1535,98 +1509,6 @@ export default function AiReelsPage() {
                           Number(e.target.value) || defaultForm.durationSec,
                       }))
                     }
-                  />
-                </label>
-                <label className="block text-sm font-semibold text-dark dark:text-dark-7">
-                  <div className="flex items-center gap-2">
-                    <span>Brand colors</span>
-                    <span className="text-xs font-normal text-gray-6 dark:text-dark-6">(comma separated)</span>
-                  </div>
-                  <input
-                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm text-dark outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
-                    placeholder="#F97316, #7C3AED"
-                    value={form.brandColors}
-                    onChange={(e) =>
-                      setForm((prev) => ({ ...prev, brandColors: e.target.value }))
-                    }
-                  />
-                </label>
-                <label className="block text-sm font-semibold text-dark dark:text-dark-7">
-                  <div className="flex items-center gap-2">
-                    <span>Brand fonts</span>
-                    <span className="text-xs font-normal text-gray-6 dark:text-dark-6">(comma separated)</span>
-                  </div>
-                  <input
-                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm text-dark outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
-                    placeholder="Poppins, Satoshi"
-                    value={form.brandFonts}
-                    onChange={(e) =>
-                      setForm((prev) => ({ ...prev, brandFonts: e.target.value }))
-                    }
-                  />
-                </label>
-                <label className="block text-sm font-semibold text-dark dark:text-dark-7">
-                  <div className="flex items-center gap-2">
-                    <span>Logo URL</span>
-                    <span className="text-xs font-normal text-gray-6 dark:text-dark-6">(optional)</span>
-                  </div>
-                  <input
-                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm text-dark outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
-                    placeholder="https://example.com/logo.png"
-                    value={form.logoUrl}
-                    onChange={(e) =>
-                      setForm((prev) => ({ ...prev, logoUrl: e.target.value }))
-                    }
-                  />
-                </label>
-                <label className="block text-sm font-semibold text-dark dark:text-dark-7">
-                  <div className="flex items-center gap-2">
-                    <span>End screen template</span>
-                    <span className="text-xs font-normal text-gray-6 dark:text-dark-6">(optional)</span>
-                  </div>
-                  <input
-                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm text-dark outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
-                    placeholder="CTA + logo end card"
-                    value={form.endScreenTemplate}
-                    onChange={(e) =>
-                      setForm((prev) => ({ ...prev, endScreenTemplate: e.target.value }))
-                    }
-                  />
-                </label>
-                <label className="block text-sm font-semibold text-dark dark:text-dark-7">
-                  <div className="flex items-center gap-2">
-                    <span>AI Voice ID</span>
-                    <span className="text-xs font-normal text-gray-6 dark:text-dark-6">(optional)</span>
-                  </div>
-                  <input
-                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm text-dark outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
-                    placeholder="voice_123"
-                    value={voiceId}
-                    onChange={(e) => setVoiceId(e.target.value)}
-                  />
-                </label>
-                <label className="block text-sm font-semibold text-dark dark:text-dark-7">
-                  <div className="flex items-center gap-2">
-                    <span>Music upload ID</span>
-                    <span className="text-xs font-normal text-gray-6 dark:text-dark-6">(optional)</span>
-                  </div>
-                  <input
-                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm text-dark outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
-                    placeholder="music_upload_123"
-                    value={musicTrackId}
-                    onChange={(e) => setMusicTrackId(e.target.value)}
-                  />
-                </label>
-                <label className="block text-sm font-semibold text-dark dark:text-dark-7">
-                  <div className="flex items-center gap-2">
-                    <span>Trending audio ID</span>
-                    <span className="text-xs font-normal text-gray-6 dark:text-dark-6">(optional)</span>
-                  </div>
-                  <input
-                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm text-dark outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
-                    placeholder="trending_audio_123"
-                    value={trendingAudioId}
-                    onChange={(e) => setTrendingAudioId(e.target.value)}
                   />
                 </label>
                 <label className="mt-1 mb-1 flex items-center gap-2 text-sm font-semibold text-dark dark:text-dark-7">
