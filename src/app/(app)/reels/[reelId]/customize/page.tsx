@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
+import type { DragEvent } from "react";
 import { cn } from "@/lib/utils";
 import { labelForLanguage } from "@/lib/languages";
 
@@ -44,6 +45,7 @@ export default function ReelCustomizePage() {
   const [autoScenes, setAutoScenes] = useState(true);
   const [emphasizeEmotion, setEmphasizeEmotion] = useState(true);
   const [removeLowEngagement, setRemoveLowEngagement] = useState(false);
+  const [autoReorder, setAutoReorder] = useState(true);
   const [targetDuration, setTargetDuration] = useState<number>(10);
   const [lockDuration, setLockDuration] = useState(true);
   const [autoTrim, setAutoTrim] = useState(false);
@@ -51,6 +53,7 @@ export default function ReelCustomizePage() {
   const [fadeOutro, setFadeOutro] = useState(false);
   const [previewQuality] = useState("Medium");
   const [exportQuality] = useState("High (1080p)");
+  const [mood, setMood] = useState<"happy" | "suspense" | "calm">("happy");
   const [musicQuery, setMusicQuery] = useState("suspense | happy | kids");
   const [recommendedTrack, setRecommendedTrack] = useState("Happy Sparkle");
   const [voiceBalance, setVoiceBalance] = useState<number>(60);
@@ -59,16 +62,25 @@ export default function ReelCustomizePage() {
   const [introWhoosh, setIntroWhoosh] = useState(false);
   const [outroHit, setOutroHit] = useState(false);
   const [fadeInOut, setFadeInOut] = useState(false);
+  const [trendingPlatform, setTrendingPlatform] = useState("Instagram");
+  const [trendingRegion, setTrendingRegion] = useState("Global");
   const [activeScene, setActiveScene] = useState<number>(1);
+  const [sceneStyles, setSceneStyles] = useState<Record<number, string>>({
+    1: "Cinematic zoom",
+    2: "Ken Burns",
+    3: "Parallax",
+  });
   const [captionText, setCaptionText] = useState(
     "Hook: Stop scrolling.\nBody: This 10-second habit can reset your day.\nCTA: Follow for more.",
   );
-  const [captionStyle, setCaptionStyle] = useState("Viral Bold");
+  const [captionStyle, setCaptionStyle] = useState("MrBeast");
   const [captionMode, setCaptionMode] = useState<"multi" | "one">("multi");
   const [captionSpeed, setCaptionSpeed] = useState<number>(55);
   const [highlightKeywords, setHighlightKeywords] = useState(true);
   const [highlightColor, setHighlightColor] = useState("#FACC15");
   const [emojiBoost, setEmojiBoost] = useState(true);
+  const [ctaText, setCtaText] = useState("Follow for more");
+  const [autoCtaPlacement, setAutoCtaPlacement] = useState(true);
   const [thumbHeadline, setThumbHeadline] = useState("THIS ONE HABIT");
   const [thumbFont, setThumbFont] = useState("Poppins");
   const [thumbStyle, setThumbStyle] = useState("Bold");
@@ -77,7 +89,23 @@ export default function ReelCustomizePage() {
   const [thumbContrast, setThumbContrast] = useState(true);
   const [thumbUseBrandColors, setThumbUseBrandColors] = useState(true);
   const [thumbUseBrandFont, setThumbUseBrandFont] = useState(true);
-  const versionTags = ["v1", "v2", "v3"];
+  const [sceneUploads, setSceneUploads] = useState<Record<number, string | null>>({});
+  const [collapsedScenes, setCollapsedScenes] = useState<Record<number, boolean>>({});
+  const [sceneOrder, setSceneOrder] = useState<number[]>([1, 2, 3]);
+  const [draggingScene, setDraggingScene] = useState<number | null>(null);
+  const platformLabel = (reel?.platform || "YOUTUBE_SHORTS").toString();
+
+  const collapseStateFor = (openScene?: number): Record<number, boolean> => {
+    const base: Record<number, boolean> = { 1: true, 2: true, 3: true };
+    if (openScene) {
+      base[openScene] = false;
+    }
+    return base;
+  };
+
+  useEffect(() => {
+    setCollapsedScenes({ 1: false, 2: true, 3: true });
+  }, []);
 
   useEffect(() => {
     if (!reelId) return;
@@ -104,12 +132,102 @@ export default function ReelCustomizePage() {
     setActionStatus({ type: "success", message });
   };
 
+  const handleUploadChange = (sceneIdx: number, file?: File) => {
+    setSceneUploads((prev) => ({
+      ...prev,
+      [sceneIdx]: file ? file.name : null,
+    }));
+  };
+
+  const triggerUpload = (sceneIdx: number) => {
+    const input = document.getElementById(`scene-upload-${sceneIdx}`) as HTMLInputElement | null;
+    if (input) {
+      input.click();
+    }
+  };
+
+  const toggleSceneCollapse = (sceneIdx: number) => {
+    setCollapsedScenes((prev) => {
+      const isCollapsed = prev[sceneIdx] ?? sceneIdx !== activeScene;
+      return collapseStateFor(isCollapsed ? sceneIdx : undefined);
+    });
+    setActiveScene(sceneIdx);
+  };
+
+  const focusScene = (sceneIdx: number) => {
+    setActiveScene(sceneIdx);
+    setCollapsedScenes(collapseStateFor(sceneIdx));
+  };
+
+  const handleDragStart = (sceneIdx: number) => {
+    setDraggingScene(sceneIdx);
+  };
+
+  const handleDragOver = (event: DragEvent<HTMLDivElement>, targetIdx: number) => {
+    event.preventDefault();
+    if (draggingScene === null || draggingScene === targetIdx) return;
+    setSceneOrder((prev) => {
+      const current = [...prev];
+      const from = current.indexOf(draggingScene);
+      const to = current.indexOf(targetIdx);
+      if (from === -1 || to === -1) return prev;
+      current.splice(from, 1);
+      current.splice(to, 0, draggingScene);
+      return current;
+    });
+  };
+
+  const handleDragEnd = () => {
+    setDraggingScene(null);
+  };
+
   const handleExport = (message = "Export queued") => {
     setActionStatus({ type: "success", message });
   };
 
   const handlePublish = (message = "Publish queued") => {
     setActionStatus({ type: "success", message });
+  };
+
+  const applyPlatformOptimizer = (platform: "instagram" | "youtube" | "tiktok") => {
+    if (platform === "instagram") {
+      setTargetDuration(15);
+      setCaptionMode("multi");
+      setCaptionSpeed(60);
+      setVoiceBalance(55);
+    } else if (platform === "youtube") {
+      setTargetDuration(30);
+      setCaptionSpeed(50);
+      setVoiceBalance(50);
+    } else {
+      setTargetDuration(20);
+      setCaptionSpeed(65);
+      setVoiceBalance(60);
+    }
+    setActionStatus({ type: "success", message: `Optimized for ${platform === "instagram" ? "Instagram Reels" : platform === "youtube" ? "YouTube Shorts" : "TikTok"}` });
+  };
+
+  const applyQuickMode = (mode: "viral" | "kids" | "repurpose") => {
+    if (mode === "viral") {
+      setPacing("fast");
+      setHookEmphasis(80);
+      setCaptionStyle("MrBeast");
+      setCaptionSpeed(75);
+      setAutoDuck(true);
+      setBeatSync(true);
+      setMood("happy");
+      setActionStatus({ type: "success", message: "Viral mode applied: faster cuts, bold captions, trending pacing." });
+    } else if (mode === "kids") {
+      setPacing("normal");
+      setCaptionStyle("Kids Cartoon");
+      setEmojiBoost(true);
+      setHighlightColor("#FDE68A");
+      setCaptionSpeed(50);
+      setMood("calm");
+      setActionStatus({ type: "success", message: "Kids-safe mode applied: simple words, friendly visuals, softer pacing." });
+    } else {
+      setActionStatus({ type: "success", message: "Repurpose: duplicate this reel for another platform." });
+    }
   };
 
   function renderTabContent(tab: TabId) {
@@ -161,6 +279,10 @@ export default function ReelCustomizePage() {
 
             <div className="space-y-2 rounded-xl border border-gray-200 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-gray-900/60">
               <p className="text-sm font-semibold text-dark dark:text-white">AI Scene Logic</p>
+              <label className="flex items-center gap-2 text-xs">
+                <input type="checkbox" checked={autoReorder} onChange={(e) => setAutoReorder(e.target.checked)} className="accent-primary" />
+                Auto scene reordering
+              </label>
               <label className="flex items-center gap-2 text-xs">
                 <input type="checkbox" checked={autoScenes} onChange={(e) => setAutoScenes(e.target.checked)} className="accent-primary" />
                 Auto scene selection
@@ -237,6 +359,28 @@ export default function ReelCustomizePage() {
                 <div className="text-xs text-gray-600 dark:text-gray-300">Export: {exportQuality}</div>
               </div>
             </div>
+
+            <div className="space-y-2 rounded-xl border border-gray-200 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-gray-900/60">
+              <p className="text-sm font-semibold text-dark dark:text-white">Metadata</p>
+              <div className="grid gap-2 md:grid-cols-2">
+                <div className="text-xs text-gray-600 dark:text-gray-300">
+                  <span className="font-semibold">Platform: </span>
+                  <span className="text-gray-700 dark:text-gray-100">{platformLabel || "—"}</span>
+                </div>
+                <div className="text-xs text-gray-600 dark:text-gray-300">
+                  <span className="font-semibold">Status: </span>
+                  <span className="text-gray-700 dark:text-gray-100">{reel?.status || "PENDING"}</span>
+                </div>
+                <div className="text-xs text-gray-600 dark:text-gray-300">
+                  <span className="font-semibold">Tone: </span>
+                  <span className="text-gray-700 dark:text-gray-100">{reel?.tone || "—"}</span>
+                </div>
+                <div className="text-xs text-gray-600 dark:text-gray-300">
+                  <span className="font-semibold">Language: </span>
+                  <span className="text-gray-700 dark:text-gray-100">{labelForLanguage(reel?.language || "en")}</span>
+                </div>
+              </div>
+            </div>
           </div>
         );
       case "music":
@@ -246,6 +390,22 @@ export default function ReelCustomizePage() {
 
             <div className="space-y-3 rounded-xl border border-gray-200 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-gray-900/60">
               <p className="text-sm font-semibold text-dark dark:text-white">Music</p>
+              <div className="flex flex-wrap gap-2 text-xs font-semibold text-gray-700 dark:text-gray-200">
+                {["happy", "suspense", "calm"].map((m) => (
+                  <button
+                    key={m}
+                    onClick={() => setMood(m as "happy" | "suspense" | "calm")}
+                    className={cn(
+                      "rounded-full px-3 py-1 transition",
+                      mood === m
+                        ? "bg-primary/10 text-primary dark:bg-white/10 dark:text-white"
+                        : "border border-gray-200 text-gray-700 hover:border-primary hover:text-primary dark:border-white/10 dark:text-gray-200",
+                    )}
+                  >
+                    {m.charAt(0).toUpperCase() + m.slice(1)}
+                  </button>
+                ))}
+              </div>
               <div className="flex items-center gap-2">
                 <input
                   value={musicQuery}
@@ -271,6 +431,32 @@ export default function ReelCustomizePage() {
                     </label>
                   ))}
                 </div>
+              </div>
+              <div className="grid gap-2 md:grid-cols-2">
+                <label className="text-xs font-semibold text-gray-600 dark:text-gray-300">
+                  Trending platform
+                  <select
+                    value={trendingPlatform}
+                    onChange={(e) => setTrendingPlatform(e.target.value)}
+                    className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-dark outline-none focus:border-primary dark:border-white/10 dark:bg-black dark:text-white"
+                  >
+                    {["Instagram", "YouTube Shorts", "TikTok"].map((p) => (
+                      <option key={p}>{p}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="text-xs font-semibold text-gray-600 dark:text-gray-300">
+                  Region
+                  <select
+                    value={trendingRegion}
+                    onChange={(e) => setTrendingRegion(e.target.value)}
+                    className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-dark outline-none focus:border-primary dark:border-white/10 dark:bg-black dark:text-white"
+                  >
+                    {["Global", "India", "US", "UK"].map((r) => (
+                      <option key={r}>{r}</option>
+                    ))}
+                  </select>
+                </label>
               </div>
             </div>
 
@@ -326,75 +512,169 @@ export default function ReelCustomizePage() {
             <div className="space-y-3 rounded-xl border border-gray-200 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-gray-900/60">
               <p className="text-sm font-semibold text-dark dark:text-white">Scenes</p>
               <div className="space-y-3">
-                {[1, 2, 3].map((idx) => (
-                  <div
-                    key={idx}
-                    className={cn(
-                      "rounded-lg border bg-gray-50 p-3 dark:bg-[#0f0f13]",
-                      activeScene === idx ? "border-primary" : "border-gray-200 dark:border-white/5",
-                    )}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm font-semibold text-dark dark:text-white">
-                          Scene {idx} ({idx === 1 ? "0–2s" : idx === 2 ? "2–5s" : "5–8s"})
-                        </p>
-                        <p className="text-[11px] text-gray-500 dark:text-gray-400">Thumbnail</p>
-                      </div>
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => setActiveScene(idx)}
-                          className="rounded-md border border-primary/60 px-3 py-1 text-xs font-semibold text-primary transition hover:border-primary"
-                        >
-                          Replace
-                        </button>
-                        <button className="rounded-md border border-gray-200 px-3 py-1 text-xs font-semibold text-gray-700 hover:border-primary hover:text-primary dark:border-white/10 dark:text-gray-200">
-                          {idx === 1 ? "Lock" : "Extend"}
-                        </button>
-                      </div>
-                    </div>
-                    <div className="mt-3 grid gap-2 md:grid-cols-2">
-                      <label className="text-xs font-semibold text-gray-600 dark:text-gray-300">
-                        Replace media
-                        <input
-                          type="file"
-                          className="mt-1 w-full rounded-lg border border-dashed border-gray-300 bg-white px-2 py-2 text-xs text-gray-600 dark:border-white/10 dark:bg-black dark:text-gray-200"
-                        />
-                      </label>
-                      <label className="text-xs font-semibold text-gray-600 dark:text-gray-300">
-                        Crop / Fit
-                        <select className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-dark outline-none focus:border-primary dark:border-white/10 dark:bg-black dark:text-white">
-                          <option>Fit</option>
-                          <option>Fill</option>
-                          <option>Center crop</option>
-                        </select>
-                      </label>
-                    </div>
-                    <div className="mt-2">
-                      <p className="text-xs font-semibold text-gray-600 dark:text-gray-300">Zoom style</p>
-                      <div className="mt-1 flex flex-wrap gap-2">
-                        {["None", "Slow", "Dynamic"].map((label) => (
+                {sceneOrder.map((idx) => {
+                  const isCollapsed = collapsedScenes[idx] ?? idx !== activeScene;
+                  return (
+                    <div
+                      key={idx}
+                      draggable
+                      onDragStart={() => handleDragStart(idx)}
+                      onDragOver={(e) => handleDragOver(e, idx)}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        handleDragEnd();
+                      }}
+                      onDragEnd={handleDragEnd}
+                      className={cn(
+                        "rounded-lg border bg-gray-50 p-3 dark:bg-[#0f0f13]",
+                        activeScene === idx ? "border-primary" : "border-gray-200 dark:border-white/5",
+                        draggingScene === idx ? "opacity-70 ring-2 ring-primary/40" : "",
+                      )}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
                           <button
-                            key={label}
-                            className="rounded-full border border-gray-200 px-3 py-1 text-xs font-semibold text-gray-700 hover:border-primary hover:text-primary dark:border-white/10 dark:text-gray-200"
+                            onClick={() => toggleSceneCollapse(idx)}
+                            className="rounded-md border border-gray-200 px-2 py-1 text-xs font-semibold text-gray-700 transition hover:border-primary hover:text-primary dark:border-white/10 dark:text-gray-200"
+                            aria-label={isCollapsed ? "Expand scene" : "Collapse scene"}
                           >
-                            {label}
+                            {isCollapsed ? "▶" : "▼"}
                           </button>
-                        ))}
+                          <button
+                            onClick={() => focusScene(idx)}
+                            className="flex items-center gap-2 rounded-md px-2 py-1 text-left text-sm font-semibold text-dark transition hover:text-primary dark:text-white"
+                          >
+                            <span className="text-base cursor-move" aria-hidden>
+                              ☰
+                            </span>
+                            Scene {idx} ({idx === 1 ? "0–2s" : idx === 2 ? "2–5s" : "5–8s"})
+                          </button>
+                        </div>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => focusScene(idx)}
+                            className="rounded-md border border-primary/60 px-3 py-1 text-xs font-semibold text-primary transition hover:border-primary"
+                          >
+                            Replace
+                          </button>
+                          <button className="rounded-md border border-gray-200 px-3 py-1 text-xs font-semibold text-gray-700 hover:border-primary hover:text-primary dark:border-white/10 dark:text-gray-200">
+                            {idx === 1 ? "Lock" : "Extend"}
+                          </button>
+                        </div>
                       </div>
+
+                      {!isCollapsed && (
+                        <>
+                          <div className="mt-3 grid gap-2 md:grid-cols-2">
+                            <div className="space-y-2 text-xs font-semibold text-gray-600 dark:text-gray-300">
+                              <input
+                                id={`scene-upload-${idx}`}
+                                type="file"
+                                accept="image/*,video/*"
+                                className="hidden"
+                                onChange={(e) => {
+                                  const file = e.target.files?.[0];
+                                  handleUploadChange(idx, file || undefined);
+                                  e.target.value = "";
+                                }}
+                              />
+                              {!sceneUploads[idx] ? (
+                                <button
+                                  type="button"
+                                  onClick={() => triggerUpload(idx)}
+                                  className="flex w-full flex-col items-start justify-center rounded-lg border border-dashed border-gray-300 bg-gray-50 px-3 py-3 text-left transition hover:border-primary hover:text-primary dark:border-white/10 dark:bg-black/40 dark:text-gray-200"
+                                >
+                                  <span className="text-sm font-semibold">⬆ Upload image / video</span>
+                                  <span className="text-[11px] text-gray-500 dark:text-gray-400">JPG, PNG, MP4 • Max 20s</span>
+                                </button>
+                              ) : (
+                                <div className="space-y-2 rounded-lg border border-gray-200 bg-white p-3 dark:border-white/10 dark:bg-black/50">
+                                  <div className="flex items-center justify-between text-xs font-semibold text-gray-700 dark:text-gray-100">
+                                    <span>✓ {sceneUploads[idx]}</span>
+                                    <div className="flex gap-2">
+                                      <button
+                                        type="button"
+                                        onClick={() => triggerUpload(idx)}
+                                        className="rounded-md border border-gray-200 px-2 py-1 text-[11px] font-semibold text-gray-700 transition hover:border-primary hover:text-primary dark:border-white/10 dark:text-gray-200"
+                                      >
+                                        Replace
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleUploadChange(idx, undefined)}
+                                        className="rounded-md border border-gray-200 px-2 py-1 text-[11px] font-semibold text-gray-700 transition hover:border-primary hover:text-primary dark:border-white/10 dark:text-gray-200"
+                                      >
+                                        Remove
+                                      </button>
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                            <div className="text-xs font-semibold text-gray-600 dark:text-gray-300">
+                              <p className="mb-1">Crop / Fit</p>
+                              <div className="flex flex-wrap gap-2">
+                                {[
+                                  { label: "Fit", icon: "▢" },
+                                  { label: "Fill", icon: "◼" },
+                                  { label: "Crop", icon: "✂" },
+                                ].map((opt) => (
+                                  <button
+                                    key={opt.label}
+                                    className="rounded-lg border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-700 transition hover:border-primary hover:text-primary dark:border-white/10 dark:text-gray-200"
+                                  >
+                                    <span className="mr-1">{opt.icon}</span>
+                                    {opt.label}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="mt-2">
+                            <p className="text-xs font-semibold text-gray-600 dark:text-gray-300">Zoom style</p>
+                            <div className="mt-1 flex flex-wrap gap-2">
+                              {[
+                                { label: "None", hint: "Static", value: "None" },
+                                { label: "Slow", hint: "Gentle cinematic zoom", value: "Cinematic zoom" },
+                                { label: "Dynamic", hint: "Punchy Ken Burns effect", value: "Dynamic" },
+                              ].map((opt) => (
+                                <div key={opt.label} className="flex flex-col">
+                                  <button
+                                    onClick={() =>
+                                      setSceneStyles((prev) => ({
+                                        ...prev,
+                                        [idx]: opt.value,
+                                      }))
+                                    }
+                                    className={cn(
+                                      "rounded-full border px-3 py-1 text-xs font-semibold transition",
+                                      sceneStyles[idx] === opt.value
+                                        ? "border-primary text-primary dark:border-white/30 dark:text-white"
+                                        : "border-gray-200 text-gray-700 hover:border-primary hover:text-primary dark:border-white/10 dark:text-gray-200",
+                                    )}
+                                  >
+                                    {opt.label}
+                                  </button>
+                                  <span className="mt-1 text-[10px] text-gray-500 dark:text-gray-400">{opt.hint}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                          <div className="mt-3 rounded-lg border border-dashed border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-300/40 dark:bg-amber-900/30 dark:text-amber-100">
+                            <div className="font-semibold">AI Suggestion:</div>
+                            <p>{idx === 1 ? "This scene could be stronger as the hook." : "Consider replacing weak visuals for better retention."}</p>
+                            <div className="mt-2 flex gap-2">
+                              <button className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white">Apply</button>
+                              <button className="rounded-md border border-gray-200 px-3 py-1 text-xs font-semibold text-gray-700 hover:border-primary hover:text-primary dark:border-white/10 dark:text-gray-200">
+                                Ignore
+                              </button>
+                            </div>
+                          </div>
+                        </>
+                      )}
                     </div>
-                    <div className="mt-3 rounded-lg border border-dashed border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-300/40 dark:bg-amber-900/30 dark:text-amber-100">
-                      <div className="font-semibold">AI Suggestion:</div>
-                      <p>This scene could be stronger as the hook.</p>
-                      <div className="mt-2 flex gap-2">
-                        <button className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white">Apply</button>
-                        <button className="rounded-md border border-gray-200 px-3 py-1 text-xs font-semibold text-gray-700 hover:border-primary hover:text-primary dark:border-white/10 dark:text-gray-200">
-                          Ignore
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           </div>
@@ -417,7 +697,7 @@ export default function ReelCustomizePage() {
             <div className="space-y-2 rounded-xl border border-gray-200 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-gray-900/60">
               <p className="text-sm font-semibold text-dark dark:text-white">Styles</p>
               <div className="grid gap-2 md:grid-cols-2">
-                {["Viral Bold", "Kids Cartoon", "Minimal Clean", "Motivational Impact"].map((style) => (
+                {["MrBeast", "Kids Cartoon", "Motivational Bold", "Minimal Clean"].map((style) => (
                   <button
                     key={style}
                     onClick={() => setCaptionStyle(style)}
@@ -490,6 +770,10 @@ export default function ReelCustomizePage() {
                 Highlight keywords
               </label>
               <label className="flex items-center gap-2 text-xs">
+                <input type="checkbox" checked={emojiBoost} onChange={(e) => setEmojiBoost(e.target.checked)} className="accent-primary" />
+                Emoji boost (AI)
+              </label>
+              <label className="flex items-center gap-2 text-xs">
                 <span className="font-semibold text-gray-600 dark:text-gray-300">Color:</span>
                 <input
                   type="color"
@@ -499,10 +783,10 @@ export default function ReelCustomizePage() {
                 />
                 <span className="text-xs text-gray-500 dark:text-gray-400">{highlightColor}</span>
               </label>
-              <label className="flex items-center gap-2 text-xs">
-                <input type="checkbox" checked={emojiBoost} onChange={(e) => setEmojiBoost(e.target.checked)} className="accent-primary" />
-                Emoji boost (AI)
-              </label>
+              <div className="flex items-center gap-2 text-xs">
+                <span className="font-semibold text-gray-600 dark:text-gray-300">Color per word</span>
+                <span className="text-gray-500 dark:text-gray-400">AI applies contrast automatically</span>
+              </div>
             </div>
 
             <div className="space-y-2 rounded-xl border border-gray-200 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-gray-900/60">
@@ -518,6 +802,27 @@ export default function ReelCustomizePage() {
                 ))}
               </div>
             </div>
+
+            <div className="space-y-2 rounded-xl border border-gray-200 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-gray-900/60">
+              <p className="text-sm font-semibold text-dark dark:text-white">CTA</p>
+              <label className="text-xs font-semibold text-gray-600 dark:text-gray-300">
+                CTA text
+                <input
+                  value={ctaText}
+                  onChange={(e) => setCtaText(e.target.value)}
+                  className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-dark outline-none focus:border-primary dark:border-white/10 dark:bg-black dark:text-white"
+                />
+              </label>
+              <label className="flex items-center gap-2 text-xs">
+                <input
+                  type="checkbox"
+                  checked={autoCtaPlacement}
+                  onChange={(e) => setAutoCtaPlacement(e.target.checked)}
+                  className="accent-primary"
+                />
+                Auto-position at last 2s
+              </label>
+            </div>
           </div>
         );
       case "thumbnail":
@@ -528,7 +833,7 @@ export default function ReelCustomizePage() {
             <div className="space-y-3 rounded-xl border border-gray-200 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-gray-900/60">
               <p className="text-sm font-semibold text-dark dark:text-white">AI Thumbnails</p>
               <div className="flex flex-wrap gap-2">
-                {["Option 1", "Option 2", "Option 3"].map((opt) => (
+                {["Option 1 (happy)", "Option 2 (surprised)", "Option 3 (determined)"].map((opt) => (
                   <button
                     key={opt}
                     className="h-24 w-24 rounded-lg border border-gray-200 bg-gray-50 text-xs font-semibold text-gray-600 transition hover:border-primary hover:text-primary dark:border-white/10 dark:bg-black/50 dark:text-gray-300"
@@ -601,6 +906,10 @@ export default function ReelCustomizePage() {
                 />
                 High contrast
               </label>
+              <label className="flex items-center gap-2 text-xs">
+                <input type="checkbox" className="accent-primary" defaultChecked />
+                Highlight face & emotion
+              </label>
             </div>
 
             <div className="space-y-2 rounded-xl border border-gray-200 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-gray-900/60">
@@ -624,6 +933,21 @@ export default function ReelCustomizePage() {
                 Use channel font
               </label>
             </div>
+
+            <div className="space-y-2 rounded-xl border border-gray-200 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-gray-900/60">
+              <p className="text-sm font-semibold text-dark dark:text-white">Hook suggestions</p>
+              <div className="flex flex-wrap gap-2">
+                {["One quick fix", "Stop scrolling", "Do this daily", "Save this"].map((text) => (
+                  <button
+                    key={text}
+                    onClick={() => setThumbHeadline(text.toUpperCase())}
+                    className="rounded-lg border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-700 transition hover:border-primary hover:text-primary dark:border-white/10 dark:text-gray-200"
+                  >
+                    {text}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
         );
       default:
@@ -632,58 +956,52 @@ export default function ReelCustomizePage() {
   }
 
   return (
+    
+    
     <div className="min-h-screen space-y-8 bg-gray-50 px-4 pb-28 pt-6 text-dark dark:bg-gray-950 dark:text-white md:px-8">
-      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.25em] text-primary">AI Reel</p>
-          <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-bold text-dark dark:text-white">{reelId ? `Reel ${reelId}` : "Reel"}</h1>
-            <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary dark:bg-white/10 dark:text-gray-200">
-              Customize
-            </span>
+
+        <div className="sticky top-0 left-0 right-0 z-40 -mx-4 flex flex-col gap-4 border-b border-gray-200 bg-white/95 px-4 py-4 shadow-sm backdrop-blur dark:border-white/10 dark:bg-gray-900/95 md:mx-0 md:flex-row md:items-center md:justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.25em] text-primary">AI Reel</p>
+            <div className="flex items-center gap-2">
+              <div className="flex flex-col gap-1">
+                <h1 className="text-2xl font-bold text-dark dark:text-white">{reelId ? `Reel ${reelId}` : "Reel"}</h1>
+                <div className="flex items-center gap-2">
+                  <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary dark:bg-white/10 dark:text-gray-200">
+                    Customize
+                  </span>
+                  <span className="rounded-full bg-primary/10 px-2 py-1 text-xs font-semibold uppercase text-primary dark:bg-white/10 dark:text-white">
+                    {platformLabel}
+                  </span>
+                </div>
+              </div>
+            </div>
           </div>
-          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
-            <span className="rounded-full bg-gray-900 px-2 py-1 font-semibold uppercase text-white dark:bg-white/15 dark:text-white">
-              {reel?.status || "PENDING"}
-            </span>
-            <span className="rounded-full bg-primary/10 px-2 py-1 font-semibold text-primary dark:bg-white/10 dark:text-white">
-              {reel?.platform || "Short-form"}
-            </span>
-            {reel?.tone && (
-              <span className="rounded-full bg-gray-100 px-2 py-1 font-semibold text-gray-700 dark:bg-white/5 dark:text-gray-200">
-                {reel.tone}
-              </span>
-            )}
-            <span className="rounded-full bg-gray-100 px-2 py-1 font-semibold text-gray-700 dark:bg-white/5 dark:text-gray-200">
-              {labelForLanguage(reel?.language || "en")}
-            </span>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="text-xs font-semibold text-gray-600 dark:text-gray-300">
+              <label className="flex items-center gap-1">
+                <span>Versions</span>
+                <select className="rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs font-semibold text-gray-700 outline-none transition hover:border-primary hover:text-primary dark:border-white/10 dark:bg-black dark:text-gray-200">
+                  <option>v1 (original)</option>
+                  <option>v2</option>
+                  <option>v3</option>
+                </select>
+              </label>
+            </div>
+            <Link
+              href="/ai-reels"
+              className="rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700 transition hover:border-primary hover:text-primary dark:border-white/10 dark:text-gray-200"
+            >
+              Back to AI Reels
+            </Link>
+            <button
+              onClick={() => handleExport("Export queued")}
+              className="rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-white transition hover:bg-primary/90"
+            >
+              Export / Publish
+            </button>
           </div>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="flex items-center gap-1 text-xs font-semibold text-gray-600 dark:text-gray-300">
-            {versionTags.map((tag) => (
-              <span
-                key={tag}
-                className="rounded-full border border-gray-200 px-2 py-1 text-gray-700 transition hover:border-primary hover:text-primary dark:border-white/10 dark:text-gray-200"
-              >
-                {tag}
-              </span>
-            ))}
-          </div>
-          <Link
-            href="/ai-reels"
-            className="rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700 transition hover:border-primary hover:text-primary dark:border-white/10 dark:text-gray-200"
-          >
-            Back to AI Reels
-          </Link>
-          <button
-            onClick={() => handleExport("Export queued")}
-            className="rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-white transition hover:bg-primary/90"
-          >
-            Export / Publish
-          </button>
-        </div>
-      </div>
 
       {loading ? (
         <div className="rounded-lg border border-gray-200 bg-white px-4 py-3 text-sm text-gray-700 shadow-sm dark:border-white/10 dark:bg-gray-900 dark:text-gray-200">
@@ -711,26 +1029,112 @@ export default function ReelCustomizePage() {
               {actionStatus.message}
             </div>
           )}
-          <div className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-800 dark:border-amber-300/40 dark:bg-amber-900/30 dark:text-amber-100">
-            <span className="font-semibold">AI Insight:</span>
-            <span>Shortening the hook may increase retention by ~12%.</span>
+
+          <div className="grid gap-3 md:grid-cols-[minmax(0,1.3fr)_minmax(320px,0.7fr)]">
+            <div className="space-y-3 rounded-xl border border-gray-200 bg-white p-3 shadow-sm dark:border-white/10 dark:bg-gray-900">
+              <div className="text-sm font-semibold text-dark dark:text-white">Reel strategy</div>
+              <div className="grid gap-2 md:grid-cols-2">
+                <label className="text-sm font-semibold text-gray-700 dark:text-white">
+                  Target platform
+                  <select
+                    onChange={(e) =>
+                      applyPlatformOptimizer(
+                        e.target.value === "Instagram Reels"
+                          ? "instagram"
+                          : e.target.value === "YouTube Shorts"
+                            ? "youtube"
+                            : "tiktok",
+                      )
+                    }
+                    className="mt-2 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-dark outline-none focus:border-primary dark:border-white/10 dark:bg-black dark:text-white"
+                    defaultValue="Target"
+                  >
+                    <option disabled value="Target">
+                      Target platform
+                    </option>
+                    <option>YouTube Shorts</option>
+                    <option>Instagram Reels</option>
+                    <option>TikTok</option>
+                  </select>
+                </label>
+
+                <label className="text-sm font-semibold text-gray-700 dark:text-white">
+                  AI Style
+                  <select
+                    onChange={(e) =>
+                      applyQuickMode(
+                        e.target.value === "Viral" ? "viral" : e.target.value === "Kids-safe" ? "kids" : "repurpose",
+                      )
+                    }
+                    className="mt-2 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-dark outline-none focus:border-primary dark:border-white/10 dark:bg-black dark:text-white"
+                    defaultValue="Default"
+                  >
+                    <option>Default</option>
+                    <option>Viral</option>
+                    <option>Kids-safe</option>
+                  </select>
+                </label>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  onClick={() => handleSave("Version saved")}
+                  className="rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700 transition hover:border-primary hover:text-primary dark:border-white/10 dark:text-gray-200"
+                >
+                  Save version
+                </button>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-gray-200 bg-white p-3 shadow-sm dark:border-white/10 dark:bg-gray-900">
+              <div className="flex items-center justify-between text-sm font-semibold text-dark dark:text-white">
+                <span>AI Suggestions</span>
+              </div>
+              <div className="mt-2 space-y-2 text-xs text-gray-600 dark:text-gray-300">
+                {[
+                  "Shorten hook by 1s to boost retention.",
+                  "Increase caption speed slightly.",
+                  "Add CTA in final 2s.",
+                  "Try trending audio for your region.",
+                ].map((tip) => (
+                  <div key={tip} className="flex items-start justify-between rounded-lg border border-gray-200 bg-white px-2 py-2 dark:border-white/10 dark:bg-gray-800/60">
+                    <span className="mr-2">{tip}</span>
+                    <div className="flex gap-1">
+                      <button
+                        onClick={() => handleSave(`Applied: ${tip}`)}
+                        className="rounded-md bg-primary px-2 py-1 text-[11px] font-semibold text-white"
+                      >
+                        Apply
+                      </button>
+                      <button
+                        onClick={() => setActionStatus({ type: "success", message: "Ignored suggestion" })}
+                        className="rounded-md border border-gray-200 px-2 py-1 text-[11px] font-semibold text-gray-700 hover:border-primary hover:text-primary dark:border-white/10 dark:text-gray-200"
+                      >
+                        Ignore
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
 
-          <div className="flex flex-wrap gap-2 border-b border-gray-100 pb-3 text-sm font-semibold text-gray-700 dark:border-white/5 dark:text-gray-200">
-            {tabs.map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={cn(
-                  "rounded-full px-3 py-1 transition",
-                  activeTab === tab.id
-                    ? "bg-primary/10 text-primary dark:bg-white/10 dark:text-white"
-                    : "border border-transparent text-gray-600 hover:border-gray-200 hover:text-dark dark:text-gray-400 dark:hover:border-white/10",
-                )}
-              >
-                {tab.label}
-              </button>
-            ))}
+          <div className="space-y-3 rounded-xl border border-gray-200 bg-white p-3 shadow-sm dark:border-white/10 dark:bg-gray-900">
+            <div className="flex flex-wrap items-center gap-2 border-b border-gray-100 pb-3 text-sm font-semibold text-gray-700 dark:border-white/5 dark:text-gray-200">
+              {tabs.map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={cn(
+                    "rounded-full px-3 py-1 transition",
+                    activeTab === tab.id
+                      ? "bg-primary/10 text-primary dark:bg-white/10 dark:text-white"
+                      : "border border-transparent text-gray-600 hover:border-gray-200 hover:text-dark dark:text-gray-400 dark:hover:border-white/10",
+                  )}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
           </div>
 
           <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1.1fr)_minmax(420px,1fr)]">
@@ -784,41 +1188,6 @@ export default function ReelCustomizePage() {
               </p>
               <div className="mt-2 inline-flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1 text-[11px] font-semibold text-primary dark:bg-white/10 dark:text-white">
                 Replace music instantly (no regen)
-              </div>
-              <div className="mt-2 flex items-center justify-end gap-2">
-                <button
-                  onClick={() => handleExport("Export queued")}
-                  className="rounded-lg border border-gray-200 px-3 py-1 text-xs font-semibold text-gray-700 hover:border-primary hover:text-primary dark:border-white/15 dark:text-gray-100 dark:hover:border-white/30"
-                >
-                  Export
-                </button>
-                <button
-                  onClick={() => handlePublish()}
-                  className="rounded-lg border border-gray-200 px-3 py-1 text-xs font-semibold text-gray-700 hover:border-primary hover:text-primary dark:border-white/15 dark:text-gray-100 dark:hover:border-white/30"
-                >
-                  Publish
-                </button>
-                <button
-                  onClick={() => handleSave("Saved preview")}
-                  className="rounded-lg border border-gray-200 px-3 py-1 text-xs font-semibold text-gray-700 hover:border-primary hover:text-primary dark:border-white/15 dark:text-gray-100 dark:hover:border-white/30"
-                >
-                  Save
-                </button>
-              </div>
-              <div className="mt-2 flex flex-wrap gap-2 text-xs text-gray-500 dark:text-gray-400">
-                <span className="rounded-full bg-gray-100 px-2 py-1 uppercase text-gray-700 dark:bg-white/5 dark:text-gray-200">
-                  {reel.status || "PENDING"}
-                </span>
-                {reel.platform && (
-                  <span className="rounded-full bg-gray-100 px-2 py-1 text-gray-700 dark:bg-white/5 dark:text-gray-200">
-                    {reel.platform}
-                  </span>
-                )}
-                {reel.tone && (
-                  <span className="rounded-full bg-gray-100 px-2 py-1 text-gray-700 dark:bg-white/5 dark:text-gray-200">
-                    {reel.tone}
-                  </span>
-                )}
               </div>
             </div>
           </div>
