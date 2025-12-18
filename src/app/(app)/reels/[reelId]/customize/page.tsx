@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import type { DragEvent } from "react";
 import { cn } from "@/lib/utils";
@@ -31,7 +31,6 @@ const tabs: Array<{ id: TabId; label: string }> = [
 
 export default function ReelCustomizePage() {
   const params = useParams<{ reelId?: string }>();
-  const router = useRouter();
   const reelId = useMemo(() => (params?.reelId ? params.reelId.toString() : ""), [params]);
   const [activeTab, setActiveTab] = useState<TabId>("media");
   const [loading, setLoading] = useState(true);
@@ -107,29 +106,142 @@ export default function ReelCustomizePage() {
     setCollapsedScenes({ 1: false, 2: true, 3: true });
   }, []);
 
-  useEffect(() => {
+  const loadReel = async () => {
     if (!reelId) return;
-    const load = async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const res = await fetch(`/api/reels/status?reelId=${encodeURIComponent(reelId)}`);
-        const body = await res.json().catch(() => ({}));
-        if (!res.ok) {
-          throw new Error(body?.error || "Unable to load reel.");
-        }
-        setReel(body.reel ?? null);
-      } catch (err) {
-        setError((err as Error).message || "Failed to load reel.");
-      } finally {
-        setLoading(false);
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/reels/status?reelId=${encodeURIComponent(reelId)}`, { cache: "no-store" });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(body?.error || "Unable to load reel.");
       }
-    };
-    void load();
+      setReel(body.reel ?? null);
+    } catch (err) {
+      setError((err as Error).message || "Failed to load reel.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadReel();
   }, [reelId]);
 
-  const handleSave = (message = "Changes saved") => {
-    setActionStatus({ type: "success", message });
+  const gatherSettings = () => ({
+    pacing,
+    hookEmphasis,
+    autoScenes,
+    emphasizeEmotion,
+    removeLowEngagement,
+    autoReorder,
+    targetDuration,
+    lockDuration,
+    autoTrim,
+    seamlessLoop,
+    fadeOutro,
+    previewQuality,
+    exportQuality,
+    mood,
+    musicQuery,
+    recommendedTrack,
+    voiceBalance,
+    autoDuck,
+    beatSync,
+    introWhoosh,
+    outroHit,
+    fadeInOut,
+    trendingPlatform,
+    trendingRegion,
+    activeScene,
+    sceneStyles,
+    captionText,
+    captionStyle,
+    captionMode,
+    captionSpeed,
+    highlightKeywords,
+    highlightColor,
+    emojiBoost,
+    ctaText,
+    autoCtaPlacement,
+    thumbHeadline,
+    thumbFont,
+    thumbStyle,
+    thumbFaceOutline,
+    thumbGlow,
+    thumbContrast,
+    thumbUseBrandColors,
+    thumbUseBrandFont,
+    sceneUploads,
+    sceneOrder,
+  });
+
+  type ActionKind = "save" | "export" | "publish" | "applySuggestion" | "ignoreSuggestion";
+
+  const performAction = async (action: ActionKind, options?: { message?: string; suggestion?: string }) => {
+    if (!reelId) {
+      setActionStatus({ type: "error", message: "Missing reel id." });
+      return;
+    }
+
+    const defaultMessages: Record<ActionKind, string> = {
+      save: "Changes saved",
+      export: "Export queued",
+      publish: "Publish queued",
+      applySuggestion: "Suggestion applied",
+      ignoreSuggestion: "Suggestion ignored",
+    };
+
+    const normalizedPlatform = (reel?.platform || trendingPlatform || "INSTAGRAM")
+      .toString()
+      .toUpperCase()
+      .replace(/\s+/g, "_");
+
+    setActionStatus({ type: "loading", message: options?.message || defaultMessages[action] || "Working..." });
+
+    try {
+      const res = await fetch("/api/reels/status", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          reelId,
+          action,
+          status: action === "export" ? "RENDERING" : action === "publish" ? "READY" : undefined,
+          durationSec: targetDuration,
+          style: captionStyle || reel?.style,
+          template: thumbStyle || reel?.template,
+          platform: normalizedPlatform,
+          tone: reel?.tone,
+          language: reel?.language,
+          settings: {
+            ...gatherSettings(),
+            lastAction: action,
+            suggestion: options?.suggestion,
+          },
+        }),
+      });
+
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(body?.error || "Unable to update reel.");
+      }
+
+      if (body?.reel) {
+        setReel(body.reel);
+      } else {
+        await loadReel();
+      }
+
+      const warning = body?.settingsPersisted === false ? " (metadata not stored; add custom_settings jsonb to reels)" : "";
+      const successMessage =
+        (body?.message as string | undefined) || options?.message || defaultMessages[action] || "Done";
+      setActionStatus({
+        type: "success",
+        message: `${successMessage}${warning}`,
+      });
+    } catch (err) {
+      setActionStatus({ type: "error", message: (err as Error).message || "Action failed." });
+    }
   };
 
   const handleUploadChange = (sceneIdx: number, file?: File) => {
@@ -179,14 +291,6 @@ export default function ReelCustomizePage() {
 
   const handleDragEnd = () => {
     setDraggingScene(null);
-  };
-
-  const handleExport = (message = "Export queued") => {
-    setActionStatus({ type: "success", message });
-  };
-
-  const handlePublish = (message = "Publish queued") => {
-    setActionStatus({ type: "success", message });
   };
 
   const applyPlatformOptimizer = (platform: "instagram" | "youtube" | "tiktok") => {
@@ -995,8 +1099,12 @@ export default function ReelCustomizePage() {
               Back to AI Reels
             </Link>
             <button
-              onClick={() => handleExport("Export queued")}
-              className="rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-white transition hover:bg-primary/90"
+              onClick={() => performAction("export", { message: "Export queued" })}
+              disabled={actionStatus.type === "loading"}
+              className={cn(
+                "rounded-lg px-3 py-2 text-sm font-semibold text-white transition",
+                actionStatus.type === "loading" ? "bg-primary/60" : "bg-primary hover:bg-primary/90",
+              )}
             >
               Export / Publish
             </button>
@@ -1023,7 +1131,9 @@ export default function ReelCustomizePage() {
                 "rounded-lg px-3 py-2 text-sm",
                 actionStatus.type === "error"
                   ? "bg-red-50 text-red-600 dark:bg-red-500/10 dark:text-red-400"
-                  : "bg-green-50 text-green-600 dark:bg-green-500/10 dark:text-green-300",
+                  : actionStatus.type === "loading"
+                    ? "bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-200"
+                    : "bg-green-50 text-green-600 dark:bg-green-500/10 dark:text-green-300",
               )}
             >
               {actionStatus.message}
@@ -1077,8 +1187,12 @@ export default function ReelCustomizePage() {
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <button
-                  onClick={() => handleSave("Version saved")}
-                  className="rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700 transition hover:border-primary hover:text-primary dark:border-white/10 dark:text-gray-200"
+                  onClick={() => performAction("save", { message: "Version saved" })}
+                  disabled={actionStatus.type === "loading"}
+                  className={cn(
+                    "rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700 transition hover:border-primary hover:text-primary dark:border-white/10 dark:text-gray-200",
+                    actionStatus.type === "loading" && "opacity-70",
+                  )}
                 >
                   Save version
                 </button>
@@ -1100,13 +1214,13 @@ export default function ReelCustomizePage() {
                     <span className="mr-2">{tip}</span>
                     <div className="flex gap-1">
                       <button
-                        onClick={() => handleSave(`Applied: ${tip}`)}
+                        onClick={() => performAction("applySuggestion", { message: `Applied: ${tip}`, suggestion: tip })}
                         className="rounded-md bg-primary px-2 py-1 text-[11px] font-semibold text-white"
                       >
                         Apply
                       </button>
                       <button
-                        onClick={() => setActionStatus({ type: "success", message: "Ignored suggestion" })}
+                        onClick={() => performAction("ignoreSuggestion", { message: "Ignored suggestion", suggestion: tip })}
                         className="rounded-md border border-gray-200 px-2 py-1 text-[11px] font-semibold text-gray-700 hover:border-primary hover:text-primary dark:border-white/10 dark:text-gray-200"
                       >
                         Ignore
@@ -1208,14 +1322,22 @@ export default function ReelCustomizePage() {
           <div className="text-xs text-gray-500 dark:text-gray-400">Sticky actions follow you—no scrolling back up.</div>
           <div className="flex w-full flex-wrap gap-2 md:w-auto">
             <button
-              onClick={() => handleSave()}
-              className="flex-1 rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-800 transition hover:border-primary hover:text-primary dark:border-white/10 dark:bg-white/5 dark:text-white dark:hover:bg-white/10 md:flex-none"
+              onClick={() => performAction("save", { message: "Changes saved" })}
+              disabled={actionStatus.type === "loading"}
+              className={cn(
+                "flex-1 rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-800 transition hover:border-primary hover:text-primary dark:border-white/10 dark:bg-white/5 dark:text-white dark:hover:bg-white/10 md:flex-none",
+                actionStatus.type === "loading" && "opacity-70",
+              )}
             >
               Save changes
             </button>
             <button
-              onClick={() => handleExport("Next step: export queued")}
-              className="flex-1 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white transition hover:bg-primary/90 md:flex-none"
+              onClick={() => performAction("export", { message: "Next step: export queued" })}
+              disabled={actionStatus.type === "loading"}
+              className={cn(
+                "flex-1 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white transition hover:bg-primary/90 md:flex-none",
+                actionStatus.type === "loading" && "opacity-70",
+              )}
             >
               Next: Export
             </button>

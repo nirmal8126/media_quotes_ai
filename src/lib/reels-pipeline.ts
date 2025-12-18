@@ -441,6 +441,18 @@ function defaultAssets(jobId: string) {
   };
 }
 
+function formatRendererError(error: unknown): string {
+  if (error instanceof Error) {
+    const code = typeof (error as any)?.cause?.code === 'string' ? (error as any).cause.code : null;
+    return code ? `${error.message} (${code})` : error.message;
+  }
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return String(error);
+  }
+}
+
 async function triggerRenderer(options: {
   scriptText: string;
   language?: string | null;
@@ -462,6 +474,7 @@ async function triggerRenderer(options: {
 }) {
   const jobId = `renderer_${Date.now()}`;
   let audioUrl: string | null = null;
+  let renderError: string | null = null;
 
   // Attempt TTS via ElevenLabs
   if (options.withVoiceover !== false) {
@@ -524,8 +537,9 @@ async function triggerRenderer(options: {
         };
       }
     } catch (err) {
+      renderError = formatRendererError(err);
       // eslint-disable-next-line no-console
-      console.error('Renderer call failed, falling back to defaults:', err);
+      console.warn('Renderer call failed, falling back to defaults:', renderError);
     }
   }
 
@@ -537,7 +551,7 @@ async function triggerRenderer(options: {
     videoUrl: assets.videoUrl,
     thumbnailUrl: assets.thumbnailUrl,
     audioUrl,
-    error: null as string | null,
+    error: renderError,
   };
 }
 

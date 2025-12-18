@@ -44,6 +44,7 @@ create table if not exists public.reels (
   video_url text,
   thumbnail_url text,
   error_message text,
+  custom_settings jsonb,
   created_at timestamptz default now(),
   updated_at timestamptz default now()
 );
