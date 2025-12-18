@@ -26,13 +26,28 @@ export function UserInfo() {
   useEffect(() => {
     const fetchUser = async () => {
       try {
-        const res = await fetch("/api/auth/session", {
+        // Try profile endpoint first to pick up latest metadata
+        const res = await fetch("/api/auth/profile", {
           credentials: "include",
           cache: "no-store",
         });
         const body = await res.json().catch(() => ({}));
-        const supabaseUser = body?.user;
+        if (res.ok && body?.profile) {
+          setUser({
+            name: body.profile.fullName || body.profile.email || "User",
+            email: body.profile.email || "Account",
+            img: body.profile.avatarUrl || "/images/user/user-03.png",
+          });
+          return;
+        }
 
+        // Fallback to session
+        const sessionRes = await fetch("/api/auth/session", {
+          credentials: "include",
+          cache: "no-store",
+        });
+        const sessionBody = await sessionRes.json().catch(() => ({}));
+        const supabaseUser = sessionBody?.user;
         if (supabaseUser) {
           const fullName =
             supabaseUser.user_metadata?.full_name ||
@@ -49,7 +64,7 @@ export function UserInfo() {
           });
         }
       } catch (error) {
-        console.error("Unable to load session", error);
+        console.error("Unable to load user info", error);
       } finally {
         setLoading(false);
       }
@@ -151,7 +166,7 @@ export function UserInfo() {
           </Link>
 
           <Link
-            href={"/pages/settings"}
+            href={"/settings"}
             onClick={() => setIsOpen(false)}
             className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-[9px] hover:bg-gray-2 hover:text-dark dark:hover:bg-dark-3 dark:hover:text-white"
           >
