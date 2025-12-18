@@ -115,42 +115,93 @@ export async function generateIdeaList(tone: string, platform: string, provider?
   return ideas;
 }
 
-export async function generateScriptAssets(tone: string, platform: string, provider?: LlmProvider) {
-  const prompt = `Write a 45-60 second ${tone} ${platform} reel script with Hook, Intro, Value, and CTA sections. Also list 3 shot directions (Camera, Movement) after the script. Return a JSON object: {"script":string, "shots":string[], "hook":string}.`;
+function cleanJsonLike(input: string) {
+  return input
+    .replace(/```json/gi, '')
+    .replace(/```/g, '')
+    .replace(/^\s*json\s*/i, '')
+    .trim();
+}
+
+function tryParseJson(input: string): any | null {
+  try {
+    return JSON.parse(input);
+  } catch {
+    return null;
+  }
+}
+
+function normalizeGeneratedField(text: string, key: 'script' | 'caption') {
+  if (!text) return '';
+  let cleaned = cleanJsonLike(text);
+  // strip leading key labels
+  cleaned = cleaned.replace(new RegExp(`^\\s*["']?${key}["']?\\s*:\\s*`, 'i'), '');
+  // remove enclosing braces if simple
+  if (/^\{[\s\S]*\}$/.test(cleaned)) {
+    cleaned = cleaned.replace(/^\{|\}$/g, '');
+  }
+  cleaned = cleaned.replace(/["{}]/g, ' ').replace(/\s+/g, ' ').trim();
+  return cleaned;
+}
+
+export async function generateScriptAssets(
+  tone: string,
+  platform: string,
+  topic?: string,
+  hookHint?: string,
+  provider?: LlmProvider,
+) {
+  const prompt = [
+    `Write a short ${tone} script for a ${platform} reel.`,
+    topic ? `Topic: ${topic}.` : "",
+    hookHint ? `Use this hook or angle: ${hookHint}.` : "",
+    `Return plain text only (no JSON). Format as:`,
+    `Hook: <one engaging line>\nIntro: <1-2 lines>\nValue: <2-3 lines>\nCTA: <1 line>`,
+  ]
+    .filter(Boolean)
+    .join(" ");
   const raw = await generateCompletion(prompt, { temperature: 0.65, maxTokens: 450, provider });
 
-  let script = raw;
-  let shotBreakdown: string[] = [];
-  let hook = raw.split('\n')[0]?.trim() ?? '';
+  const cleaned = cleanJsonLike(raw);
+  const parsed = tryParseJson(cleaned);
 
-  try {
-    const parsed = JSON.parse(raw);
-    script = parsed.script ?? script;
-    shotBreakdown = Array.isArray(parsed.shots) ? parsed.shots : [];
-    hook = parsed.hook ?? hook;
-  } catch {
-    // fallback: split lines
-    shotBreakdown = raw.split(/\n|\.|!|\?/).filter((line) => line.trim().length > 3).slice(0, 3);
+  let script = normalizeGeneratedField(parsed?.script ?? cleaned, 'script');
+  let shotBreakdown: string[] = Array.isArray(parsed?.shots) ? parsed!.shots : [];
+  let hook = parsed?.hook ?? hookHint ?? cleaned.split('\n')[0]?.trim() ?? '';
+
+  if (!shotBreakdown.length) {
+    shotBreakdown = cleaned.split(/\n|\.|!|\?/).filter((line) => line.trim().length > 3).slice(0, 3);
   }
 
   return { script: script.trim(), shotBreakdown, hook: hook.trim() };
 }
 
-export async function generateCaptionContent(tone: string, platform: string, provider?: LlmProvider) {
-  const prompt = `Generate a single ${platform} caption in a ${tone} tone that teases the video, invites engagement, and includes a clear CTA. Return JSON {"caption":string, "callToAction":string}.`;
+export async function generateCaptionContent(
+  tone: string,
+  platform: string,
+  topic?: string,
+  hookHint?: string,
+  provider?: LlmProvider,
+) {
+  const prompt = [
+    `Generate a ${tone} caption for a ${platform} reel.`,
+    topic ? `Topic: ${topic}.` : "",
+    hookHint ? `Hook: ${hookHint}.` : "",
+    `Return plain text (no JSON). Include a short CTA at the end.`,
+  ]
+    .filter(Boolean)
+    .join(" ");
   const raw = await generateCompletion(prompt, { temperature: 0.7, maxTokens: 180, provider });
 
-  let caption = raw;
-  let callToAction = 'Drop a comment.';
+  const cleaned = cleanJsonLike(raw);
+  const parsed = tryParseJson(cleaned);
 
-  try {
-    const parsed = JSON.parse(raw);
-    caption = parsed.caption ?? caption;
-    callToAction = parsed.callToAction ?? callToAction;
-  } catch {
-    // try splitting
+  let caption = normalizeGeneratedField(parsed?.caption ?? cleaned, 'caption');
+  let callToAction = parsed?.callToAction ?? 'Drop a comment.';
+
+  if (!parsed) {
     const sentences = caption.split(/[.!?]\s+/);
-    callToAction = sentences.pop() ?? callToAction;
+    callToAction = sentences.pop()?.trim() || callToAction;
   }
 
   return { caption: caption.trim(), callToAction: callToAction.trim() };

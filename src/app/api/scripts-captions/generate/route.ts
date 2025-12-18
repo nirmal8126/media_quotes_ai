@@ -5,6 +5,7 @@ import { pickProvider } from "@/lib/llm-provider";
 import { defaultProvider } from "@/lib/openai";
 import { normalizeScriptCaptionRequest } from "@/lib/generation-normalize";
 import type { ScriptCaptionRequest } from "@/types/generation";
+import { supabaseAdmin } from "@/lib/supabase";
 
 type Payload = {
   topic?: string;
@@ -18,6 +19,8 @@ type Payload = {
   hook?: string;
   variations?: number;
   provider?: "openai" | "gemini";
+  script?: string;
+  caption?: string;
 };
 
 export async function POST(request: Request) {
@@ -47,10 +50,16 @@ export async function POST(request: Request) {
   const hook = (body.hook ?? "").trim() || undefined;
   const channelId = (body.channelId ?? body.channel_id ?? "").trim() || null;
   const provider = pickProvider({ bodyProvider: body.provider, user, fallback: defaultProvider });
+  const userScript = typeof body.script === "string" ? body.script.trim() : "";
+  const userCaption = typeof body.caption === "string" ? body.caption.trim() : "";
 
   try {
-    const scriptResult = await generateScriptAssets(normalized.tone, normalized.platform, provider);
-    const captionResult = await generateCaptionContent(normalized.tone, normalized.platform, provider);
+    const scriptResult = userScript
+      ? { script: userScript, shotBreakdown: [], hook: hook ?? "" }
+      : await generateScriptAssets(normalized.tone, normalized.platform, normalized.description, hook, provider);
+    const captionResult = userCaption
+      ? { caption: userCaption, callToAction: "" }
+      : await generateCaptionContent(normalized.tone, normalized.platform, normalized.description, hook, provider);
     const hashtags = await generateHashtagList(normalized.tone, normalized.platform, provider);
 
     const saved = await storeGeneratedReel({
@@ -66,12 +75,33 @@ export async function POST(request: Request) {
       thumbnailPrompt: normalized.description,
     });
 
+    let recordId = saved?.id ?? null;
+
+    // Fallback: persist to scripts table if generated_reels is missing
+    if (!recordId) {
+      const { data, error } = await supabaseAdmin
+        .from("scripts")
+        .insert({
+          user_id: user.id,
+          platform: normalized.platform,
+          tone: normalized.tone,
+          input_prompt: normalized.description,
+          text: scriptResult.script,
+          created_at: new Date().toISOString(),
+        })
+        .select("id")
+        .maybeSingle();
+      if (!error) {
+        recordId = data?.id ?? null;
+      }
+    }
+
     const response = NextResponse.json({
       message: "Generated",
       normalized,
       variations: [
         {
-          id: saved?.id ?? `local-${Date.now()}`,
+          id: recordId ?? `local-${Date.now()}`,
           topic: normalized.description,
           tone: normalized.tone,
           platform: normalized.platform,

@@ -511,7 +511,15 @@ export default function QuotesPage() {
           ? "bg-amber-100 text-amber-700 border-amber-200"
           : "bg-green-100 text-green-700 border-green-200";
     return (
-      <span className={cn("inline-flex items-center gap-2 rounded-md border px-2.5 py-1 text-[11px] font-semibold uppercase", base)}>
+      <span
+        className={cn(
+          "inline-flex items-center gap-2 rounded-full px-3 py-1 text-[11px] font-semibold uppercase shadow-sm",
+          base,
+          report.status === "risk" && "border border-red-200",
+          report.status === "warn" && "border border-amber-200",
+          report.status === "safe" && "border border-green-200",
+        )}
+      >
         <span>{report.status}</span>
         <span className="text-[10px] font-bold opacity-80">{report.score ?? 0}/100</span>
       </span>
@@ -1214,27 +1222,25 @@ export default function QuotesPage() {
                   pagedRows.map((row) => (
                     <tr key={row.id} className="hover:bg-gray-1/60 align-top dark:hover:bg-dark-3/70">
                       <td className="px-4 py-3 text-sm text-gray-7 dark:text-dark-7">
-                        <div className="flex items-center gap-2">
-                          {inlineIntegrityBadge(integrityCache[row.id]) || (
-                            <span className="text-[11px] font-semibold uppercase text-gray-5">Not checked</span>
-                          )}
-                        </div>
-                        <div className="mt-1 line-clamp-2 font-medium text-dark dark:text-dark-8">
+                        <div className="line-clamp-2 font-medium text-dark dark:text-dark-8">
                           {extractQuoteList(row)[0] || "—"}
                         </div>
-                        <div className="mt-2 flex flex-wrap gap-2 text-[11px] font-semibold uppercase">
-                          <span className="rounded-full bg-primary/10 px-2.5 py-1 text-primary dark:bg-primary/20">
+                        <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] font-semibold uppercase">
+                          <span className="rounded-full bg-primary/10 px-3 py-1 text-primary dark:bg-primary/20">
                             {row.persona || "Persona —"}
                           </span>
-                          <span className="rounded-full bg-gray-2 px-2.5 py-1 text-gray-7 dark:bg-dark-3 dark:text-dark-8">
+                          <span className="rounded-full bg-gray-2 px-3 py-1 text-gray-7 dark:bg-dark-3 dark:text-dark-8">
                             {labelForLanguage(row.language) || "Language —"}
                           </span>
-                          <span className="rounded-full bg-gray-2 px-2.5 py-1 text-gray-7 dark:bg-dark-3 dark:text-dark-8">
+                          <span className="rounded-full bg-gray-2 px-3 py-1 text-gray-7 dark:bg-dark-3 dark:text-dark-8">
                             {row.style || "Style —"}
                           </span>
-                          <span className="rounded-full bg-gray-2 px-2.5 py-1 text-gray-7 dark:bg-dark-3 dark:text-dark-8">
+                          <span className="rounded-full bg-gray-2 px-3 py-1 text-gray-7 dark:bg-dark-3 dark:text-dark-8">
                             {row.quote_type === "image" ? "Image" : "Text"}
                           </span>
+                          {inlineIntegrityBadge(integrityCache[row.id]) || (
+                            <span className="rounded-full bg-gray-2 px-3 py-1 text-gray-5">Not checked</span>
+                          )}
                         </div>
                       </td>
                       <td className="px-4 py-3 font-medium text-dark dark:text-dark-8">{row.topic || "—"}</td>

@@ -61,8 +61,20 @@ export async function PATCH(request: Request) {
 
   if (regenerate) {
     try {
-      const scriptResult = await generateScriptAssets(tone || "informative", platform || "instagram", provider);
-      const captionResult = await generateCaptionContent(tone || "informative", platform || "instagram", provider);
+      const scriptResult = await generateScriptAssets(
+        tone || "informative",
+        platform || "instagram",
+        topic,
+        hook,
+        provider,
+      );
+      const captionResult = await generateCaptionContent(
+        tone || "informative",
+        platform || "instagram",
+        topic,
+        hook,
+        provider,
+      );
       const hashtags = await generateHashtagList(tone || "informative", platform || "instagram", provider);
       updates.script = scriptResult.script;
       updates.hook = hook || scriptResult.hook || null;
@@ -86,6 +98,9 @@ export async function PATCH(request: Request) {
     return response;
   }
 
+  let targetItem: any = null;
+  let updateError: string | null = null;
+
   const { data, error } = await supabaseAdmin
     .from("generated_reels")
     .update(updates)
@@ -94,19 +109,51 @@ export async function PATCH(request: Request) {
     .select("id, tone, platform, hook, script, caption, hashtags, thumbnail_prompt, created_at")
     .maybeSingle();
 
-  if (error) {
-    console.error("Failed to update script/caption", error);
+  if (error || !data) {
+    // Fallback to scripts table if generated_reels is missing
+    const scriptUpdates: Record<string, unknown> = {};
+    if (updates.tone) scriptUpdates.tone = updates.tone;
+    if (updates.platform) scriptUpdates.platform = updates.platform;
+    if (updates.script) scriptUpdates.text = updates.script;
+    if (topic) scriptUpdates.input_prompt = topic;
+    if (Object.keys(scriptUpdates).length > 0) {
+      const { data: scriptRow, error: scriptErr } = await supabaseAdmin
+        .from("scripts")
+        .update({ ...scriptUpdates, updated_at: new Date().toISOString() })
+        .eq("id", id)
+        .eq("user_id", user.id)
+        .select("id, tone, platform, input_prompt, text, created_at")
+        .maybeSingle();
+      if (scriptErr) {
+        updateError = scriptErr.message;
+      } else {
+        targetItem = {
+          id: scriptRow?.id ?? id,
+          tone: scriptRow?.tone ?? tone,
+          platform: scriptRow?.platform ?? platform,
+          hook,
+          script: scriptRow?.text ?? updates.script ?? "",
+          caption: updates.caption ?? "",
+          hashtags: updates.hashtags ?? [],
+          topic: scriptRow?.input_prompt ?? topic,
+          created_at: scriptRow?.created_at ?? new Date().toISOString(),
+        };
+      }
+    } else {
+      updateError = error?.message || "Unable to update script/caption.";
+    }
+  } else {
+    targetItem = { ...data, topic: data?.thumbnail_prompt ?? topic };
+  }
+
+  if (updateError) {
+    console.error("Failed to update script/caption", updateError);
     const response = NextResponse.json({ error: "Unable to update script/caption." }, { status: 500 });
     applyCookies(response);
     return response;
   }
 
-  const response = NextResponse.json({
-    item: {
-      ...data,
-      topic: data?.thumbnail_prompt ?? "",
-    },
-  });
+  const response = NextResponse.json({ item: targetItem });
   applyCookies(response);
   return response;
 }

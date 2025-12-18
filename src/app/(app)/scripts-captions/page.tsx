@@ -76,6 +76,50 @@ const defaultForm = {
 
 const initialIntegrity: IntegrityState = { report: null, status: "idle" };
 
+const languageOptions = [
+  { code: "en", label: "English" },
+  { code: "hi", label: "Hindi" },
+  { code: "pa", label: "Punjabi" },
+  { code: "bn", label: "Bengali" },
+  { code: "te", label: "Telugu" },
+  { code: "ta", label: "Tamil" },
+  { code: "mr", label: "Marathi" },
+  { code: "gu", label: "Gujarati" },
+  { code: "kn", label: "Kannada" },
+  { code: "ml", label: "Malayalam" },
+  { code: "or", label: "Odia" },
+  { code: "as", label: "Assamese" },
+  { code: "ur", label: "Urdu" },
+  { code: "mai", label: "Maithili" },
+  { code: "sat", label: "Santali" },
+  { code: "ks", label: "Kashmiri" },
+  { code: "ne", label: "Nepali" },
+  { code: "sa", label: "Sanskrit" },
+  { code: "sd", label: "Sindhi" },
+  { code: "kok", label: "Konkani" },
+  { code: "mni", label: "Manipuri" },
+  { code: "brx", label: "Bodo" },
+  { code: "doi", label: "Dogri" },
+];
+
+function resolveLanguageCode(input: string) {
+  const normalized = input.trim().toLowerCase();
+  if (!normalized || normalized === "choose a language...") return "en";
+  const direct = languageOptions.find((lang) => lang.code.toLowerCase() === normalized);
+  if (direct) return direct.code;
+  const byLabel = languageOptions.find((lang) => lang.label.toLowerCase() === normalized);
+  return byLabel?.code ?? "en";
+}
+
+function labelForLanguage(input?: string | null) {
+  if (!input) return "";
+  const normalized = input.trim().toLowerCase();
+  const found = languageOptions.find(
+    (lang) => lang.code.toLowerCase() === normalized || lang.label.toLowerCase() === normalized,
+  );
+  return found?.label ?? input;
+}
+
 export default function ScriptsCaptionsPage() {
   const [rows, setRows] = useState<ScriptRow[]>([]);
   const [integrityCache, setIntegrityCache] = useState<Record<string, IntegrityReport | null>>({});
@@ -101,6 +145,8 @@ export default function ScriptsCaptionsPage() {
   const topicInputRef = useRef<HTMLInputElement | null>(null);
   const [integrityState, setIntegrityState] = useState<IntegrityState>(initialIntegrity);
   const [integrityGate, setIntegrityGate] = useState<{ open: boolean; pending?: () => void }>({ open: false });
+  const [languageQuery, setLanguageQuery] = useState("");
+  const [showLanguageList, setShowLanguageList] = useState(false);
 
   useEffect(() => {
     const fetchRows = async () => {
@@ -152,6 +198,21 @@ export default function ScriptsCaptionsPage() {
       1500
     );
   };
+
+  const filteredLanguages = useMemo(() => {
+    if (!showLanguageList) return [];
+    const term = (languageQuery || "").trim().toLowerCase();
+    if (!term || term === "choose a language...") return languageOptions;
+
+    const exactMatch = languageOptions.some(
+      (lang) => lang.label.toLowerCase() === term || lang.code.toLowerCase() === term,
+    );
+    if (exactMatch) return languageOptions;
+
+    return languageOptions.filter(
+      (lang) => lang.label.toLowerCase().includes(term) || lang.code.toLowerCase().includes(term),
+    );
+  }, [languageQuery, showLanguageList]);
 
   const integrityBlocking = integrityState.report && (integrityState.report.status === "warn" || integrityState.report.status === "risk");
 
@@ -219,6 +280,7 @@ export default function ScriptsCaptionsPage() {
         row.hook,
         row.script,
         row.caption,
+        row.language,
       ]
         .filter(Boolean)
         .join(" ")
@@ -283,6 +345,34 @@ export default function ScriptsCaptionsPage() {
     }
   }, [activeIntegrityRow]);
 
+  const inlineIntegrityBadge = (report: IntegrityReport | null | undefined) => {
+    if (!report) return null;
+    const base =
+      report.status === "risk"
+        ? "bg-red-100 text-red-700 border-red-200 border"
+        : report.status === "warn"
+          ? "bg-amber-100 text-amber-700 border-amber-200 border"
+          : "bg-green-100 text-green-700 border-green-200 border";
+    return (
+      <span
+        className={cn(
+          "inline-flex items-center gap-2 rounded-full px-3 py-1 text-[11px] font-semibold uppercase shadow-sm",
+          base,
+        )}
+      >
+        <span>{report.status}</span>
+        <span className="text-[10px] font-bold opacity-80">{report.score ?? 0}/100</span>
+      </span>
+    );
+  };
+
+  const pageCount = Math.max(1, Math.ceil(filteredRows.length / pageSize));
+  const currentPage = Math.min(page, pageCount);
+  const pagedRows = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return filteredRows.slice(start, start + pageSize);
+  }, [filteredRows, currentPage, pageSize]);
+
   // Background check for visible rows (first page slice)
   useEffect(() => {
     const rowsToCheck = pagedRows.slice(0, 5);
@@ -299,29 +389,6 @@ export default function ScriptsCaptionsPage() {
     });
   }, [pagedRows, integrityCache, computeIntegrity]);
 
-  const inlineIntegrityBadge = (report: IntegrityReport | null | undefined) => {
-    if (!report) return null;
-    const base =
-      report.status === "risk"
-        ? "bg-red-100 text-red-700 border-red-200"
-        : report.status === "warn"
-          ? "bg-amber-100 text-amber-700 border-amber-200"
-          : "bg-green-100 text-green-700 border-green-200";
-    return (
-      <span className={cn("inline-flex items-center gap-2 rounded-md border px-2.5 py-1 text-[11px] font-semibold uppercase", base)}>
-        <span>{report.status}</span>
-        <span className="text-[10px] font-bold opacity-80">{report.score ?? 0}/100</span>
-      </span>
-    );
-  };
-
-  const pageCount = Math.max(1, Math.ceil(filteredRows.length / pageSize));
-  const currentPage = Math.min(page, pageCount);
-  const pagedRows = useMemo(() => {
-    const start = (currentPage - 1) * pageSize;
-    return filteredRows.slice(start, start + pageSize);
-  }, [filteredRows, currentPage, pageSize]);
-
   useEffect(() => {
     setPage(1);
   }, [pageSize, search, rows.length]);
@@ -333,6 +400,7 @@ export default function ScriptsCaptionsPage() {
       setSubmitStatus({ type: "error", message: "Description is required." });
       return;
     }
+    const resolvedLanguage = resolveLanguageCode(languageQuery || form.language || "");
     setSubmitStatus({
       type: "loading",
       message: editRow ? "Saving..." : "Generating...",
@@ -354,7 +422,7 @@ export default function ScriptsCaptionsPage() {
             length: form.length,
             contentType: form.contentType,
             persona: form.persona || null,
-            language: form.language || null,
+            language: resolvedLanguage || null,
             regenerate: false,
           }),
         });
@@ -387,9 +455,11 @@ export default function ScriptsCaptionsPage() {
             tone: form.tone,
             length: form.length,
             persona: form.persona || null,
-            language: form.language || null,
+            language: resolvedLanguage || null,
             hook: form.hook || null,
             variations: 3,
+            script: form.script || undefined,
+            caption: form.caption || undefined,
           }),
         });
         const body = await res.json().catch(() => ({}));
@@ -511,14 +581,15 @@ export default function ScriptsCaptionsPage() {
           </div>
           <button
             className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-primary/90"
-            onClick={() => {
-              setForm({ ...defaultForm });
-              setEditRow(null);
-              setShowModal(true);
-              setSubmitStatus({ type: "idle" });
-            }}
-          >
-            + Generate Script
+          onClick={() => {
+            setForm({ ...defaultForm });
+            setEditRow(null);
+            setLanguageQuery("");
+            setShowModal(true);
+            setSubmitStatus({ type: "idle" });
+          }}
+        >
+          + Generate Script
           </button>
         </div>
 
@@ -544,99 +615,7 @@ export default function ScriptsCaptionsPage() {
           )}
         </div>
 
-        {generatedRows.length > 0 && (
-          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {generatedRows.map((row) => (
-              <div
-                key={row.id}
-                className="rounded-xl border border-gray-3 bg-white p-4 shadow-card-2 dark:border-stroke-dark dark:bg-dark-2"
-              >
-                <div className="mb-2 flex items-center justify-between text-xs font-semibold uppercase text-primary">
-                  <span>Variation {row.variationIndex ?? 1}</span>
-                  <span className="rounded-full bg-gray-1 px-2 py-1 text-[10px] text-gray-6 dark:bg-dark-3 dark:text-dark-6">
-                    New
-                  </span>
-                </div>
-                <div className="flex items-center gap-2 text-[11px]">
-                  {inlineIntegrityBadge(integrityCache[row.id]) || (
-                    <span className="text-[11px] font-semibold uppercase text-gray-5">Not checked</span>
-                  )}
-                </div>
-                <p className="mt-1 text-sm font-semibold text-dark dark:text-dark-8 line-clamp-3">
-                  {row.script || row.caption || "—"}
-                </p>
-                <div className="mt-2 flex flex-wrap gap-2 text-[11px] font-semibold uppercase text-gray-7 dark:text-dark-6">
-                  <span className="rounded-full bg-gray-2 px-2.5 py-1 dark:bg-dark-3">
-                    {row.tone || "tone"}
-                  </span>
-                  <span className="rounded-full bg-gray-2 px-2.5 py-1 dark:bg-dark-3">
-                    {row.platform || "platform"}
-                  </span>
-                </div>
-                <div className="mt-3 flex flex-wrap gap-2 text-xs font-semibold">
-                  <button
-                    className="rounded-md border border-gray-3 px-3 py-1 text-gray-7 transition hover:bg-gray-1 dark:border-stroke-dark dark:text-dark-7 dark:hover:bg-dark-3"
-                    onClick={() => setDetailRow(row)}
-                  >
-                    Detail
-                  </button>
-                  {row.script && (
-                    <button
-                      className="rounded-md border border-gray-3 px-3 py-1 text-gray-7 transition hover:bg-gray-1 dark:border-stroke-dark dark:text-dark-7 dark:hover:bg-dark-3"
-                      onClick={() =>
-                        copyToClipboard(row.script || "", "Script")
-                      }
-                    >
-                      Copy Script
-                    </button>
-                  )}
-                  {row.caption && (
-                    <button
-                      className="rounded-md border border-gray-3 px-3 py-1 text-gray-7 transition hover:bg-gray-1 dark:border-stroke-dark dark:text-dark-7 dark:hover:bg-dark-3"
-                      onClick={() =>
-                        copyToClipboard(row.caption || "", "Caption")
-                      }
-                    >
-                      Copy Caption
-                    </button>
-                  )}
-                  <button
-                    className="rounded-md border border-gray-3 px-3 py-1 text-gray-7 transition hover:bg-gray-1 dark:border-stroke-dark dark:text-dark-7 dark:hover:bg-dark-3"
-                    onClick={() => {
-                      setEditRow(row);
-                      const text = [row.hook, row.script, row.caption].filter(Boolean).join(" ");
-                      if (text) void computeIntegrity(text, row);
-                      setForm({
-                        description: row.topic || "",
-                        contentType: form.contentType,
-                        platform:
-                          (row.platform as Platform) || "instagram_reels",
-                        tone: (row.tone as ToneStyle) || "informative",
-                        length: form.length,
-                        persona: "",
-                        language: "",
-                        hook: row.hook || "",
-                        script: row.script || "",
-                        caption: row.caption || "",
-                      });
-                      setShowModal(true);
-                      setSubmitStatus({ type: "idle" });
-                    }}
-                  >
-                    Use
-                  </button>
-                  <button
-                    className="rounded-md border border-gray-3 px-3 py-1 text-gray-7 transition hover:bg-gray-1 disabled:opacity-60 dark:border-stroke-dark dark:text-dark-7 dark:hover:bg-dark-3"
-                    onClick={() => addToPlanner(row)}
-                    disabled={plannerBusyId === row.id}
-                  >
-                    {plannerBusyId === row.id ? "Adding..." : "Add to Planner"}
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+        {/* Removed variation cards to reduce duplication; the table below shows latest items */}
       </div>
 
       <div className="rounded-2xl border border-gray-3 bg-white p-4 shadow-card-2 dark:border-stroke-dark dark:bg-dark-2">
@@ -689,7 +668,6 @@ export default function ScriptsCaptionsPage() {
               <thead className="bg-gray-1 text-xs font-semibold uppercase text-gray-6 dark:bg-dark-3 dark:text-dark-6">
                 <tr>
                   <th className="px-4 py-3">Script</th>
-                  <th className="px-4 py-3">Topic</th>
                   <th className="px-4 py-3">Tone</th>
                   <th className="px-4 py-3">Platform</th>
                   <th className="px-4 py-3">Created</th>
@@ -699,70 +677,51 @@ export default function ScriptsCaptionsPage() {
               <tbody className="divide-y divide-gray-3 dark:divide-stroke-dark">
                 {loading ? (
                   <tr>
-                    <td
-                      colSpan={6}
-                      className="px-4 py-10 text-center text-gray-6"
-                    >
+                    <td colSpan={5} className="px-4 py-10 text-center text-gray-6">
                       Loading...
                     </td>
                   </tr>
                 ) : error ? (
                   <tr>
-                    <td
-                      colSpan={6}
-                      className="px-4 py-10 text-center text-red-600"
-                    >
+                    <td colSpan={5} className="px-4 py-10 text-center text-red-600">
                       {error}
                     </td>
                   </tr>
                 ) : pagedRows.length === 0 ? (
                   <tr>
-                    <td
-                      colSpan={6}
-                      className="px-4 py-10 text-center text-gray-6"
-                    >
+                    <td colSpan={5} className="px-4 py-10 text-center text-gray-6">
                       No scripts/captions found for your search.
                     </td>
                   </tr>
                 ) : (
                   pagedRows.map((row) => (
-                    <tr
-                      key={row.id}
-                      className="align-top hover:bg-gray-1/60 dark:hover:bg-dark-3"
-                    >
-                      <td className="px-4 py-3 text-sm text-gray-7 dark:text-dark-7">
-                        <div className="flex items-center gap-2">
-                          {inlineIntegrityBadge(integrityCache[row.id]) || (
-                            <span className="text-[11px] font-semibold uppercase text-gray-5">Not checked</span>
-                          )}
+                    <tr key={row.id} className="align-top hover:bg-gray-1/60 dark:hover:bg-dark-3">
+                      <td className="px-4 py-3 text-sm text-gray-7 dark:text-dark-7 align-middle">
+                        <div className="line-clamp-2 font-medium text-dark dark:text-dark-8">
+                          {row.script && row.script.length > 70 ? `${row.script.slice(0, 70)}…` : row.script || "—"}
                         </div>
-                        <div className="mt-1 line-clamp-2 font-medium text-dark dark:text-dark-8">
-                          {row.script || "—"}
-                        </div>
-                        <div className="mt-2 flex flex-wrap gap-2 text-[11px] font-semibold uppercase">
-                          <span className="rounded-full bg-primary/10 px-2.5 py-1 text-primary">
+                        <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] font-semibold uppercase">
+                          <span className="rounded-full bg-primary/10 px-3 py-1 text-primary">
                             {row.hook ? "Hook" : "No hook"}
                           </span>
-                          <span className="rounded-full bg-gray-2 px-2.5 py-1 text-gray-7 dark:bg-dark-3 dark:text-dark-7">
+                          <span className="rounded-full bg-gray-2 px-3 py-1 text-gray-7 dark:bg-dark-3 dark:text-dark-7">
                             {row.caption ? "Has caption" : "No caption"}
                           </span>
-                          <span className="rounded-full bg-gray-2 px-2.5 py-1 text-gray-7 dark:bg-dark-3 dark:text-dark-7">
-                            {row.hashtags && row.hashtags.length
-                              ? `${row.hashtags.length} tags`
-                              : "0 tags"}
+                          <span className="rounded-full bg-gray-2 px-3 py-1 text-gray-7 dark:bg-dark-3 dark:text-dark-7">
+                            {row.hashtags && row.hashtags.length ? `${row.hashtags.length} tags` : "0 tags"}
                           </span>
+                          {inlineIntegrityBadge(integrityCache[row.id]) || (
+                            <span className="rounded-full bg-gray-2 px-3 py-1 text-gray-5 dark:bg-dark-3">Not checked</span>
+                          )}
                         </div>
                       </td>
-                      <td className="px-4 py-3 font-medium text-dark dark:text-dark-8">
-                        {row.topic || "Untitled"}
-                      </td>
-                      <td className="px-4 py-3 text-gray-7 dark:text-dark-7">
+                      <td className="px-4 py-3 align-middle text-gray-7 dark:text-dark-7">
                         {row.tone || "—"}
                       </td>
-                      <td className="px-4 py-3 text-gray-7 dark:text-dark-7">
+                      <td className="px-4 py-3 align-middle text-gray-7 dark:text-dark-7">
                         {row.platform || "—"}
                       </td>
-                      <td className="px-4 py-3 text-gray-6 dark:text-dark-6">
+                      <td className="px-4 py-3 align-middle text-gray-6 dark:text-dark-6 whitespace-nowrap">
                         {row.created_at
                           ? new Date(row.created_at).toLocaleString(undefined, {
                               month: "short",
@@ -772,8 +731,8 @@ export default function ScriptsCaptionsPage() {
                             })
                           : "—"}
                       </td>
-                      <td className="px-4 py-3">
-                        <div className="flex flex-wrap gap-2 text-xs font-semibold">
+                      <td className="px-4 py-3 align-middle">
+                        <div className="flex flex-wrap items-center gap-2 text-xs font-semibold">
                           <button
                             className="rounded-md border border-gray-3 px-3 py-1 text-gray-7 transition hover:bg-gray-1 dark:border-stroke-dark dark:text-dark-7 dark:hover:bg-dark-3"
                             onClick={() => setDetailRow(row)}
@@ -784,23 +743,22 @@ export default function ScriptsCaptionsPage() {
                             className="rounded-md border border-gray-3 px-3 py-1 text-gray-7 transition hover:bg-gray-1 dark:border-stroke-dark dark:text-dark-7 dark:hover:bg-dark-3"
                             onClick={() => {
                               setEditRow(row);
-                              setForm({
-                                description: row.topic || "",
-                                contentType: form.contentType,
-                                platform:
-                                  (row.platform as Platform) ||
-                                  "instagram_reels",
-                                tone: (row.tone as ToneStyle) || "informative",
-                                length: form.length,
-                                persona: "",
-                                language: "",
-                                hook: row.hook || "",
-                                script: row.script || "",
-                                caption: row.caption || "",
-                              });
-                              setShowModal(true);
-                              setSubmitStatus({ type: "idle" });
-                            }}
+              setForm({
+                description: row.topic || "",
+                contentType: form.contentType,
+                platform: (row.platform as Platform) || "instagram_reels",
+                tone: (row.tone as ToneStyle) || "informative",
+                length: form.length,
+                persona: "",
+                language: labelForLanguage(row.language) || "",
+                hook: row.hook || "",
+                script: row.script || "",
+                caption: row.caption || "",
+              });
+              setLanguageQuery(labelForLanguage(row.language) || "");
+              setShowModal(true);
+              setSubmitStatus({ type: "idle" });
+            }}
                           >
                             Edit
                           </button>
@@ -818,9 +776,7 @@ export default function ScriptsCaptionsPage() {
                             onClick={() => addToPlanner(row)}
                             disabled={plannerBusyId === row.id}
                           >
-                            {plannerBusyId === row.id
-                              ? "Adding..."
-                              : "Add to Planner"}
+                            {plannerBusyId === row.id ? "Adding..." : "Add to Planner"}
                           </button>
                         </div>
                       </td>
@@ -1027,16 +983,63 @@ export default function ScriptsCaptionsPage() {
                     placeholder="Your voice, GaryVee style, etc."
                   />
                 </label>
-                <label className="block text-sm font-semibold text-dark dark:text-dark-8">
-                  Language (optional)
-                  <input
-                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
-                    value={form.language}
-                    onChange={(e) =>
-                      setForm((prev) => ({ ...prev, language: e.target.value }))
-                    }
-                    placeholder="en, hi, etc."
-                  />
+                <label className="relative block text-sm font-semibold text-dark dark:text-dark-8">
+                  <div className="flex items-center justify-between">
+                    <span>Language (optional)</span>
+                  </div>
+                  <div className="relative mt-2">
+                    <input
+                      className="w-full rounded-lg border border-gray-3 bg-white px-4 pr-10 py-3 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+                      value={languageQuery}
+                      onFocus={() => setShowLanguageList(true)}
+                      onClick={() => setShowLanguageList(true)}
+                      onChange={(e) => {
+                        const next = e.target.value;
+                        setLanguageQuery(next);
+                        setForm((prev) => ({ ...prev, language: next }));
+                        setShowLanguageList(true);
+                      }}
+                      placeholder="Choose a language..."
+                      autoComplete="off"
+                      onBlur={() => {
+                        setTimeout(() => setShowLanguageList(false), 120);
+                      }}
+                    />
+                    <button
+                      type="button"
+                      aria-label="Show languages"
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        setShowLanguageList((prev) => !prev);
+                      }}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 flex h-8 w-8 items-center justify-center rounded-md text-gray-6 transition hover:bg-gray-2 dark:text-dark-6 dark:hover:bg-dark-4"
+                    >
+                      ▼
+                    </button>
+                  </div>
+                  {showLanguageList && (
+                    <div className="absolute z-20 mt-1 max-h-56 w-full overflow-auto rounded-lg border border-gray-3 bg-white shadow-card-2 dark:border-stroke-dark dark:bg-dark-3">
+                      {filteredLanguages.length === 0 && (
+                        <div className="px-3 py-2 text-sm text-gray-6 dark:text-dark-6">No matches</div>
+                      )}
+                      {filteredLanguages.map((lang) => (
+                        <button
+                          type="button"
+                          key={`${lang.code}-${lang.label}`}
+                          className="flex w-full items-center justify-between px-3 py-2 text-left text-sm text-dark hover:bg-gray-1 dark:text-dark-8 dark:hover:bg-dark-4"
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            setLanguageQuery(lang.label);
+                            setForm((prev) => ({ ...prev, language: lang.label }));
+                            setShowLanguageList(false);
+                          }}
+                        >
+                          <span>{lang.label}</span>
+                          <span className="text-xs text-gray-5 dark:text-dark-6">{lang.code.toUpperCase()}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </label>
                 <label className="block text-sm font-semibold text-dark dark:text-dark-8">
                   Hook / Angle (optional)
@@ -1131,12 +1134,8 @@ export default function ScriptsCaptionsPage() {
 
       {detailRow && (
         <ModalPortal>
-          <div
-            className="fixed inset-0 z-[20000] flex items-start justify-center bg-black/60 px-4 py-12 backdrop-blur-sm"
-            role="dialog"
-            aria-modal="true"
-          >
-            <div className="mt-4 max-h-[85vh] w-full max-w-5xl overflow-y-auto rounded-2xl bg-white p-6 shadow-card-2 dark:border dark:border-stroke-dark dark:bg-dark-2 dark:shadow-black/40">
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 px-4 py-10 backdrop-blur-sm">
+            <div className="max-h-[85vh] w-full max-w-4xl overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl dark:border dark:border-stroke-dark dark:bg-dark-2 dark:shadow-black/40">
               <div className="mb-4 flex items-start justify-between gap-3">
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-[0.35em] text-primary">Script & Caption</p>
@@ -1181,36 +1180,34 @@ export default function ScriptsCaptionsPage() {
       )}
 
       {deleteRow && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
-          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-2xl dark:border dark:border-stroke-dark dark:bg-dark-2">
-            <h3 className="text-lg font-bold text-dark dark:text-dark-8">
-              Delete script/caption
-            </h3>
-            <p className="mt-2 text-sm text-gray-6 dark:text-dark-6">
-              This cannot be undone.
-            </p>
-            {deleteStatus.type === "error" && (
-              <p className="mt-2 rounded-md bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">
-                {deleteStatus.message}
-              </p>
-            )}
-            <div className="mt-4 flex justify-end gap-3">
-              <button
-                className="rounded-md border border-gray-3 px-4 py-2 text-sm font-semibold text-gray-7 transition hover:bg-gray-1 dark:border-stroke-dark dark:text-dark-7 dark:hover:bg-dark-3"
-                onClick={() => setDeleteRow(null)}
-              >
-                Cancel
-              </button>
-              <button
-                className="rounded-md bg-red-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-700 disabled:opacity-60"
-                onClick={handleDelete}
-                disabled={deleteStatus.type === "loading"}
-              >
-                {deleteStatus.type === "loading" ? "Deleting..." : "Delete"}
-              </button>
+        <ModalPortal>
+          <div className="fixed inset-0 z-[12000] flex items-center justify-center bg-black/60 px-4">
+            <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-2xl dark:border dark:border-stroke-dark dark:bg-dark-2">
+              <h3 className="text-lg font-bold text-dark dark:text-dark-8">Delete script/caption</h3>
+              <p className="mt-2 text-sm text-gray-6 dark:text-dark-6">This cannot be undone.</p>
+              {deleteStatus.type === "error" && (
+                <p className="mt-2 rounded-md bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">
+                  {deleteStatus.message}
+                </p>
+              )}
+              <div className="mt-4 flex justify-end gap-3">
+                <button
+                  className="rounded-md border border-gray-3 px-4 py-2 text-sm font-semibold text-gray-7 transition hover:bg-gray-1 dark:border-stroke-dark dark:text-dark-7 dark:hover:bg-dark-3"
+                  onClick={() => setDeleteRow(null)}
+                >
+                  Cancel
+                </button>
+                <button
+                  className="rounded-md bg-red-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-700 disabled:opacity-60"
+                  onClick={handleDelete}
+                  disabled={deleteStatus.type === "loading"}
+                >
+                  {deleteStatus.type === "loading" ? "Deleting..." : "Delete"}
+                </button>
+              </div>
             </div>
           </div>
-        </div>
+        </ModalPortal>
       )}
     </div>
   );

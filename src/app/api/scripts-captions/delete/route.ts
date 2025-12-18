@@ -17,9 +17,19 @@ export async function DELETE(request: Request) {
     return response;
   }
 
+  // Try generated_reels first
+  let deletionError: string | null = null;
   const { error } = await supabaseAdmin.from("generated_reels").delete().eq("id", id).eq("user_id", user.id);
   if (error) {
-    console.error("Failed to delete script/caption", error);
+    // Fallback to scripts table if generated_reels is missing
+    const { error: scriptError } = await supabaseAdmin.from("scripts").delete().eq("id", id).eq("user_id", user.id);
+    if (scriptError) {
+      deletionError = scriptError.message || error.message;
+    }
+  }
+
+  if (deletionError) {
+    console.error("Failed to delete script/caption", deletionError);
     const response = NextResponse.json({ error: "Unable to delete script/caption." }, { status: 500 });
     applyCookies(response);
     return response;
