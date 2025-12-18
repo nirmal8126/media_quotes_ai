@@ -19,19 +19,21 @@ export async function GET(request: Request) {
 
   // Fetch recent reels
   const { data, error } = await supabaseAdmin
-    .from('generated_reels')
-    .select('id, platform, tone, hook, hashtags, status, created_at')
+    .from('reels')
+    .select('id, platform, tone, status, created_at')
     .eq('user_id', user.id)
     .order('created_at', { ascending: false })
     .limit(100);
 
   if (error) {
-    const response = NextResponse.json({ error: 'Unable to load insights' }, { status: 500 });
-    applyCookies(response);
-    return response;
+    console.warn('Insights: reels table unavailable, returning empty stats.');
   }
 
-  const reels = (data ?? []) as ReelRow[];
+  const reels = ((data ?? []) as ReelRow[]).map((row) => ({
+    ...row,
+    hook: row.hook ?? null,
+    hashtags: row.hashtags ?? [],
+  }));
   const byPlatform: Record<string, number> = {};
   const byTone: Record<string, number> = {};
   const hooks: string[] = [];

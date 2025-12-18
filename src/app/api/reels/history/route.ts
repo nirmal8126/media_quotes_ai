@@ -40,11 +40,11 @@ export async function GET(request: Request) {
 
   const { data, error } = await query;
 
-  // If reels table is missing (older deployments), fall back to generated_reels
+  // If reels table is missing (older deployments), fall back to reels
   if (error && (error.message ?? '').toLowerCase().includes('relation "reels"')) {
     const fallbackSelect = 'id, tone, platform, script, caption, hashtags, thumbnail_prompt, channel_id, created_at, status';
     let fallback = await supabaseAdmin
-      .from('generated_reels')
+      .from('reels')
       .select(fallbackSelect)
       .eq('user_id', user.id)
       .order('created_at', { ascending: false })
@@ -52,8 +52,8 @@ export async function GET(request: Request) {
 
     if (fallback.error && (fallback.error.message ?? '').toLowerCase().includes('status')) {
       fallback = await supabaseAdmin
-        .from('generated_reels')
-        .select('id, tone, platform, script, caption, hashtags, thumbnail_prompt, channel_id, created_at')
+        .from('reels')
+        .select('id, tone, platform, script, caption, hashtags, thumbnail_prompt, channel_id, created_at, status')
         .eq('user_id', user.id)
         .order('created_at', { ascending: false })
         .limit(limit);

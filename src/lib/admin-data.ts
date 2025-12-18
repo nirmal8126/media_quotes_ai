@@ -90,7 +90,7 @@ async function fetchPaymentSummary(): Promise<PaymentRow[]> {
 async function fetchMetrics(paymentSummary: PaymentRow[]): Promise<MetricItem[]> {
   const [users, reels, automations] = await Promise.all([
     countTable('users'),
-    countTable('generated_reels'),
+    countTable('reels'),
     countTable('content_calendar'),
   ]);
   const totalRevenue = paymentSummary.reduce((sum, row) => sum + (row.value ?? 0), 0);

@@ -17,15 +17,11 @@ export async function DELETE(request: Request) {
     return response;
   }
 
-  // Try generated_reels first
+  // Delete from scripts table (primary storage)
   let deletionError: string | null = null;
-  const { error } = await supabaseAdmin.from("generated_reels").delete().eq("id", id).eq("user_id", user.id);
+  const { error } = await supabaseAdmin.from("scripts").delete().eq("id", id).eq("user_id", user.id);
   if (error) {
-    // Fallback to scripts table if generated_reels is missing
-    const { error: scriptError } = await supabaseAdmin.from("scripts").delete().eq("id", id).eq("user_id", user.id);
-    if (scriptError) {
-      deletionError = scriptError.message || error.message;
-    }
+    deletionError = error.message;
   }
 
   if (deletionError) {

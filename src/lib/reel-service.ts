@@ -59,40 +59,47 @@ export async function incrementUserQuota(userId: string, amount = 1) {
 }
 
 export async function storeGeneratedReel(record: GeneratedReelRecord) {
-  const payload = {
+  let scriptId: string | null = null;
+  if (record.script) {
+    const { data: scriptRow, error: scriptErr } = await supabaseAdmin
+      .from('scripts')
+      .insert({
+        user_id: record.userId,
+        platform: record.platform ?? null,
+        tone: record.tone ?? null,
+        input_prompt: record.thumbnailPrompt ?? record.hook ?? null,
+        text: record.script,
+        created_at: new Date().toISOString(),
+      })
+      .select('id')
+      .maybeSingle();
+    if (!scriptErr) {
+      scriptId = scriptRow?.id ?? null;
+    }
+  }
+
+  const reelPayload = {
     user_id: record.userId,
-    channel_id: record.channelId || null,
-    tone: record.tone || null,
-    platform: record.platform || null,
-    script: record.script || null,
-    shot_breakdown: record.shotBreakdown || null,
-    caption: record.caption || null,
-    hashtags: record.hashtags || null,
-    thumbnail_prompt: record.thumbnailPrompt || null,
-    hook: record.hook || null,
-    status: record.status || 'generated',
-    scheduled_date: record.scheduledDate || null,
-    published_at: record.publishedAt || null,
+    channel_id: record.channelId ?? null,
+    platform: record.platform ?? null,
+    tone: record.tone ?? null,
+    status: record.status ?? 'generated',
+    script_id: scriptId,
     created_at: new Date().toISOString(),
   };
 
   const { data, error } = await supabaseAdmin
-    .from('generated_reels')
-    .insert(payload)
+    .from('reels')
+    .insert(reelPayload)
     .select('id')
     .maybeSingle();
 
   if (error) {
-    const message = error.message?.toLowerCase() ?? '';
-    if (message.includes('status') || message.includes('generated_reels')) {
-      console.error('Failed to persist generated reel. Ensure generated_reels has status/scheduled/published columns.', error);
-    } else {
-      console.error('Failed to persist generated reel', error);
-    }
-    return null;
+    console.warn('Reel persistence skipped; using scripts-only fallback.', error.message || error);
+    return scriptId ? { id: scriptId } : null;
   }
 
-  return data;
+  return { id: data?.id ?? scriptId ?? null };
 }
 
 export async function generateIdeaList(tone: string, platform: string, provider?: LlmProvider) {

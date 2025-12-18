@@ -101,49 +101,34 @@ export async function PATCH(request: Request) {
   let targetItem: any = null;
   let updateError: string | null = null;
 
-  const { data, error } = await supabaseAdmin
-    .from("generated_reels")
-    .update(updates)
+  const scriptUpdates: Record<string, unknown> = {};
+  if (updates.tone) scriptUpdates.tone = updates.tone;
+  if (updates.platform) scriptUpdates.platform = updates.platform;
+  if (updates.script) scriptUpdates.text = updates.script;
+  if (topic) scriptUpdates.input_prompt = topic;
+
+  const { data: scriptRow, error: scriptErr } = await supabaseAdmin
+    .from("scripts")
+    .update({ ...scriptUpdates, updated_at: new Date().toISOString() })
     .eq("id", id)
     .eq("user_id", user.id)
-    .select("id, tone, platform, hook, script, caption, hashtags, thumbnail_prompt, created_at")
+    .select("id, tone, platform, input_prompt, text, created_at")
     .maybeSingle();
 
-  if (error || !data) {
-    // Fallback to scripts table if generated_reels is missing
-    const scriptUpdates: Record<string, unknown> = {};
-    if (updates.tone) scriptUpdates.tone = updates.tone;
-    if (updates.platform) scriptUpdates.platform = updates.platform;
-    if (updates.script) scriptUpdates.text = updates.script;
-    if (topic) scriptUpdates.input_prompt = topic;
-    if (Object.keys(scriptUpdates).length > 0) {
-      const { data: scriptRow, error: scriptErr } = await supabaseAdmin
-        .from("scripts")
-        .update({ ...scriptUpdates, updated_at: new Date().toISOString() })
-        .eq("id", id)
-        .eq("user_id", user.id)
-        .select("id, tone, platform, input_prompt, text, created_at")
-        .maybeSingle();
-      if (scriptErr) {
-        updateError = scriptErr.message;
-      } else {
-        targetItem = {
-          id: scriptRow?.id ?? id,
-          tone: scriptRow?.tone ?? tone,
-          platform: scriptRow?.platform ?? platform,
-          hook,
-          script: scriptRow?.text ?? updates.script ?? "",
-          caption: updates.caption ?? "",
-          hashtags: updates.hashtags ?? [],
-          topic: scriptRow?.input_prompt ?? topic,
-          created_at: scriptRow?.created_at ?? new Date().toISOString(),
-        };
-      }
-    } else {
-      updateError = error?.message || "Unable to update script/caption.";
-    }
+  if (scriptErr) {
+    updateError = scriptErr.message;
   } else {
-    targetItem = { ...data, topic: data?.thumbnail_prompt ?? topic };
+    targetItem = {
+      id: scriptRow?.id ?? id,
+      tone: scriptRow?.tone ?? tone,
+      platform: scriptRow?.platform ?? platform,
+      hook,
+      script: scriptRow?.text ?? updates.script ?? "",
+      caption: updates.caption ?? "",
+      hashtags: updates.hashtags ?? [],
+      topic: scriptRow?.input_prompt ?? topic,
+      created_at: scriptRow?.created_at ?? new Date().toISOString(),
+    };
   }
 
   if (updateError) {

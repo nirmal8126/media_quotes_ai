@@ -28,6 +28,7 @@ type ScriptRow = {
   hashtags?: string[] | null;
   created_at: string;
   variationIndex?: number;
+  language?: string | null;
 };
 
 type Status =
@@ -42,24 +43,21 @@ type IntegrityState = {
   message?: string;
 };
 
-const contentTypes: ContentType[] = ["caption", "short_script", "long_script"];
-const platformOptions: Platform[] = [
-  "tiktok",
-  "instagram_reels",
-  "youtube_shorts",
-  "facebook_reels",
-  "linkedin",
+const contentTypes: ContentType[] = ["short_script", "long_script", "caption", "script_and_caption"];
+const platformOptions: Platform[] = ["instagram_reels", "youtube_shorts", "tiktok", "facebook_reels"];
+const toneOptions: ToneStyle[] = ["informative", "motivational", "funny", "storytelling", "calm"];
+const durationOptions = [10, 15, 20, 30, 45, 60];
+const audienceOptions = ["kids", "teens", "general", "professionals"];
+const goalOptions = ["educate", "motivate", "entertain", "sell", "story"];
+const ctaOptions = ["follow", "subscribe", "comment", "save", "none"];
+const hookStyles = ["question", "bold statement", "story", "problem-solution"];
+const seedModes: Array<"generate" | "improve" | "rewrite" | "shorten" | "expand"> = [
+  "generate",
+  "improve",
+  "rewrite",
+  "shorten",
+  "expand",
 ];
-const toneOptions: ToneStyle[] = [
-  "motivational",
-  "poetic",
-  "funny",
-  "savage",
-  "emotional",
-  "business",
-  "informative",
-];
-const lengthOptions: LengthPreset[] = ["short", "medium", "long"];
 
 const defaultForm = {
   description: "",
@@ -67,57 +65,35 @@ const defaultForm = {
   platform: "instagram_reels" as Platform,
   tone: "informative" as ToneStyle,
   length: "medium" as LengthPreset,
+  durationSec: 30,
+  pace: "normal" as "slow" | "normal" | "fast",
+  audience: "",
+  goal: "educate",
+  cta: "follow",
+  hookStyle: "",
   persona: "",
-  language: "",
+  language: "english",
   hook: "",
   script: "",
   caption: "",
+  mustInclude: "",
+  mustAvoid: "",
+  mode: "generate" as "generate" | "improve" | "rewrite" | "shorten" | "expand",
 };
 
 const initialIntegrity: IntegrityState = { report: null, status: "idle" };
 
 const languageOptions = [
-  { code: "en", label: "English" },
-  { code: "hi", label: "Hindi" },
-  { code: "pa", label: "Punjabi" },
-  { code: "bn", label: "Bengali" },
-  { code: "te", label: "Telugu" },
-  { code: "ta", label: "Tamil" },
-  { code: "mr", label: "Marathi" },
-  { code: "gu", label: "Gujarati" },
-  { code: "kn", label: "Kannada" },
-  { code: "ml", label: "Malayalam" },
-  { code: "or", label: "Odia" },
-  { code: "as", label: "Assamese" },
-  { code: "ur", label: "Urdu" },
-  { code: "mai", label: "Maithili" },
-  { code: "sat", label: "Santali" },
-  { code: "ks", label: "Kashmiri" },
-  { code: "ne", label: "Nepali" },
-  { code: "sa", label: "Sanskrit" },
-  { code: "sd", label: "Sindhi" },
-  { code: "kok", label: "Konkani" },
-  { code: "mni", label: "Manipuri" },
-  { code: "brx", label: "Bodo" },
-  { code: "doi", label: "Dogri" },
+  { code: "english", label: "English" },
+  { code: "hindi", label: "Hindi" },
+  { code: "hinglish", label: "Hinglish" },
+  { code: "other", label: "Other" },
 ];
 
 function resolveLanguageCode(input: string) {
   const normalized = input.trim().toLowerCase();
-  if (!normalized || normalized === "choose a language...") return "en";
-  const direct = languageOptions.find((lang) => lang.code.toLowerCase() === normalized);
-  if (direct) return direct.code;
-  const byLabel = languageOptions.find((lang) => lang.label.toLowerCase() === normalized);
-  return byLabel?.code ?? "en";
-}
-
-function labelForLanguage(input?: string | null) {
-  if (!input) return "";
-  const normalized = input.trim().toLowerCase();
-  const found = languageOptions.find(
-    (lang) => lang.code.toLowerCase() === normalized || lang.label.toLowerCase() === normalized,
-  );
-  return found?.label ?? input;
+  const found = languageOptions.find((lang) => lang.code === normalized || lang.label.toLowerCase() === normalized);
+  return found?.code || "english";
 }
 
 export default function ScriptsCaptionsPage() {
@@ -145,8 +121,6 @@ export default function ScriptsCaptionsPage() {
   const topicInputRef = useRef<HTMLInputElement | null>(null);
   const [integrityState, setIntegrityState] = useState<IntegrityState>(initialIntegrity);
   const [integrityGate, setIntegrityGate] = useState<{ open: boolean; pending?: () => void }>({ open: false });
-  const [languageQuery, setLanguageQuery] = useState("");
-  const [showLanguageList, setShowLanguageList] = useState(false);
 
   useEffect(() => {
     const fetchRows = async () => {
@@ -169,6 +143,7 @@ export default function ScriptsCaptionsPage() {
           script: item.script ?? null,
           caption: item.caption ?? null,
           hashtags: item.hashtags ?? [],
+          language: item.language ?? null,
           created_at: item.created_at,
         }));
         setRows(items);
@@ -198,21 +173,6 @@ export default function ScriptsCaptionsPage() {
       1500
     );
   };
-
-  const filteredLanguages = useMemo(() => {
-    if (!showLanguageList) return [];
-    const term = (languageQuery || "").trim().toLowerCase();
-    if (!term || term === "choose a language...") return languageOptions;
-
-    const exactMatch = languageOptions.some(
-      (lang) => lang.label.toLowerCase() === term || lang.code.toLowerCase() === term,
-    );
-    if (exactMatch) return languageOptions;
-
-    return languageOptions.filter(
-      (lang) => lang.label.toLowerCase().includes(term) || lang.code.toLowerCase().includes(term),
-    );
-  }, [languageQuery, showLanguageList]);
 
   const integrityBlocking = integrityState.report && (integrityState.report.status === "warn" || integrityState.report.status === "risk");
 
@@ -400,7 +360,7 @@ export default function ScriptsCaptionsPage() {
       setSubmitStatus({ type: "error", message: "Description is required." });
       return;
     }
-    const resolvedLanguage = resolveLanguageCode(languageQuery || form.language || "");
+    const resolvedLanguage = resolveLanguageCode(form.language || "");
     setSubmitStatus({
       type: "loading",
       message: editRow ? "Saving..." : "Generating...",
@@ -420,10 +380,20 @@ export default function ScriptsCaptionsPage() {
             script: form.script || null,
             caption: form.caption || null,
             length: form.length,
+            pace: form.pace,
             contentType: form.contentType,
             persona: form.persona || null,
             language: resolvedLanguage || null,
             regenerate: false,
+            durationSec: form.durationSec,
+            pace: form.pace,
+            audience: form.audience,
+            goal: form.goal,
+            cta: form.cta,
+            hookStyle: form.hookStyle,
+            mustInclude: form.mustInclude,
+            mustAvoid: form.mustAvoid,
+            mode: form.mode,
           }),
         });
         const body = await res.json().catch(() => ({}));
@@ -454,12 +424,22 @@ export default function ScriptsCaptionsPage() {
             platform: form.platform,
             tone: form.tone,
             length: form.length,
+            pace: form.pace,
             persona: form.persona || null,
             language: resolvedLanguage || null,
             hook: form.hook || null,
             variations: 3,
             script: form.script || undefined,
             caption: form.caption || undefined,
+            durationSec: form.durationSec,
+            pace: form.pace,
+            audience: form.audience,
+            goal: form.goal,
+            cta: form.cta,
+            hookStyle: form.hookStyle,
+            mustInclude: form.mustInclude,
+            mustAvoid: form.mustAvoid,
+            mode: form.mode,
           }),
         });
         const body = await res.json().catch(() => ({}));
@@ -584,7 +564,6 @@ export default function ScriptsCaptionsPage() {
           onClick={() => {
             setForm({ ...defaultForm });
             setEditRow(null);
-            setLanguageQuery("");
             setShowModal(true);
             setSubmitStatus({ type: "idle" });
           }}
@@ -743,22 +722,27 @@ export default function ScriptsCaptionsPage() {
                             className="rounded-md border border-gray-3 px-3 py-1 text-gray-7 transition hover:bg-gray-1 dark:border-stroke-dark dark:text-dark-7 dark:hover:bg-dark-3"
                             onClick={() => {
                               setEditRow(row);
-              setForm({
-                description: row.topic || "",
-                contentType: form.contentType,
-                platform: (row.platform as Platform) || "instagram_reels",
-                tone: (row.tone as ToneStyle) || "informative",
-                length: form.length,
-                persona: "",
-                language: labelForLanguage(row.language) || "",
-                hook: row.hook || "",
-                script: row.script || "",
-                caption: row.caption || "",
-              });
-              setLanguageQuery(labelForLanguage(row.language) || "");
-              setShowModal(true);
-              setSubmitStatus({ type: "idle" });
-            }}
+                              setForm((prev) => ({
+                                ...defaultForm,
+                                contentType: prev.contentType,
+                                durationSec: prev.durationSec,
+                                goal: prev.goal,
+                                tone: (row.tone as ToneStyle) || prev.tone,
+                                platform: (row.platform as Platform) || "instagram_reels",
+                                description: row.topic || "",
+                                audience: prev.audience,
+                                cta: prev.cta,
+                                hookStyle: prev.hookStyle,
+                                persona: prev.persona,
+                                language: resolveLanguageCode(row.language || prev.language),
+                                hook: row.hook || "",
+                                script: row.script || "",
+                                caption: row.caption || "",
+                                mode: prev.mode,
+                              }));
+                              setShowModal(true);
+                              setSubmitStatus({ type: "idle" });
+                            }}
                           >
                             Edit
                           </button>
@@ -857,17 +841,11 @@ export default function ScriptsCaptionsPage() {
 
       {showModal && (
         <ModalPortal>
-          <div
-            className="fixed inset-0 z-[20000] flex items-start justify-center bg-black/60 px-4 py-12 backdrop-blur-sm"
-            role="dialog"
-            aria-modal="true"
-          >
-            <div className="mt-4 max-h-[85vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white p-6 shadow-card-2 dark:bg-dark-2 dark:border dark:border-stroke-dark">
-              <div className="flex items-start justify-between">
+          <div className="fixed inset-0 z-[20000] flex items-start justify-center bg-black/60 px-4 py-12 backdrop-blur-sm">
+            <div className="mt-4 max-h-[85vh] w-full max-w-5xl overflow-y-auto rounded-2xl bg-white p-6 shadow-card-2 dark:bg-dark-2 dark:border dark:border-stroke-dark">
+              <div className="flex items-start justify-between gap-4">
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.35em] text-primary">
-                    Generate
-                  </p>
+                  <p className="text-xs font-semibold uppercase tracking-[0.35em] text-primary">Generate</p>
                   <h2 className="text-xl font-bold text-dark dark:text-dark-8">
                     {editRow ? "Edit script/caption" : "New script/caption"}
                   </h2>
@@ -880,7 +858,7 @@ export default function ScriptsCaptionsPage() {
                 </button>
               </div>
 
-              <div className="mt-4 grid gap-4 md:grid-cols-2">
+              <div className="mt-4 space-y-5">
                 <label className="block text-sm font-semibold text-dark dark:text-dark-8">
                   Description / Topic *
                   <input
@@ -893,190 +871,252 @@ export default function ScriptsCaptionsPage() {
                         description: e.target.value,
                       }))
                     }
-                    placeholder="E.g., self-discipline and waking up early"
+                    placeholder="E.g., why waking up early improves focus"
                   />
-                </label>
-                <label className="block text-sm font-semibold text-dark dark:text-dark-8">
-                  Content type
-                  <select
-                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
-                    value={form.contentType}
-                    onChange={(e) =>
-                      setForm((prev) => ({
-                        ...prev,
-                        contentType: e.target.value as ContentType,
-                      }))
-                    }
-                  >
-                    {contentTypes.map((type) => (
-                      <option key={type} value={type}>
-                        {type.replace("_", " ")}
-                      </option>
+                  <div className="mt-2 flex flex-wrap gap-2 text-xs">
+                    {[
+                      "Self discipline for students",
+                      "Kids moral story: honesty",
+                      "Fitness myth: fat loss",
+                      "Business tip: productivity",
+                    ].map((chip) => (
+                      <button
+                        key={chip}
+                        type="button"
+                        onClick={() => setForm((prev) => ({ ...prev, description: chip }))}
+                        className="rounded-full bg-gray-2 px-3 py-1 font-semibold text-gray-7 transition hover:bg-gray-1 dark:bg-dark-3 dark:text-dark-7 dark:hover:bg-dark-4"
+                      >
+                        {chip}
+                      </button>
                     ))}
-                  </select>
-                </label>
-                <label className="block text-sm font-semibold text-dark dark:text-dark-8">
-                  Platform
-                  <select
-                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
-                    value={form.platform}
-                    onChange={(e) =>
-                      setForm((prev) => ({
-                        ...prev,
-                        platform: e.target.value as Platform,
-                      }))
-                    }
-                  >
-                    {platformOptions.map((p) => (
-                      <option key={p} value={p}>
-                        {p.replace("_", " ")}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="block text-sm font-semibold text-dark dark:text-dark-8">
-                  Tone / Style
-                  <select
-                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
-                    value={form.tone}
-                    onChange={(e) =>
-                      setForm((prev) => ({
-                        ...prev,
-                        tone: e.target.value as ToneStyle,
-                      }))
-                    }
-                  >
-                    {toneOptions.map((tone) => (
-                      <option key={tone} value={tone}>
-                        {tone}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="block text-sm font-semibold text-dark dark:text-dark-8">
-                  Length
-                  <select
-                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
-                    value={form.length}
-                    onChange={(e) =>
-                      setForm((prev) => ({
-                        ...prev,
-                        length: e.target.value as LengthPreset,
-                      }))
-                    }
-                  >
-                    {lengthOptions.map((len) => (
-                      <option key={len} value={len}>
-                        {len}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="block text-sm font-semibold text-dark dark:text-dark-8">
-                  Persona (optional)
-                  <input
-                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
-                    value={form.persona}
-                    onChange={(e) =>
-                      setForm((prev) => ({ ...prev, persona: e.target.value }))
-                    }
-                    placeholder="Your voice, GaryVee style, etc."
-                  />
-                </label>
-                <label className="relative block text-sm font-semibold text-dark dark:text-dark-8">
-                  <div className="flex items-center justify-between">
-                    <span>Language (optional)</span>
                   </div>
-                  <div className="relative mt-2">
-                    <input
-                      className="w-full rounded-lg border border-gray-3 bg-white px-4 pr-10 py-3 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
-                      value={languageQuery}
-                      onFocus={() => setShowLanguageList(true)}
-                      onClick={() => setShowLanguageList(true)}
-                      onChange={(e) => {
-                        const next = e.target.value;
-                        setLanguageQuery(next);
-                        setForm((prev) => ({ ...prev, language: next }));
-                        setShowLanguageList(true);
-                      }}
-                      placeholder="Choose a language..."
-                      autoComplete="off"
-                      onBlur={() => {
-                        setTimeout(() => setShowLanguageList(false), 120);
-                      }}
-                    />
-                    <button
-                      type="button"
-                      aria-label="Show languages"
-                      onMouseDown={(e) => {
-                        e.preventDefault();
-                        setShowLanguageList((prev) => !prev);
-                      }}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 flex h-8 w-8 items-center justify-center rounded-md text-gray-6 transition hover:bg-gray-2 dark:text-dark-6 dark:hover:bg-dark-4"
-                    >
-                      ▼
-                    </button>
-                  </div>
-                  {showLanguageList && (
-                    <div className="absolute z-20 mt-1 max-h-56 w-full overflow-auto rounded-lg border border-gray-3 bg-white shadow-card-2 dark:border-stroke-dark dark:bg-dark-3">
-                      {filteredLanguages.length === 0 && (
-                        <div className="px-3 py-2 text-sm text-gray-6 dark:text-dark-6">No matches</div>
-                      )}
-                      {filteredLanguages.map((lang) => (
-                        <button
-                          type="button"
-                          key={`${lang.code}-${lang.label}`}
-                          className="flex w-full items-center justify-between px-3 py-2 text-left text-sm text-dark hover:bg-gray-1 dark:text-dark-8 dark:hover:bg-dark-4"
-                          onMouseDown={(e) => {
-                            e.preventDefault();
-                            setLanguageQuery(lang.label);
-                            setForm((prev) => ({ ...prev, language: lang.label }));
-                            setShowLanguageList(false);
-                          }}
-                        >
-                          <span>{lang.label}</span>
-                          <span className="text-xs text-gray-5 dark:text-dark-6">{lang.code.toUpperCase()}</span>
-                        </button>
-                      ))}
-                    </div>
-                  )}
                 </label>
-                <label className="block text-sm font-semibold text-dark dark:text-dark-8">
-                  Hook / Angle (optional)
-                  <input
-                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
-                    value={form.hook}
-                    onChange={(e) =>
-                      setForm((prev) => ({ ...prev, hook: e.target.value }))
-                    }
-                    placeholder="Why waking up early transforms your day"
-                  />
-                </label>
-              </div>
 
-              <div className="mt-4 grid gap-4 md:grid-cols-2">
-                <label className="block text-sm font-semibold text-dark dark:text-dark-8">
-                  Script (optional)
-                  <textarea
-                    className="mt-2 h-40 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
-                    value={form.script}
-                    onChange={(e) =>
-                      setForm((prev) => ({ ...prev, script: e.target.value }))
-                    }
-                    placeholder="Paste or tweak your script..."
-                  />
-                </label>
-                <label className="block text-sm font-semibold text-dark dark:text-dark-8">
-                  Caption (optional)
-                  <textarea
-                    className="mt-2 h-40 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
-                    value={form.caption}
-                    onChange={(e) =>
-                      setForm((prev) => ({ ...prev, caption: e.target.value }))
-                    }
-                    placeholder="Add or edit the caption..."
-                  />
-                </label>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <label className="block text-sm font-semibold text-dark dark:text-dark-8">
+                    Content type *
+                    <select
+                      className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+                      value={form.contentType}
+                      onChange={(e) =>
+                        setForm((prev) => ({
+                          ...prev,
+                          contentType: e.target.value as ContentType,
+                        }))
+                      }
+                    >
+                      {contentTypes.map((type) => (
+                        <option key={type} value={type}>
+                          {type === "script_and_caption"
+                            ? "Script + Caption"
+                            : type === "short_script"
+                              ? "Short script"
+                              : type === "long_script"
+                                ? "Long script"
+                                : "Caption only"}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="block text-sm font-semibold text-dark dark:text-dark-8">
+                    Platform *
+                    <select
+                      className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+                      value={form.platform}
+                      onChange={(e) =>
+                        setForm((prev) => ({
+                          ...prev,
+                          platform: e.target.value as Platform,
+                        }))
+                      }
+                    >
+                      {platformOptions.map((p) => (
+                        <option key={p} value={p}>
+                          {p.replace("_", " ")}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+
+                <div className="grid gap-4 md:grid-cols-2">
+                  <label className="block text-sm font-semibold text-dark dark:text-dark-8">
+                    Goal *
+                    <select
+                      className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+                      value={form.goal}
+                      onChange={(e) => setForm((prev) => ({ ...prev, goal: e.target.value }))}
+                    >
+                      {goalOptions.map((opt) => (
+                        <option key={opt} value={opt}>
+                          {opt}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="block text-sm font-semibold text-dark dark:text-dark-8">
+                    Tone / Style *
+                    <select
+                      className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+                      value={form.tone}
+                      onChange={(e) =>
+                        setForm((prev) => ({
+                          ...prev,
+                          tone: e.target.value as ToneStyle,
+                        }))
+                      }
+                    >
+                      {toneOptions.map((tone) => (
+                        <option key={tone} value={tone}>
+                          {tone}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+
+                <div className="grid gap-4 md:grid-cols-2">
+                  <label className="block text-sm font-semibold text-dark dark:text-dark-8">
+                    Duration (seconds) *
+                    <select
+                      className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+                      value={form.durationSec}
+                      onChange={(e) =>
+                        setForm((prev) => ({
+                          ...prev,
+                          durationSec: Number(e.target.value) || 30,
+                        }))
+                      }
+                    >
+                      {durationOptions.map((d) => (
+                        <option key={d} value={d}>
+                          {d}s
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="block text-sm font-semibold text-dark dark:text-dark-8">
+                    Language *
+                    <select
+                      className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+                      value={form.language}
+                      onChange={(e) => setForm((prev) => ({ ...prev, language: e.target.value }))}
+                    >
+                      {languageOptions.map((opt) => (
+                        <option key={opt.code} value={opt.code}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+
+                <div className="grid gap-4 md:grid-cols-2">
+                  <label className="block text-sm font-semibold text-dark dark:text-dark-8">
+                    Hook style (optional)
+                    <select
+                      className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+                      value={form.hookStyle}
+                      onChange={(e) => setForm((prev) => ({ ...prev, hookStyle: e.target.value }))}
+                    >
+                      <option value="">Select a style</option>
+                      {hookStyles.map((opt) => (
+                        <option key={opt} value={opt}>
+                          {opt}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="block text-sm font-semibold text-dark dark:text-dark-8">
+                    Audience (optional)
+                    <select
+                      className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+                      value={form.audience}
+                      onChange={(e) => setForm((prev) => ({ ...prev, audience: e.target.value }))}
+                    >
+                      <option value="">Select audience</option>
+                      {audienceOptions.map((opt) => (
+                        <option key={opt} value={opt}>
+                          {opt}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+
+                <div className="grid gap-4 md:grid-cols-2">
+                  <label className="block text-sm font-semibold text-dark dark:text-dark-8">
+                    Persona / Voice (optional)
+                    <input
+                      className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+                      value={form.persona}
+                      onChange={(e) =>
+                        setForm((prev) => ({ ...prev, persona: e.target.value }))
+                      }
+                      placeholder="Friendly storyteller / Calm mentor / High-energy creator"
+                    />
+                  </label>
+                  <label className="block text-sm font-semibold text-dark dark:text-dark-8">
+                    CTA (optional)
+                    <select
+                      className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+                      value={form.cta}
+                      onChange={(e) => setForm((prev) => ({ ...prev, cta: e.target.value }))}
+                    >
+                      {ctaOptions.map((opt) => (
+                        <option key={opt} value={opt}>
+                          {opt}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+
+                <details className="rounded-xl border border-gray-3 bg-gray-1/40 p-4 dark:border-stroke-dark dark:bg-dark-3/60">
+                  <summary className="cursor-pointer text-sm font-semibold text-dark dark:text-dark-8">
+                    Advanced
+                  </summary>
+                  <div className="mt-3 space-y-4">
+                    <label className="block text-sm font-semibold text-dark dark:text-dark-8">
+                      Seed mode
+                      <select
+                        className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+                        value={form.mode}
+                        onChange={(e) => setForm((prev) => ({ ...prev, mode: e.target.value as typeof form.mode }))}
+                      >
+                        {seedModes.map((opt) => (
+                          <option key={opt} value={opt}>
+                            {opt === "generate" ? "Generate new" : opt}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <label className="block text-sm font-semibold text-dark dark:text-dark-8">
+                        Script seed (optional)
+                        <textarea
+                          className="mt-2 h-32 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+                          value={form.script}
+                          onChange={(e) =>
+                            setForm((prev) => ({ ...prev, script: e.target.value }))
+                          }
+                          placeholder="Paste or tweak your script..."
+                        />
+                      </label>
+                      <label className="block text-sm font-semibold text-dark dark:text-dark-8">
+                        Caption seed (optional)
+                        <textarea
+                          className="mt-2 h-32 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+                          value={form.caption}
+                          onChange={(e) =>
+                            setForm((prev) => ({ ...prev, caption: e.target.value }))
+                          }
+                          placeholder="Add or edit the caption..."
+                        />
+                      </label>
+                    </div>
+                  </div>
+                </details>
               </div>
 
               {submitStatus.type !== "idle" && (
