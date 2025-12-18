@@ -1,61 +1,9 @@
--- Tables for AI Reels pipeline (scripts + reels)
--- Run in Supabase SQL editor or psql (auth schema references Supabase auth.users)
-
-create table if not exists public.scripts (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references auth.users (id) on delete cascade,
-  persona_id uuid references public.personas (id) on delete set null,
-  platform text,
-  tone text,
-  style text,
-  template text,
-  brand_colors text[],
-  brand_fonts text[],
-  logo_url text,
-  end_screen_template text,
-  duration_sec int,
-  input_prompt text,
-  text text not null,
-  created_at timestamptz default now(),
-  updated_at timestamptz default now()
-);
-
-create index if not exists scripts_user_idx on public.scripts (user_id);
-
-create table if not exists public.reels (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references auth.users (id) on delete cascade,
-  script_id uuid not null references public.scripts (id) on delete cascade,
-  persona_id uuid references public.personas (id) on delete set null,
-  platform text,
-  tone text,
-  style text,
-  template text,
-  brand_colors text[],
-  brand_fonts text[],
-  logo_url text,
-  end_screen_template text,
-  audio_voice_id text,
-  music_track_id text,
-  trending_audio_id text,
-  duration_sec int,
-  status text default 'RENDERING',
-  renderer_job_id text,
-  video_url text,
-  thumbnail_url text,
-  error_message text,
-  custom_settings jsonb,
-  created_at timestamptz default now(),
-  updated_at timestamptz default now()
-);
-
-create index if not exists reels_user_idx on public.reels (user_id);
-create index if not exists reels_script_idx on public.reels (script_id);
-create index if not exists reels_renderer_job_idx on public.reels (renderer_job_id);
+-- Content Integrity System (Supabase migration)
+-- Safe to re-run; uses IF NOT EXISTS guards for idempotency.
 
 -- Enums
 do $$ begin
-  create type public.platform as enum ('youtube_shorts', 'instagram_reels', 'tiktok');
+  create type public.platform as enum ('youtube_shorts', 'instagram_reels', 'tiktok', 'generic');
 exception when duplicate_object then null; end $$;
 
 do $$ begin
@@ -65,6 +13,23 @@ exception when duplicate_object then null; end $$;
 do $$ begin
   create type public.safety_status as enum ('safe', 'warn', 'risk');
 exception when duplicate_object then null; end $$;
+
+-- Core reels/script columns frequently referenced by the app
+alter table if exists public.scripts add column if not exists template text;
+alter table if exists public.scripts add column if not exists brand_colors text[];
+alter table if exists public.scripts add column if not exists brand_fonts text[];
+alter table if exists public.scripts add column if not exists logo_url text;
+alter table if exists public.scripts add column if not exists end_screen_template text;
+
+alter table if exists public.reels add column if not exists template text;
+alter table if exists public.reels add column if not exists brand_colors text[];
+alter table if exists public.reels add column if not exists brand_fonts text[];
+alter table if exists public.reels add column if not exists logo_url text;
+alter table if exists public.reels add column if not exists end_screen_template text;
+alter table if exists public.reels add column if not exists audio_voice_id text;
+alter table if exists public.reels add column if not exists music_track_id text;
+alter table if exists public.reels add column if not exists trending_audio_id text;
+alter table if exists public.reels add column if not exists custom_settings jsonb;
 
 -- Versioned scripts / variants
 create table if not exists public.reel_versions (
@@ -126,7 +91,7 @@ create table if not exists public.exports (
 );
 create index if not exists exports_reel_idx on public.exports (reel_id);
 
--- Safety reports
+-- Safety reports (renderer safety)
 create table if not exists public.safety_reports (
   id uuid primary key default gen_random_uuid(),
   reel_id uuid references public.reels (id) on delete cascade,
@@ -143,7 +108,7 @@ create table if not exists public.content_integrity_reports (
   id uuid primary key default gen_random_uuid(),
   content_id text not null,
   content_type text not null,
-  platform platform default 'youtube_shorts',
+  platform platform default 'generic',
   user_id uuid references auth.users (id) on delete cascade,
   status safety_status default 'safe',
   score int default 100,
@@ -151,8 +116,8 @@ create table if not exists public.content_integrity_reports (
   fixes jsonb default '[]'::jsonb,
   created_at timestamptz default now()
 );
-create index if not exists content_integrity_reports_user_idx on public.content_integrity_reports (user_id);
-create index if not exists content_integrity_reports_content_idx on public.content_integrity_reports (content_id);
+create index if not exists cir_user_idx on public.content_integrity_reports (user_id);
+create index if not exists cir_content_idx on public.content_integrity_reports (content_id, content_type);
 
 -- Generic content versions (scripts, quotes, reels, captions)
 create table if not exists public.content_versions (
@@ -163,7 +128,7 @@ create table if not exists public.content_versions (
   payload jsonb,
   created_at timestamptz default now()
 );
-create index if not exists content_versions_content_idx on public.content_versions (content_id, content_type);
+create index if not exists cv_content_idx on public.content_versions (content_id, content_type);
 
 -- Optional pointers from existing tables to integrity reports
 alter table if exists public.reels add column if not exists integrity_report_id uuid references public.content_integrity_reports (id);

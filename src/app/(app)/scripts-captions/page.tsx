@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 import type {
@@ -9,6 +9,8 @@ import type {
   Platform,
   ToneStyle,
 } from "@/types/generation";
+import { IntegrityPanel } from "@/components/IntegrityPanel";
+import type { IntegrityFix, IntegrityReport } from "@/lib/integrity/types";
 
 function ModalPortal({ children }: { children: React.ReactNode }) {
   if (typeof document === "undefined") return null;
@@ -33,6 +35,12 @@ type Status =
   | { type: "loading"; message?: string }
   | { type: "error"; message: string }
   | { type: "success"; message: string };
+
+type IntegrityState = {
+  report: IntegrityReport | null;
+  status: "idle" | "loading" | "error";
+  message?: string;
+};
 
 const contentTypes: ContentType[] = ["caption", "short_script", "long_script"];
 const platformOptions: Platform[] = [
@@ -66,8 +74,12 @@ const defaultForm = {
   caption: "",
 };
 
+const initialIntegrity: IntegrityState = { report: null, status: "idle" };
+
 export default function ScriptsCaptionsPage() {
   const [rows, setRows] = useState<ScriptRow[]>([]);
+  const [integrityCache, setIntegrityCache] = useState<Record<string, IntegrityReport | null>>({});
+  const integrityInFlight = useRef<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [form, setForm] = useState({ ...defaultForm });
@@ -87,6 +99,8 @@ export default function ScriptsCaptionsPage() {
   const [page, setPage] = useState(1);
   const [plannerBusyId, setPlannerBusyId] = useState<string | null>(null);
   const topicInputRef = useRef<HTMLInputElement | null>(null);
+  const [integrityState, setIntegrityState] = useState<IntegrityState>(initialIntegrity);
+  const [integrityGate, setIntegrityGate] = useState<{ open: boolean; pending?: () => void }>({ open: false });
 
   useEffect(() => {
     const fetchRows = async () => {
@@ -139,14 +153,24 @@ export default function ScriptsCaptionsPage() {
     );
   };
 
+  const integrityBlocking = integrityState.report && (integrityState.report.status === "warn" || integrityState.report.status === "risk");
+
   const copyToClipboard = async (text: string, label: string) => {
-    try {
-      await navigator.clipboard.writeText(text);
-      pushToast(`${label} copied`);
-    } catch (err) {
-      console.error("Failed to copy", err);
-      pushToast(`Could not copy ${label}`, "error");
+    const run = async () => {
+      try {
+        await navigator.clipboard.writeText(text);
+        pushToast(`${label} copied`);
+      } catch (err) {
+        console.error("Failed to copy", err);
+        pushToast(`Could not copy ${label}`, "error");
+      }
+    };
+    const status = integrityState.report?.status;
+    if (!status || status === "safe") {
+      await run();
+      return;
     }
+    setIntegrityGate({ open: true, pending: () => void run() });
   };
 
   const addToPlanner = async (row: ScriptRow) => {
@@ -164,7 +188,11 @@ export default function ScriptsCaptionsPage() {
       if (!res.ok) {
         throw new Error(body?.error || "Failed to add to planner");
       }
-      pushToast("Added to planner");
+      if (body?.warning) {
+        pushToast(body.warning, "error");
+      } else {
+        pushToast("Added to planner");
+      }
     } catch (err) {
       console.error("Planner add failed", err);
       pushToast((err as Error).message || "Could not add to planner", "error");
@@ -198,6 +226,94 @@ export default function ScriptsCaptionsPage() {
       return haystack.includes(term);
     });
   }, [rows, search]);
+
+  const activeIntegrityRow = detailRow || null;
+
+  const integrityText = useMemo(() => {
+    if (!activeIntegrityRow) return "";
+    return [activeIntegrityRow.hook, activeIntegrityRow.script, activeIntegrityRow.caption].filter(Boolean).join(" ");
+  }, [activeIntegrityRow]);
+
+  const computeIntegrity = useCallback(
+    async (text: string, row?: ScriptRow | null, opts?: { silent?: boolean }) => {
+      if (!opts?.silent) {
+        setIntegrityState((prev) => ({ report: prev.report, status: "loading" }));
+      }
+      try {
+        const contentId = row?.id || "temp";
+        const res = await fetch(`/api/content/script/${encodeURIComponent(contentId)}/integrity`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            type: "script",
+            textContent: text,
+            previousTexts: rows
+              .filter((r) => !row || r.id !== row.id)
+              .map((r) => [r.hook, r.script, r.caption].filter(Boolean).join(" ")),
+            generatedCount: rows.length,
+            metadata: { userEdited: true },
+          }),
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(body?.error || "Integrity check failed");
+        if (!opts?.silent) {
+          setIntegrityState({ report: body.report ?? null, status: "idle" });
+        }
+        if (row?.id) {
+          setIntegrityCache((prev) => ({ ...prev, [row.id]: body.report ?? null }));
+        }
+      } catch (err) {
+        if (!opts?.silent) {
+          setIntegrityState({ report: null, status: "error", message: (err as Error).message });
+        }
+      }
+    },
+    [rows],
+  );
+
+  useEffect(() => {
+    if (integrityText) {
+      void computeIntegrity(integrityText, activeIntegrityRow);
+    }
+  }, [integrityText, computeIntegrity, activeIntegrityRow]);
+
+  useEffect(() => {
+    if (!activeIntegrityRow) {
+      setIntegrityState(initialIntegrity);
+    }
+  }, [activeIntegrityRow]);
+
+  // Background check for visible rows (first page slice)
+  useEffect(() => {
+    const rowsToCheck = pagedRows.slice(0, 5);
+    rowsToCheck.forEach((row) => {
+      if (!row.id) return;
+      if (integrityCache[row.id] !== undefined) return;
+      if (integrityInFlight.current.has(row.id)) return;
+      const text = [row.hook, row.script, row.caption].filter(Boolean).join(" ");
+      if (!text) return;
+      integrityInFlight.current.add(row.id);
+      void computeIntegrity(text, row, { silent: true }).finally(() => {
+        integrityInFlight.current.delete(row.id);
+      });
+    });
+  }, [pagedRows, integrityCache, computeIntegrity]);
+
+  const inlineIntegrityBadge = (report: IntegrityReport | null | undefined) => {
+    if (!report) return null;
+    const base =
+      report.status === "risk"
+        ? "bg-red-100 text-red-700 border-red-200"
+        : report.status === "warn"
+          ? "bg-amber-100 text-amber-700 border-amber-200"
+          : "bg-green-100 text-green-700 border-green-200";
+    return (
+      <span className={cn("inline-flex items-center gap-2 rounded-md border px-2.5 py-1 text-[11px] font-semibold uppercase", base)}>
+        <span>{report.status}</span>
+        <span className="text-[10px] font-bold opacity-80">{report.score ?? 0}/100</span>
+      </span>
+    );
+  };
 
   const pageCount = Math.max(1, Math.ceil(filteredRows.length / pageSize));
   const currentPage = Math.min(page, pageCount);
@@ -330,23 +446,59 @@ export default function ScriptsCaptionsPage() {
   };
 
   return (
-    <div className="space-y-4">
-      {toast && (
-        <div
-          className={cn(
-            "fixed right-4 top-4 z-30 rounded-md px-4 py-3 text-sm font-semibold shadow-lg",
+      <div className="space-y-4">
+        {toast && (
+          <div
+            className={cn(
+              "fixed right-4 top-4 z-30 rounded-md px-4 py-3 text-sm font-semibold shadow-lg",
             toast.type === "success"
               ? "bg-green-100 text-green-700"
               : "bg-red-100 text-red-700"
           )}
         >
           {toast.message}
-        </div>
-      )}
+          </div>
+        )}
 
-      <div className="rounded-2xl border border-gray-3 bg-white p-5 shadow-card-2 dark:border-stroke-dark dark:bg-dark-2">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
+        {integrityGate.open && integrityBlocking && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
+            <div className="w-full max-w-lg rounded-xl border border-gray-200 bg-white p-4 shadow-2xl dark:border-white/10 dark:bg-gray-900">
+              <h3 className="text-lg font-semibold text-dark dark:text-white">Content Integrity</h3>
+              <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
+                Status: {integrityState.report?.status.toUpperCase()}
+              </p>
+              <div className="mt-2 space-y-1 text-sm text-gray-700 dark:text-gray-200">
+                {(integrityState.report?.issues || []).map((issue) => (
+                  <div key={`${issue.code}-${issue.message}`} className="flex gap-2">
+                    <span className="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">{issue.code}</span>
+                    <span>{issue.message}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <button
+                  onClick={() => setIntegrityGate({ open: false })}
+                  className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-800 hover:border-primary hover:text-primary dark:border-white/10 dark:text-white"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    if (integrityGate.pending) integrityGate.pending();
+                    setIntegrityGate({ open: false });
+                  }}
+                  className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary/90"
+                >
+                  Proceed anyway
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div className="rounded-2xl border border-gray-3 bg-white p-5 shadow-card-2 dark:border-stroke-dark dark:bg-dark-2">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
             <p className="text-xs font-semibold uppercase tracking-[0.35em] text-primary">
               Scripts & Captions
             </p>
@@ -370,6 +522,28 @@ export default function ScriptsCaptionsPage() {
           </button>
         </div>
 
+        <div className="mt-3">
+          {activeIntegrityRow && (
+            <IntegrityPanel
+              report={integrityState.report}
+              loading={integrityState.status === "loading"}
+              error={integrityState.status === "error" ? integrityState.message : null}
+              onRefresh={() => integrityText && computeIntegrity(integrityText, activeIntegrityRow)}
+              onFix={(fix: IntegrityFix) => {
+                setToast({ type: "success", message: `Fix: ${fix.label}` });
+                if (integrityText) {
+                  void computeIntegrity(integrityText, activeIntegrityRow);
+                }
+              }}
+              subtitle={
+                activeIntegrityRow
+                  ? `Assessing: ${activeIntegrityRow.topic || activeIntegrityRow.platform || activeIntegrityRow.id}`
+                  : undefined
+              }
+            />
+          )}
+        </div>
+
         {generatedRows.length > 0 && (
           <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {generatedRows.map((row) => (
@@ -383,7 +557,12 @@ export default function ScriptsCaptionsPage() {
                     New
                   </span>
                 </div>
-                <p className="text-sm font-semibold text-dark dark:text-dark-8 line-clamp-3">
+                <div className="flex items-center gap-2 text-[11px]">
+                  {inlineIntegrityBadge(integrityCache[row.id]) || (
+                    <span className="text-[11px] font-semibold uppercase text-gray-5">Not checked</span>
+                  )}
+                </div>
+                <p className="mt-1 text-sm font-semibold text-dark dark:text-dark-8 line-clamp-3">
                   {row.script || row.caption || "—"}
                 </p>
                 <div className="mt-2 flex flex-wrap gap-2 text-[11px] font-semibold uppercase text-gray-7 dark:text-dark-6">
@@ -425,6 +604,8 @@ export default function ScriptsCaptionsPage() {
                     className="rounded-md border border-gray-3 px-3 py-1 text-gray-7 transition hover:bg-gray-1 dark:border-stroke-dark dark:text-dark-7 dark:hover:bg-dark-3"
                     onClick={() => {
                       setEditRow(row);
+                      const text = [row.hook, row.script, row.caption].filter(Boolean).join(" ");
+                      if (text) void computeIntegrity(text, row);
                       setForm({
                         description: row.topic || "",
                         contentType: form.contentType,
@@ -550,7 +731,12 @@ export default function ScriptsCaptionsPage() {
                       className="align-top hover:bg-gray-1/60 dark:hover:bg-dark-3"
                     >
                       <td className="px-4 py-3 text-sm text-gray-7 dark:text-dark-7">
-                        <div className="line-clamp-2 font-medium text-dark dark:text-dark-8">
+                        <div className="flex items-center gap-2">
+                          {inlineIntegrityBadge(integrityCache[row.id]) || (
+                            <span className="text-[11px] font-semibold uppercase text-gray-5">Not checked</span>
+                          )}
+                        </div>
+                        <div className="mt-1 line-clamp-2 font-medium text-dark dark:text-dark-8">
                           {row.script || "—"}
                         </div>
                         <div className="mt-2 flex flex-wrap gap-2 text-[11px] font-semibold uppercase">

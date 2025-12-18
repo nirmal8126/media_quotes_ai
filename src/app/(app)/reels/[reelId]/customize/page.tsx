@@ -7,6 +7,8 @@ import type { DragEvent } from "react";
 import { cn } from "@/lib/utils";
 import { labelForLanguage } from "@/lib/languages";
 import type { SafetyReport } from "@/types/safety";
+import type { IntegrityReport, IntegrityFix } from "@/lib/integrity/types";
+import { IntegrityPanel } from "@/components/IntegrityPanel";
 
 type ReelDetail = {
   id: string;
@@ -97,6 +99,12 @@ export default function ReelCustomizePage() {
   const [safetyStatus, setSafetyStatus] = useState<{ type: "idle" | "loading" | "error"; message?: string }>({
     type: "idle",
   });
+  const [integrityReport, setIntegrityReport] = useState<IntegrityReport | null>(null);
+  const [integrityStatus, setIntegrityStatus] = useState<{ type: "idle" | "loading" | "error"; message?: string }>({
+    type: "idle",
+  });
+  const [showExportGate, setShowExportGate] = useState(false);
+  const [pendingExportAction, setPendingExportAction] = useState<null | { action: ActionKind; message?: string }>(null);
   const platformLabel = (reel?.platform || "YOUTUBE_SHORTS").toString();
 
   const collapseStateFor = (openScene?: number): Record<number, boolean> => {
@@ -145,9 +153,26 @@ export default function ReelCustomizePage() {
     }
   };
 
+  const loadIntegrity = async () => {
+    if (!reelId) return;
+    setIntegrityStatus({ type: "loading", message: "Checking integrity..." });
+    try {
+      const res = await fetch(`/api/content/reel/${encodeURIComponent(reelId)}/integrity`, { cache: "no-store" });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(body?.error || "Unable to load integrity report.");
+      }
+      setIntegrityReport(body.report ?? null);
+      setIntegrityStatus({ type: "idle" });
+    } catch (err) {
+      setIntegrityStatus({ type: "error", message: (err as Error).message });
+    }
+  };
+
   useEffect(() => {
     void loadReel();
     void loadSafety();
+    void loadIntegrity();
   }, [reelId]);
 
   const gatherSettings = () => ({
@@ -224,6 +249,15 @@ export default function ReelCustomizePage() {
       .toString()
       .toUpperCase()
       .replace(/\s+/g, "_");
+
+    if (action === "export" || action === "publish") {
+      // Always show gate when integrity is warn/risk
+      if (integrityReport && (integrityReport.status === "warn" || integrityReport.status === "risk")) {
+        setPendingExportAction({ action, message: options?.message });
+        setShowExportGate(true);
+        return;
+      }
+    }
 
     setActionStatus({ type: "loading", message: options?.message || defaultMessages[action] || "Working..." });
 
@@ -1168,11 +1202,69 @@ export default function ReelCustomizePage() {
             </div>
           )}
 
+          {showExportGate && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
+              <div className="w-full max-w-lg rounded-xl border border-gray-200 bg-white p-4 shadow-2xl dark:border-white/10 dark:bg-gray-900">
+                <h3 className="text-lg font-semibold text-dark dark:text-white">Content Integrity Check</h3>
+                <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
+                  Status: <span className={cn("font-semibold", badgeClass(integrityReport?.status || "warn"))}>{integrityReport?.status?.toUpperCase() || "PENDING"}</span>
+                </p>
+                <div className="mt-2 space-y-1 text-sm text-gray-700 dark:text-gray-200">
+                  {(integrityReport?.issues || []).map((issue) => (
+                    <div key={`${issue.code}-${issue.message}`} className="flex gap-2">
+                      <span className="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">{issue.code}</span>
+                      <span>{issue.message}</span>
+                    </div>
+                  ))}
+                  {!integrityReport?.issues?.length && <div>No issues reported.</div>}
+                </div>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <button
+                    onClick={() => setShowExportGate(false)}
+                    className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-800 hover:border-primary hover:text-primary dark:border-white/10 dark:text-white"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (pendingExportAction) {
+                        setShowExportGate(false);
+                        void performAction(pendingExportAction.action, { message: pendingExportAction.message });
+                        setPendingExportAction(null);
+                      } else {
+                        setShowExportGate(false);
+                      }
+                    }}
+                    className={cn(
+                      "rounded-lg px-4 py-2 text-sm font-semibold text-white",
+                      integrityReport?.status === "risk" ? "bg-red-600 hover:bg-red-700" : "bg-primary hover:bg-primary/90",
+                    )}
+                  >
+                    {integrityReport?.status === "risk" ? "Export anyway (acknowledge risk)" : "Proceed"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="grid gap-3 md:grid-cols-2">
+            <IntegrityPanel
+              report={integrityReport ? { ...integrityReport, fixes: integrityReport.fixes } : null}
+              loading={integrityStatus.type === "loading"}
+              error={integrityStatus.type === "error" ? integrityStatus.message : null}
+              onRefresh={() => void loadIntegrity()}
+              onFix={(fix) =>
+                performAction(fix.action === "REGENERATE" || fix.action === "REWRITE" ? "applySuggestion" : "save", {
+                  message: `Fix triggered: ${fix.label}`,
+                  suggestion: fix.action,
+                })
+              }
+            />
+
             <div className="rounded-xl border border-gray-200 bg-white p-3 shadow-sm dark:border-white/10 dark:bg-gray-900">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.15em] text-primary">Content Integrity</p>
+                  <p className="text-xs font-semibold uppercase tracking-[0.15em] text-primary">Renderer Safety</p>
                   <div className="mt-1 flex items-center gap-2">
                     <span
                       className={cn(
@@ -1222,27 +1314,6 @@ export default function ReelCustomizePage() {
                     </span>
                     <span className="text-gray-800 dark:text-gray-100">{reason.message}</span>
                   </div>
-                ))}
-              </div>
-
-              <div className="mt-3 flex flex-wrap gap-2">
-                {(safetyReport?.suggested_fixes || [
-                  { action: "REPLACE_AUDIO", label: "Replace audio" },
-                  { action: "REPLACE_MEDIA", label: "Replace media" },
-                  { action: "REGENERATE_SCRIPT", label: "Regenerate script" },
-                ]).map((fix) => (
-                  <button
-                    key={fix.action}
-                    onClick={() =>
-                      performAction(
-                        fix.action === "REGENERATE_SCRIPT" ? "applySuggestion" : "save",
-                        { message: `Fix triggered: ${fix.label}`, suggestion: fix.action },
-                      )
-                    }
-                    className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-semibold text-gray-700 transition hover:border-primary hover:text-primary dark:border-white/10 dark:text-gray-200"
-                  >
-                    {fix.label}
-                  </button>
                 ))}
               </div>
             </div>

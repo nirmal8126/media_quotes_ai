@@ -4,13 +4,14 @@ import { computeSafetyReport } from "@/lib/safety-scoring";
 
 type Params = { reelId?: string };
 
-export async function GET(_request: Request, context: { params: Params }) {
+export async function GET(_request: Request, context: { params: Params } | { params: Promise<Params> }) {
   const session = await requireUser(_request);
   if ("errorResponse" in session) {
     return session.errorResponse;
   }
   const { user, applyCookies } = session;
-  const reelId = (context.params.reelId ?? "").toString().trim();
+  const params = "then" in context.params ? await context.params : context.params;
+  const reelId = (params.reelId ?? "").toString().trim();
 
   if (!reelId) {
     const response = NextResponse.json({ error: "reelId is required" }, { status: 400 });
@@ -32,4 +33,3 @@ export async function GET(_request: Request, context: { params: Params }) {
     return response;
   }
 }
-
