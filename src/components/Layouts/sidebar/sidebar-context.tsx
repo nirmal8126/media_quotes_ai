@@ -7,10 +7,12 @@ type SidebarState = "expanded" | "collapsed";
 
 type SidebarContextType = {
   state: SidebarState;
+  isCollapsed: boolean;
   isOpen: boolean;
   setIsOpen: (open: boolean) => void;
   isMobile: boolean;
   toggleSidebar: () => void;
+  toggleCollapse: () => void;
 };
 
 const SidebarContext = createContext<SidebarContextType | null>(null);
@@ -31,11 +33,13 @@ export function SidebarProvider({
   defaultOpen?: boolean;
 }) {
   const [isOpen, setIsOpen] = useState(defaultOpen);
+  const [isCollapsed, setIsCollapsed] = useState(false);
   const isMobile = useIsMobile();
 
   useEffect(() => {
     if (isMobile) {
       setIsOpen(false);
+      setIsCollapsed(false);
     } else {
       setIsOpen(true);
     }
@@ -45,14 +49,25 @@ export function SidebarProvider({
     setIsOpen((prev) => !prev);
   }
 
+  function toggleCollapse() {
+    // On mobile, just toggle the drawer; on desktop, collapse the rail.
+    if (isMobile) {
+      toggleSidebar();
+      return;
+    }
+    setIsCollapsed((prev) => !prev);
+  }
+
   return (
     <SidebarContext.Provider
       value={{
-        state: isOpen ? "expanded" : "collapsed",
+        state: isCollapsed ? "collapsed" : "expanded",
+        isCollapsed,
         isOpen,
         setIsOpen,
         isMobile,
         toggleSidebar,
+        toggleCollapse,
       }}
     >
       {children}
