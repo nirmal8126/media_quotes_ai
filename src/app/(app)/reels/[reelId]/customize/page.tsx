@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { DragEvent } from "react";
 import { cn } from "@/lib/utils";
 import { labelForLanguage } from "@/lib/languages";
+import type { SafetyReport } from "@/types/safety";
 
 type ReelDetail = {
   id: string;
@@ -92,6 +93,10 @@ export default function ReelCustomizePage() {
   const [collapsedScenes, setCollapsedScenes] = useState<Record<number, boolean>>({});
   const [sceneOrder, setSceneOrder] = useState<number[]>([1, 2, 3]);
   const [draggingScene, setDraggingScene] = useState<number | null>(null);
+  const [safetyReport, setSafetyReport] = useState<SafetyReport | null>(null);
+  const [safetyStatus, setSafetyStatus] = useState<{ type: "idle" | "loading" | "error"; message?: string }>({
+    type: "idle",
+  });
   const platformLabel = (reel?.platform || "YOUTUBE_SHORTS").toString();
 
   const collapseStateFor = (openScene?: number): Record<number, boolean> => {
@@ -124,8 +129,25 @@ export default function ReelCustomizePage() {
     }
   };
 
+  const loadSafety = async () => {
+    if (!reelId) return;
+    setSafetyStatus({ type: "loading", message: "Checking safety..." });
+    try {
+      const res = await fetch(`/api/reels/${encodeURIComponent(reelId)}/safety-report`, { cache: "no-store" });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(body?.error || "Unable to load safety report.");
+      }
+      setSafetyReport(body.report ?? null);
+      setSafetyStatus({ type: "idle" });
+    } catch (err) {
+      setSafetyStatus({ type: "error", message: (err as Error).message });
+    }
+  };
+
   useEffect(() => {
     void loadReel();
+    void loadSafety();
   }, [reelId]);
 
   const gatherSettings = () => ({
@@ -175,6 +197,12 @@ export default function ReelCustomizePage() {
     sceneUploads,
     sceneOrder,
   });
+
+  const safetyBadgeClass = (level: SafetyReport["status"]) => {
+    if (level === "risk") return "bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-200";
+    if (level === "warn") return "bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-200";
+    return "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-100";
+  };
 
   type ActionKind = "save" | "export" | "publish" | "applySuggestion" | "ignoreSuggestion";
 
@@ -1139,6 +1167,86 @@ export default function ReelCustomizePage() {
               {actionStatus.message}
             </div>
           )}
+
+          <div className="grid gap-3 md:grid-cols-2">
+            <div className="rounded-xl border border-gray-200 bg-white p-3 shadow-sm dark:border-white/10 dark:bg-gray-900">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.15em] text-primary">Content Integrity</p>
+                  <div className="mt-1 flex items-center gap-2">
+                    <span
+                      className={cn(
+                        "rounded-full px-3 py-1 text-xs font-semibold",
+                        safetyReport ? safetyBadgeClass(safetyReport.status) : "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300",
+                      )}
+                    >
+                      {safetyReport ? safetyReport.status.toUpperCase() : "PENDING"}
+                    </span>
+                    {safetyReport && (
+                      <span className="text-sm font-semibold text-gray-700 dark:text-gray-200">
+                        Score: {safetyReport.score}/100
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <button
+                  onClick={() => void loadSafety()}
+                  disabled={safetyStatus.type === "loading"}
+                  className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-semibold text-gray-700 transition hover:border-primary hover:text-primary disabled:opacity-60 dark:border-white/10 dark:text-gray-200"
+                >
+                  {safetyStatus.type === "loading" ? "Checking..." : "Refresh"}
+                </button>
+              </div>
+
+              {safetyStatus.type === "error" && (
+                <p className="mt-3 text-sm text-red">{safetyStatus.message}</p>
+              )}
+
+              <div className="mt-3 space-y-2">
+                {(safetyReport?.reasons || [
+                  { code: "PENDING", level: "warn", message: "Safety analysis pending." },
+                ]).map((reason) => (
+                  <div
+                    key={`${reason.code}-${reason.message}`}
+                    className={cn(
+                      "flex items-start gap-2 rounded-lg border px-3 py-2 text-sm",
+                      reason.level === "risk"
+                        ? "border-red-200 bg-red-50 dark:border-red-500/20 dark:bg-red-500/10"
+                        : reason.level === "warn"
+                          ? "border-amber-200 bg-amber-50 dark:border-amber-500/20 dark:bg-amber-500/10"
+                          : "border-emerald-200 bg-emerald-50 dark:border-emerald-500/20 dark:bg-emerald-500/10",
+                    )}
+                  >
+                    <span className="text-xs font-semibold uppercase text-gray-600 dark:text-gray-300">
+                      {reason.code}
+                    </span>
+                    <span className="text-gray-800 dark:text-gray-100">{reason.message}</span>
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-3 flex flex-wrap gap-2">
+                {(safetyReport?.suggested_fixes || [
+                  { action: "REPLACE_AUDIO", label: "Replace audio" },
+                  { action: "REPLACE_MEDIA", label: "Replace media" },
+                  { action: "REGENERATE_SCRIPT", label: "Regenerate script" },
+                ]).map((fix) => (
+                  <button
+                    key={fix.action}
+                    onClick={() =>
+                      performAction(
+                        fix.action === "REGENERATE_SCRIPT" ? "applySuggestion" : "save",
+                        { message: `Fix triggered: ${fix.label}`, suggestion: fix.action },
+                      )
+                    }
+                    className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-semibold text-gray-700 transition hover:border-primary hover:text-primary dark:border-white/10 dark:text-gray-200"
+                  >
+                    {fix.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
 
           <div className="grid gap-3 md:grid-cols-[minmax(0,1.3fr)_minmax(320px,0.7fr)]">
             <div className="space-y-3 rounded-xl border border-gray-200 bg-white p-3 shadow-sm dark:border-white/10 dark:bg-gray-900">

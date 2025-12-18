@@ -383,6 +383,13 @@ async function insertReelRecord(payload: {
         data = retry.data;
         error = null;
       } else {
+        // If template column missing in cache, surface actionable error
+        if ((retry.error?.message || '').toLowerCase().includes('template')) {
+          throw new HttpError(
+            'Supabase schema cache is missing optional columns (template/brand/audio). Please run the migration web/docs/sql/ai_reels_tables.sql or refresh Supabase schema cache.',
+            500,
+          );
+        }
         throw new HttpError(retry.error?.message || 'Unable to save reel record', 500);
       }
     } else {
