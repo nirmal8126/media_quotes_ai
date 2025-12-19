@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/api-auth";
+import { generateStructuredScript } from "@/lib/ai/generateStructuredScript";
 import {
   generateCaptionContent,
   generateHashtagList,
