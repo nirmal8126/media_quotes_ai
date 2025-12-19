@@ -4,14 +4,14 @@ import {
   generateCaptionContent,
   generateHashtagList,
   generateScriptAssets,
-  storeGeneratedReel,
 } from "@/lib/reel-service";
 import { pickProvider } from "@/lib/llm-provider";
-import { defaultProvider } from "@/lib/openai";
+import { defaultProvider, generateCompletion } from "@/lib/openai";
 import { normalizeScriptCaptionRequest } from "@/lib/generation-normalize";
 import type { ScriptCaptionRequest } from "@/types/generation";
 import { supabaseAdmin } from "@/lib/supabase";
-import { generateCompletion } from "@/lib/openai";
+import { buildRepairPrompt, normalizeTopic, runQualityChecks, toSections, topicHash } from "@/lib/script-qc";
+import { pickTemplate } from "@/lib/scriptTemplates";
 
 type Payload = {
   topic?: string;
@@ -39,19 +39,20 @@ type Payload = {
 };
 
 type StructuredOutput = {
-  language: string;
-  durationSec: number;
-  targetWords: number;
-  voiceoverScript: Array<{ t: string; line: string }>;
-  onScreenCaptions: Array<{ t: string; text: string }>;
-  postCaption: string;
-  hashtags: string[];
-  titleOptions?: string[];
-  safety?: { copyrightRisk: string; notes?: string[] };
+  script?: { title?: string; sections?: Array<{ tStart: number; tEnd: number; type?: string; text: string }> };
+  caption?: { text?: string; hashtags?: string[] };
+  qc?: { issues?: string[]; fixesApplied?: string[] };
 };
 
 function cleanJsonLike(input: string) {
   return input.replace(/```json/gi, "").replace(/```/g, "").trim();
+}
+
+function stripLabels(text: string) {
+  return text
+    .replace(/\b(hook|intro|conclusion|outro)\s*[:\-]/gi, "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function countWords(text: string) {
@@ -86,21 +87,28 @@ function buildPrompt(params: {
   mode?: string;
   scriptSeed?: string;
   captionSeed?: string;
+  template: Array<{ tStart: number; tEnd: number; type: string }>;
 }) {
   const lines = [
-    `You are writing a short-form ${params.platform} script and caption.`,
-    `Language: ${params.language || "en"}. Audience: ${params.audience}. Goal: ${params.goal}. Tone: ${params.tone}.`,
-    `Duration: ${params.durationSec}s. Target words: ${params.targetWords}. Pace must fit duration.`,
-    params.hook ? `Hook: ${params.hook}.` : "",
-    params.hookStyle ? `Hook style: ${params.hookStyle}.` : "",
+    "You are a professional short-form content writer for social media.",
+    `Platform: ${params.platform}. Tone: ${params.tone}. Audience: ${params.audience || "general"}. Language: ${params.language || "en"}.`,
+    `Topic: ${params.topic}. Duration: ${params.durationSec} seconds. Target words (guidance): ${params.targetWords}. Goal: ${params.goal}.`,
+    params.hook ? `Use this hook/angle: ${params.hook}.` : "",
+    params.hookStyle ? `Hook style: ${params.hookStyle}.` : "Choose the best suited hook style for this platform.",
     params.mustInclude ? `Must include: ${params.mustInclude}.` : "",
     params.mustAvoid ? `Must avoid: ${params.mustAvoid}.` : "",
-    params.scriptSeed ? `Script seed (${params.mode || "generate"}): ${params.scriptSeed}` : "",
-    params.captionSeed ? `Caption seed (${params.mode || "generate"}): ${params.captionSeed}` : "",
-    `Return STRICT JSON ONLY with keys: language, durationSec, targetWords, voiceoverScript:[{t:"0-2s",line:"..."}], onScreenCaptions:[{t,text}], postCaption, hashtags (array), titleOptions (array), safety:{copyrightRisk:"low|medium|high",notes:[]}.`,
-    params.cta && params.cta !== "none"
-      ? `Include a CTA in the last 3-5 seconds: "${params.cta}" (soft tone for IG).`
-      : "CTA: none requested.",
+    params.scriptSeed ? `Reference script (for improve/rehash): ${params.scriptSeed}` : "",
+    "",
+    `Use this section template (keep timings/types, fill text): ${JSON.stringify(params.template)}`,
+    "",
+    "STRICT RULES:",
+    "Return JSON ONLY with keys: script:{title,sections:[{tStart,tEnd,type,text}]}, caption:{text,hashtags[]}, qc:{issues,fixesApplied}.",
+    'Do NOT include labels like "Hook:", "Intro:", or "Conclusion" inside text.',
+    "Script must be clean, spoken-language friendly, and naturally fit the duration. Caption must be platform-ready with CTA if provided. No truncation or placeholders.",
+    "Avoid copyrighted phrases or famous quotes; ensure originality.",
+    params.cta && params.cta !== "none" ? `CTA to weave in: ${params.cta}.` : "CTA: none.",
+    "",
+    "Return the JSON. No extra text.",
   ].filter(Boolean);
   return lines.join(" ");
 }
@@ -208,9 +216,27 @@ export async function POST(request: Request) {
   const provider = pickProvider({ bodyProvider: body.provider, user, fallback: defaultProvider });
   const userScript = typeof body.script === "string" ? body.script.trim() : "";
   const userCaption = typeof body.caption === "string" ? body.caption.trim() : "";
-  const targetWords = computeTargetWords(normalized.language || "en", durationSec, pace);
+  const targetWords = Math.round((durationSec / 60) * 150);
+  let finalHook = hook;
+  const normalizedTopic = normalizeTopic(normalized.description);
+  const topic_hash = topicHash(normalized.description);
+
+  // Load previous texts for dedupe, scoped by user + module + platform + topic + language
+  const { data: prevRows } = await supabaseAdmin
+    .from("scripts")
+    .select("text, script, output_json")
+    .eq("user_id", user.id)
+    .eq("module", "scripts")
+    .eq("platform", normalized.platform)
+    .eq("topic_hash", topic_hash)
+    .limit(20);
+  const previousTexts =
+    prevRows
+      ?.map((row: any) => row?.text || row?.script || row?.output_json?.script?.text || "")
+      .filter((t: string) => typeof t === "string" && t.trim().length > 0) || [];
 
   async function generateStructured() {
+    const template = pickTemplate(durationSec);
     const prompt = buildPrompt({
       topic: normalized.description,
       platform: normalized.platform,
@@ -228,8 +254,9 @@ export async function POST(request: Request) {
       mode,
       scriptSeed: userScript,
       captionSeed: userCaption,
+      template,
     });
-    const raw = await generateCompletion(prompt, { temperature: 0.6, maxTokens: 700, provider });
+    const raw = await generateCompletion(prompt, { temperature: 0.4, maxTokens: 900, provider });
     const cleaned = cleanJsonLike(raw);
     let parsed: StructuredOutput | null = null;
     try {
@@ -237,89 +264,263 @@ export async function POST(request: Request) {
     } catch {
       parsed = null;
     }
-    if (!parsed) {
+    if (!parsed?.script?.sections?.length || !parsed.caption?.text) {
       // Fallback structured
       parsed = {
-        language: normalized.language || "en",
-        durationSec,
-        targetWords,
-        voiceoverScript: [{ t: "0-2s", line: hook || normalized.description }],
-        onScreenCaptions: [],
-        postCaption: userCaption || normalized.description,
-        hashtags: ["#learnonreels"],
-        safety: { copyrightRisk: "low", notes: ["Fallback"] },
-        titleOptions: [normalized.description],
+        script: {
+          title: normalized.description,
+          sections: template.map((slot) => ({
+            ...slot,
+            text: slot.type === "hook" && hook ? hook : normalized.description,
+          })),
+        },
+        caption: { text: userCaption || normalized.description, hashtags: ["#learnonreels"] },
+        qc: { issues: ["fallback"], fixesApplied: [] },
       };
     }
-    const fixed = applyFixes(parsed, { targetWords, hook, cta, mustAvoid });
-    return fixed;
+    return parsed;
   }
 
   try {
     const structured = await generateStructured();
+    const template = pickTemplate(durationSec);
 
-    const scriptText = structured.voiceoverScript.map((v) => v.line).join(" ");
-    const captionText = structured.postCaption || userCaption;
-    const hashtags =
-      structured.hashtags && structured.hashtags.length
-        ? structured.hashtags
-        : await generateHashtagList(normalized.tone, normalized.platform, provider);
+    let sections = (structured.script?.sections || []).map((s) => ({
+      tStart: Math.max(0, Math.round(Number(s.tStart) || 0)),
+      tEnd: Math.max(Math.round(Number(s.tEnd) || 0), Math.round(Number(s.tStart) || 0) + 1),
+      type: s.type || "",
+      text: stripLabels(s.text || ""),
+    }));
 
-    let recordId: string | null = null;
-    try {
-      const saved = await storeGeneratedReel({
-        userId: user.id,
-        channelId,
-        status: "generated",
-        tone: normalized.tone,
-        platform: normalized.platform,
-        hook: hook ?? (structured.voiceoverScript[0]?.line || ""),
-        script: scriptText,
-        caption: captionText,
-        hashtags,
-        thumbnailPrompt: normalized.description,
-      });
-      recordId = saved?.id ?? null;
-    } catch (storeErr) {
-      console.warn("Failed to persist generated reel; will continue without db id", storeErr);
+    if (!sections.length) {
+      sections = template.map((slot) => ({
+        ...slot,
+        text: slot.type === "hook" && hook ? hook : normalized.description,
+      }));
     }
 
-    // Fallback: persist directly to scripts table if reel persistence failed
-    if (!recordId) {
-      const { data, error } = await supabaseAdmin
-        .from("scripts")
-        .insert({
-          user_id: user.id,
-          platform: normalized.platform,
-          tone: normalized.tone,
-          input_prompt: normalized.description,
-          text: scriptText,
-          created_at: new Date().toISOString(),
-        })
-        .select("id")
-        .maybeSingle();
-      if (!error) {
-        recordId = data?.id ?? null;
+    let scriptText = sections.map((s) => s.text).join(" ").trim();
+    let captionText = stripLabels((structured.caption?.text || userCaption || "").trim());
+    let hashtags =
+      structured.caption?.hashtags && structured.caption.hashtags.length
+        ? structured.caption.hashtags
+        : await generateHashtagList(normalized.tone, normalized.platform, provider);
+
+    // If the structured output is too thin, regenerate with the simpler script/caption helpers
+    if (countWords(scriptText) < 30) {
+      const scriptResult = await generateScriptAssets(
+        normalized.tone || "informative",
+        normalized.platform || "instagram",
+        normalized.description,
+        hook,
+        provider,
+      );
+      scriptText = stripLabels(scriptResult.script || scriptText).replace(/\.\s*/g, ".\n").trim();
+      finalHook = finalHook || scriptResult.hook || hook;
+      sections = toSections(scriptText, durationSec);
+    }
+
+    if (!captionText || captionText.length < 10) {
+      const captionResult = await generateCaptionContent(
+        normalized.tone || "informative",
+        normalized.platform || "instagram",
+        normalized.description,
+        finalHook || hook,
+        provider,
+      );
+      captionText = stripLabels(`${captionResult.caption} ${captionResult.callToAction}`.trim());
+    }
+
+    if (!hashtags || hashtags.length < 3) {
+      hashtags = await generateHashtagList(normalized.tone, normalized.platform, provider);
+    }
+
+    // QC and repair
+    const qc = runQualityChecks({
+      scriptText,
+      captionText,
+      durationSec,
+      cta,
+      previousTexts,
+      contentType: normalized.contentType,
+      requiredTypes: ["hook", "cta"],
+      minSections: template.length,
+      targetWords,
+      topic: normalized.description,
+      sections,
+    });
+
+    let repaired = false;
+    if (qc.issues.length > 0) {
+      const repairPrompt = buildRepairPrompt({
+        topic: normalized.description,
+        platform: normalized.platform,
+        tone: normalized.tone,
+        language: normalized.language || "en",
+        durationSec,
+        cta,
+        captionText,
+        scriptText,
+        issues: qc.issues,
+      });
+      try {
+        const repairedRaw = await generateCompletion(repairPrompt, { temperature: 0.4, maxTokens: 900, provider });
+        const fixed = JSON.parse(cleanJsonLike(repairedRaw)) as {
+          script?: { title?: string; sections?: Array<{ tStart: number; tEnd: number; text: string; type?: string }> };
+          caption?: { text?: string; hashtags?: string[] };
+          qc?: { issues?: string[]; fixesApplied?: string[] };
+        };
+        if (fixed?.script?.sections?.length) {
+          sections = fixed.script.sections.map((s) => ({
+            tStart: Math.max(0, Math.round(Number(s.tStart) || 0)),
+            tEnd: Math.max(Math.round(Number(s.tEnd) || 0), Math.round(Number(s.tStart) || 0) + 1),
+            type: s.type || "",
+            text: stripLabels(s.text || ""),
+          }));
+          scriptText = sections.map((s) => s.text).join(" ").trim();
+        }
+        if (fixed?.caption?.text) {
+          captionText = stripLabels(fixed.caption.text);
+          hashtags = fixed.caption.hashtags ?? hashtags;
+        }
+        if (fixed?.qc?.issues) {
+          qc.issues = fixed.qc.issues;
+        }
+        qc.fixesApplied = [...(qc.fixesApplied || []), "repair_prompt"];
+        repaired = true;
+      } catch (err) {
+        console.warn("Repair prompt failed, using original content", err);
       }
+    }
+
+    const responsePayload = {
+      script: {
+        title: normalized.description,
+        sections,
+      },
+      caption: {
+        text: captionText,
+        hashtags,
+      },
+      qc: {
+        ...qc,
+        fixesApplied: qc.fixesApplied || (repaired ? ["repair_prompt"] : []),
+      },
+    };
+
+    // Persist to scripts table for history (avoid reels insert to skip script_id constraint issues)
+    const basePayload: Record<string, unknown> = {
+      user_id: user.id,
+      platform: normalized.platform,
+      tone: normalized.tone,
+      input_prompt: normalized.description,
+      hook: finalHook ?? hook ?? null,
+      audience: audience || null,
+      topic_hash,
+      module: "scripts",
+      caption: captionText,
+      qc: responsePayload.qc,
+      output_json: {
+        ...responsePayload,
+        metadata: {
+          userEdited: false,
+          language: normalized.language || "en",
+          module: "scripts",
+          topic_hash,
+        },
+      },
+      created_at: new Date().toISOString(),
+    };
+
+    async function insertWith(field: "text" | "script") {
+      return supabaseAdmin
+        .from("scripts")
+        .insert({ ...basePayload, [field]: scriptText })
+        .select("id, hook, audience, input_prompt, text, script, tone, platform, created_at")
+        .maybeSingle();
+    }
+
+    let recordId: string | null = null;
+    let firstError: Error | null = null;
+
+    const firstTry = await insertWith("text");
+    if (!firstTry.error) {
+      recordId = firstTry.data?.id ?? null;
+    } else {
+      firstError = new Error(firstTry.error.message);
+      const msg = firstTry.error.message.toLowerCase();
+      const retryPayload = { ...basePayload };
+
+      // If hook/audience columns are missing, drop them and retry
+      if (msg.includes("hook")) {
+        delete (retryPayload as any).hook;
+      }
+      if (msg.includes("audience")) {
+        delete (retryPayload as any).audience;
+      }
+      if (msg.includes("module")) {
+        delete (retryPayload as any).module;
+      }
+      if (msg.includes("topic_hash")) {
+        delete (retryPayload as any).topic_hash;
+      }
+
+      if (msg.includes("text") && msg.includes("schema cache")) {
+        // Supabase schema cache missing text column; try fallback field name
+        const fallback = await supabaseAdmin
+          .from("scripts")
+          .insert({ ...retryPayload, script: scriptText })
+          .select("id, hook, audience, input_prompt, text, script, tone, platform, created_at")
+          .maybeSingle();
+        if (!fallback.error) {
+          recordId = fallback.data?.id ?? null;
+        } else {
+          console.error("Script insert fallback failed", fallback.error);
+        }
+      } else {
+        // Retry with cleaned payload and text column if we removed fields
+        if (
+          (retryPayload as any).hook === undefined ||
+          (retryPayload as any).audience === undefined ||
+          (retryPayload as any).module === undefined ||
+          (retryPayload as any).topic_hash === undefined
+        ) {
+          const retry = await supabaseAdmin
+            .from("scripts")
+            .insert({ ...retryPayload, text: scriptText })
+            .select("id, hook, audience, input_prompt, text, script, tone, platform, created_at")
+            .maybeSingle();
+          if (!retry.error) {
+            recordId = retry.data?.id ?? null;
+          } else {
+            console.error("Script insert retry failed", retry.error);
+          }
+        } else {
+          console.error("Script insert failed", firstTry.error);
+        }
+      }
+    }
+
+    if (!recordId) {
+      const response = NextResponse.json(
+        {
+          error:
+            firstError?.message ||
+            "Unable to save script. Ensure the scripts table has a text column (refresh Supabase schema cache) or apply docs/sql/full_schema.sql.",
+        },
+        { status: 500 },
+      );
+      applyCookies(response);
+      return response;
     }
 
     const response = NextResponse.json({
       message: "Generated",
       normalized,
-      variations: [
-        {
-          id: recordId ?? `local-${Date.now()}`,
-          topic: normalized.description,
-          tone: normalized.tone,
-          platform: normalized.platform,
-          hook: hook ?? (structured.voiceoverScript[0]?.line || ""),
-          script: scriptText,
-          caption: captionText,
-          hashtags,
-          created_at: new Date().toISOString(),
-          structured,
-        },
-      ],
+      script: responsePayload.script,
+      caption: responsePayload.caption,
+      qc: responsePayload.qc,
+      id: recordId ?? `local-${Date.now()}`,
     });
     applyCookies(response);
     return response;

@@ -9,6 +9,7 @@ import type { ScriptCaptionRequest } from "@/types/generation";
 
 type UpdatePayload = {
   id?: string;
+  description?: string;
   topic?: string;
   tone?: string;
   platform?: string;
@@ -18,6 +19,11 @@ type UpdatePayload = {
   hashtags?: string[];
   regenerate?: boolean;
   provider?: "openai" | "gemini";
+  length?: string;
+  contentType?: string;
+  persona?: string;
+  language?: string;
+  variations?: number;
 };
 
 export async function PATCH(request: Request) {
@@ -104,31 +110,60 @@ export async function PATCH(request: Request) {
   const scriptUpdates: Record<string, unknown> = {};
   if (updates.tone) scriptUpdates.tone = updates.tone;
   if (updates.platform) scriptUpdates.platform = updates.platform;
-  if (updates.script) scriptUpdates.text = updates.script;
+  if (updates.script) {
+    scriptUpdates.text = updates.script;
+    scriptUpdates.script = updates.script; // fallback column name
+  }
   if (topic) scriptUpdates.input_prompt = topic;
+  if (updates.hook) scriptUpdates.hook = updates.hook;
+  if (updates.audience) scriptUpdates.audience = updates.audience;
 
   const { data: scriptRow, error: scriptErr } = await supabaseAdmin
     .from("scripts")
     .update({ ...scriptUpdates, updated_at: new Date().toISOString() })
     .eq("id", id)
     .eq("user_id", user.id)
-    .select("id, tone, platform, input_prompt, text, created_at")
+    .select("*")
     .maybeSingle();
 
   if (scriptErr) {
-    updateError = scriptErr.message;
+    const msg = scriptErr.message?.toLowerCase() || "";
+    const retryPayload = { ...scriptUpdates };
+    if (msg.includes("hook")) delete (retryPayload as any).hook;
+    if (msg.includes("audience")) delete (retryPayload as any).audience;
+
+    // Fallback: try updating "script" column if "text" is missing in schema cache
+    if (msg.includes("text") && msg.includes("column")) {
+      const { data: retryRow, error: retryErr } = await supabaseAdmin
+        .from("scripts")
+        .update({ ...retryPayload, text: undefined, updated_at: new Date().toISOString() })
+        .eq("id", id)
+        .eq("user_id", user.id)
+        .select("*")
+        .maybeSingle();
+
+      if (retryErr) {
+        updateError = retryErr.message;
+      } else {
+        targetItem = retryRow;
+      }
+    } else {
+      const { data: retryRow, error: retryErr } = await supabaseAdmin
+        .from("scripts")
+        .update({ ...retryPayload, updated_at: new Date().toISOString() })
+        .eq("id", id)
+        .eq("user_id", user.id)
+        .select("*")
+        .maybeSingle();
+
+      if (retryErr) {
+        updateError = retryErr.message;
+      } else {
+        targetItem = retryRow;
+      }
+    }
   } else {
-    targetItem = {
-      id: scriptRow?.id ?? id,
-      tone: scriptRow?.tone ?? tone,
-      platform: scriptRow?.platform ?? platform,
-      hook,
-      script: scriptRow?.text ?? updates.script ?? "",
-      caption: updates.caption ?? "",
-      hashtags: updates.hashtags ?? [],
-      topic: scriptRow?.input_prompt ?? topic,
-      created_at: scriptRow?.created_at ?? new Date().toISOString(),
-    };
+    targetItem = scriptRow;
   }
 
   if (updateError) {
@@ -138,7 +173,20 @@ export async function PATCH(request: Request) {
     return response;
   }
 
-  const response = NextResponse.json({ item: targetItem });
+  const response = NextResponse.json({
+    item: {
+      id: targetItem?.id ?? id,
+      tone: targetItem?.tone ?? tone,
+      platform: targetItem?.platform ?? platform,
+      hook,
+      audience: targetItem?.audience ?? updates.audience ?? "",
+      script: targetItem?.text ?? targetItem?.script ?? updates.script ?? "",
+      caption: updates.caption ?? "",
+      hashtags: updates.hashtags ?? [],
+      topic: targetItem?.input_prompt ?? topic,
+      created_at: targetItem?.created_at ?? new Date().toISOString(),
+    },
+  });
   applyCookies(response);
   return response;
 }
