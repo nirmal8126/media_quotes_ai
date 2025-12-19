@@ -11,6 +11,11 @@ import type {
 } from "@/types/generation";
 import { IntegrityPanel } from "@/components/IntegrityPanel";
 import type { IntegrityFix, IntegrityReport } from "@/lib/integrity/types";
+import {
+  labelForLanguage,
+  languageOptions,
+  resolveLanguageCode,
+} from "@/lib/languages";
 
 function ModalPortal({ children }: { children: React.ReactNode }) {
   if (typeof document === "undefined") return null;
@@ -72,7 +77,7 @@ const defaultForm = {
   cta: "follow",
   hookStyle: "",
   persona: "",
-  language: "english",
+  language: labelForLanguage("en") || "English",
   hook: "",
   script: "",
   caption: "",
@@ -83,19 +88,6 @@ const defaultForm = {
 
 const initialIntegrity: IntegrityState = { report: null, status: "idle" };
 
-const languageOptions = [
-  { code: "english", label: "English" },
-  { code: "hindi", label: "Hindi" },
-  { code: "hinglish", label: "Hinglish" },
-  { code: "other", label: "Other" },
-];
-
-function resolveLanguageCode(input: string) {
-  const normalized = input.trim().toLowerCase();
-  const found = languageOptions.find((lang) => lang.code === normalized || lang.label.toLowerCase() === normalized);
-  return found?.code || "english";
-}
-
 export default function ScriptsCaptionsPage() {
   const [rows, setRows] = useState<ScriptRow[]>([]);
   const [integrityCache, setIntegrityCache] = useState<Record<string, IntegrityReport | null>>({});
@@ -103,6 +95,8 @@ export default function ScriptsCaptionsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [form, setForm] = useState({ ...defaultForm });
+  const [languageQuery, setLanguageQuery] = useState(labelForLanguage(defaultForm.language) || "");
+  const [showLanguageList, setShowLanguageList] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [detailRow, setDetailRow] = useState<ScriptRow | null>(null);
   const [editRow, setEditRow] = useState<ScriptRow | null>(null);
@@ -121,6 +115,21 @@ export default function ScriptsCaptionsPage() {
   const topicInputRef = useRef<HTMLInputElement | null>(null);
   const [integrityState, setIntegrityState] = useState<IntegrityState>(initialIntegrity);
   const [integrityGate, setIntegrityGate] = useState<{ open: boolean; pending?: () => void }>({ open: false });
+
+  const filteredLanguages = useMemo(() => {
+    if (!showLanguageList) return [];
+    const term = (languageQuery || "").trim().toLowerCase();
+    if (!term || term === "choose a language...") return languageOptions;
+
+    const exactMatch = languageOptions.some(
+      (lang) => lang.label.toLowerCase() === term || lang.code.toLowerCase() === term,
+    );
+    if (exactMatch) return languageOptions;
+
+    return languageOptions.filter(
+      (lang) => lang.label.toLowerCase().includes(term) || lang.code.toLowerCase().includes(term),
+    );
+  }, [languageQuery, showLanguageList]);
 
   useEffect(() => {
     const fetchRows = async () => {
@@ -224,6 +233,8 @@ export default function ScriptsCaptionsPage() {
 
   const resetForm = () => {
     setForm({ ...defaultForm });
+    setLanguageQuery(labelForLanguage(defaultForm.language) || "");
+    setShowLanguageList(false);
     setSubmitStatus({ type: "idle" });
     setEditRow(null);
     setShowModal(false);
@@ -722,24 +733,30 @@ export default function ScriptsCaptionsPage() {
                             className="rounded-md border border-gray-3 px-3 py-1 text-gray-7 transition hover:bg-gray-1 dark:border-stroke-dark dark:text-dark-7 dark:hover:bg-dark-3"
                             onClick={() => {
                               setEditRow(row);
-                              setForm((prev) => ({
-                                ...defaultForm,
-                                contentType: prev.contentType,
-                                durationSec: prev.durationSec,
-                                goal: prev.goal,
-                                tone: (row.tone as ToneStyle) || prev.tone,
-                                platform: (row.platform as Platform) || "instagram_reels",
-                                description: row.topic || "",
-                                audience: prev.audience,
-                                cta: prev.cta,
-                                hookStyle: prev.hookStyle,
-                                persona: prev.persona,
-                                language: resolveLanguageCode(row.language || prev.language),
-                                hook: row.hook || "",
-                                script: row.script || "",
-                                caption: row.caption || "",
-                                mode: prev.mode,
-                              }));
+                              setForm((prev) => {
+                                const resolved = resolveLanguageCode(row.language || prev.language || defaultForm.language);
+                                const langLabel = labelForLanguage(resolved) || resolved;
+                                return {
+                                  ...defaultForm,
+                                  contentType: prev.contentType,
+                                  durationSec: prev.durationSec,
+                                  goal: prev.goal,
+                                  tone: (row.tone as ToneStyle) || prev.tone,
+                                  platform: (row.platform as Platform) || "instagram_reels",
+                                  description: row.topic || "",
+                                  audience: prev.audience,
+                                  cta: prev.cta,
+                                  hookStyle: prev.hookStyle,
+                                  persona: prev.persona,
+                                  language: langLabel,
+                                  hook: row.hook || "",
+                                  script: row.script || "",
+                                  caption: row.caption || "",
+                                  mode: prev.mode,
+                                };
+                              });
+                              setLanguageQuery(labelForLanguage(row.language || defaultForm.language) || "");
+                              setShowLanguageList(false);
                               setShowModal(true);
                               setSubmitStatus({ type: "idle" });
                             }}
@@ -997,17 +1014,60 @@ export default function ScriptsCaptionsPage() {
                   </label>
                   <label className="block text-sm font-semibold text-dark dark:text-dark-8">
                     Language *
-                    <select
-                      className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
-                      value={form.language}
-                      onChange={(e) => setForm((prev) => ({ ...prev, language: e.target.value }))}
-                    >
-                      {languageOptions.map((opt) => (
-                        <option key={opt.code} value={opt.code}>
-                          {opt.label}
-                        </option>
-                      ))}
-                    </select>
+                    <div className="relative mt-2">
+                      <input
+                        className="w-full rounded-lg border border-gray-3 bg-white px-4 pr-10 py-3 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+                        name="language"
+                        value={languageQuery}
+                        onFocus={() => setShowLanguageList(true)}
+                        onClick={() => setShowLanguageList(true)}
+                        onChange={(e) => {
+                          const next = e.target.value;
+                          setLanguageQuery(next);
+                          setForm((prev) => ({ ...prev, language: next }));
+                          setShowLanguageList(true);
+                        }}
+                        placeholder="Choose a language..."
+                        autoComplete="off"
+                        onBlur={() => {
+                          setTimeout(() => setShowLanguageList(false), 120);
+                        }}
+                      />
+                      <button
+                        type="button"
+                        aria-label="Show languages"
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          setShowLanguageList((prev) => !prev);
+                        }}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 flex h-8 w-8 items-center justify-center rounded-md text-gray-6 transition hover:bg-gray-2 dark:text-dark-6 dark:hover:bg-dark-4"
+                      >
+                        v
+                      </button>
+                      {showLanguageList && (
+                        <div className="absolute z-20 mt-1 max-h-56 w-full overflow-auto rounded-lg border border-gray-3 bg-white shadow-card-2 dark:border-stroke-dark dark:bg-dark-3">
+                          {filteredLanguages.length === 0 && (
+                            <div className="px-3 py-2 text-sm text-gray-6 dark:text-dark-6">No matches</div>
+                          )}
+                          {filteredLanguages.map((lang) => (
+                            <button
+                              type="button"
+                              key={`${lang.code}-${lang.label}`}
+                              className="flex w-full items-center justify-between px-3 py-2 text-left text-sm text-dark hover:bg-gray-1 dark:text-dark-8 dark:hover:bg-dark-4"
+                              onMouseDown={(e) => {
+                                e.preventDefault();
+                                setLanguageQuery(lang.label);
+                                setForm((prev) => ({ ...prev, language: lang.label }));
+                                setShowLanguageList(false);
+                              }}
+                            >
+                              <span>{lang.label}</span>
+                              <span className="text-xs text-gray-5 dark:text-dark-6">{lang.code.toUpperCase()}</span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   </label>
                 </div>
 
@@ -1143,6 +1203,8 @@ export default function ScriptsCaptionsPage() {
                       setShowModal(false);
                       setSubmitStatus({ type: "idle" });
                       setForm({ ...defaultForm });
+                      setLanguageQuery(labelForLanguage(defaultForm.language) || "");
+                      setShowLanguageList(false);
                       setEditRow(null);
                     }}
                     disabled={submitStatus.type === "loading"}
