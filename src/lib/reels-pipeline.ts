@@ -462,7 +462,6 @@ function formatRendererError(error: unknown): string {
 
 async function triggerRenderer(options: {
   scriptText: string;
-  language?: string | null;
   style?: string | null;
   template?: string | null;
   brand?: {
@@ -496,7 +495,6 @@ async function triggerRenderer(options: {
           apiKey: ttsKey,
           mediaBaseUrl: process.env.MEDIA_CDN_BASE_URL,
           mediaDir: process.env.MEDIA_DIR || undefined,
-          language: options.language || undefined,
         });
       } catch (err) {
         // eslint-disable-next-line no-console
@@ -619,7 +617,6 @@ export async function startReelGeneration(user: User, payload: GeneratePayload):
     platform,
     tone,
     style,
-    language: language || null,
     template,
     brandColors,
     brandFonts,
@@ -635,7 +632,6 @@ export async function startReelGeneration(user: User, payload: GeneratePayload):
 
   const rendererJob = await triggerRenderer({
     scriptText: finalScript,
-    language,
     style,
     template,
     brand: { colors: brandColors, fonts: brandFonts, logoUrl, endScreenTemplate },
