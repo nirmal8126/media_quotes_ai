@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
+import { labelForLanguage, languageOptions, resolveLanguageCode } from "@/lib/languages";
 
 type Channel = {
   id: string;
@@ -18,9 +19,16 @@ type Channel = {
   durationDefault?: number | null;
   ctaDefault?: string | null;
   baseHashtags?: string[] | null;
+  styleRules?: string | null;
+  visualStyle?: string | null;
+  postingFrequency?: string | null;
+  brandColors?: string[] | null;
+  brandFonts?: string[] | null;
+  endScreenTemplate?: string | null;
   characterName?: string | null;
   characterImages?: string[] | null;
   logoUrl?: string | null;
+  language?: string | null;
   createdAt?: string | null;
 };
 
@@ -52,9 +60,16 @@ const defaultForm = {
   durationDefault: "",
   ctaDefault: "",
   baseHashtags: "",
+  styleRules: "",
+  visualStyle: "",
+  postingFrequency: "",
+  brandColors: "",
+  brandFonts: "",
+  endScreenTemplate: "",
   characterName: "",
   characterImages: "",
   logoUrl: "",
+  language: "",
 };
 
 export default function ChannelsPage() {
@@ -71,6 +86,8 @@ export default function ChannelsPage() {
   const [search, setSearch] = useState("");
   const [pageSize, setPageSize] = useState(5);
   const [page, setPage] = useState(1);
+  const [languageQuery, setLanguageQuery] = useState(labelForLanguage(defaultForm.language));
+  const [showLanguageList, setShowLanguageList] = useState(false);
 
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -82,9 +99,13 @@ export default function ChannelsPage() {
         c.handle,
         c.tone,
         c.style,
+        c.language,
         c.topic,
         c.audience,
         c.contentType,
+        c.postingFrequency,
+        c.styleRules,
+        c.visualStyle,
         c.characterName,
       ]
         .filter(Boolean)
@@ -93,6 +114,21 @@ export default function ChannelsPage() {
       return text.includes(term);
     });
   }, [channels, search]);
+
+  const filteredLanguages = useMemo(() => {
+    if (!showLanguageList) return [];
+    const term = (languageQuery || "").trim().toLowerCase();
+    if (!term || term === "choose a language...") return languageOptions;
+
+    const exactMatch = languageOptions.some(
+      (lang) => lang.label.toLowerCase() === term || lang.code.toLowerCase() === term,
+    );
+    if (exactMatch) return languageOptions;
+
+    return languageOptions.filter(
+      (lang) => lang.label.toLowerCase().includes(term) || lang.code.toLowerCase().includes(term),
+    );
+  }, [languageQuery, showLanguageList]);
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
   const currentPage = Math.min(page, pageCount);
@@ -109,6 +145,8 @@ export default function ChannelsPage() {
     setForm({ ...defaultForm });
     setEditingId(null);
     setStatus({ type: "idle" });
+    setLanguageQuery(labelForLanguage(defaultForm.language));
+    setShowLanguageList(false);
   };
 
   const loadChannels = async () => {
@@ -149,13 +187,22 @@ export default function ChannelsPage() {
       topic: channel.topic || "",
       audience: channel.audience || "",
       contentType: channel.contentType || "",
+      styleRules: channel.styleRules || "",
+      visualStyle: channel.visualStyle || "",
+      postingFrequency: channel.postingFrequency || "",
+      brandColors: (channel.brandColors || []).join(", "),
+      brandFonts: (channel.brandFonts || []).join(", "),
+      endScreenTemplate: channel.endScreenTemplate || "",
       durationDefault: channel.durationDefault?.toString() ?? "",
       ctaDefault: channel.ctaDefault || "",
       baseHashtags: (channel.baseHashtags || []).join(", "),
       characterName: channel.characterName || "",
       characterImages: (channel.characterImages || []).join(", "),
       logoUrl: channel.logoUrl || "",
+      language: channel.language || "",
     });
+    setLanguageQuery(labelForLanguage(channel.language) || "");
+    setShowLanguageList(false);
     setShowModal(true);
   };
 
@@ -176,6 +223,16 @@ export default function ChannelsPage() {
       .map((v) => v.trim().replace(/^#/, ""))
       .filter(Boolean)
       .map((v) => `#${v}`);
+    const brandColors = form.brandColors
+      .split(",")
+      .map((v) => v.trim())
+      .filter(Boolean);
+    const brandFonts = form.brandFonts
+      .split(",")
+      .map((v) => v.trim())
+      .filter(Boolean);
+    const resolvedLanguage = (form.language || languageQuery).trim();
+    const languageCode = resolvedLanguage ? resolveLanguageCode(resolvedLanguage) : null;
 
     const payload = {
       name: form.name.trim(),
@@ -187,6 +244,13 @@ export default function ChannelsPage() {
       topic: form.topic || null,
       audience: form.audience || null,
       contentType: form.contentType || null,
+      language: languageCode,
+      styleRules: form.styleRules || null,
+      visualStyle: form.visualStyle || null,
+      postingFrequency: form.postingFrequency || null,
+      brandColors,
+      brandFonts,
+      endScreenTemplate: form.endScreenTemplate || null,
       durationDefault:
         form.durationDefault === "" ? null : Number.isFinite(Number(form.durationDefault)) ? Number(form.durationDefault) : null,
       ctaDefault: form.ctaDefault || null,
@@ -446,7 +510,7 @@ export default function ChannelsPage() {
                     <span className="text-xs font-normal text-gray-6 dark:text-dark-6">(Channel name)</span>
                   </div>
                   <input
-                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm text-dark outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
                     placeholder="Chota Bheem Fun Shorts"
                     value={form.name}
                     onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))}
@@ -458,7 +522,7 @@ export default function ChannelsPage() {
                     <span className="text-xs font-normal text-gray-6 dark:text-dark-6">(youtube, instagram, tiktok)</span>
                   </div>
                   <select
-                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm text-dark outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
                     value={form.platform}
                     onChange={(e) => setForm((prev) => ({ ...prev, platform: e.target.value }))}
                   >
@@ -475,7 +539,7 @@ export default function ChannelsPage() {
                     <span className="text-xs font-normal text-gray-6 dark:text-dark-6">(@handle or full URL)</span>
                   </div>
                   <input
-                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm text-dark outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
                     placeholder="@channel_handle or full URL"
                     value={form.handle}
                     onChange={(e) => setForm((prev) => ({ ...prev, handle: e.target.value }))}
@@ -487,7 +551,7 @@ export default function ChannelsPage() {
                     <span className="text-xs font-normal text-gray-6 dark:text-dark-6">(persona UUID)</span>
                   </div>
                   <input
-                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm text-dark outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
                     placeholder="persona UUID"
                     value={form.personaId}
                     onChange={(e) => setForm((prev) => ({ ...prev, personaId: e.target.value }))}
@@ -499,7 +563,7 @@ export default function ChannelsPage() {
                     <span className="text-xs font-normal text-gray-6 dark:text-dark-6">(funny, motivational, etc.)</span>
                   </div>
                   <select
-                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm text-dark outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
                     value={form.tone}
                     onChange={(e) => setForm((prev) => ({ ...prev, tone: e.target.value }))}
                   >
@@ -517,7 +581,7 @@ export default function ChannelsPage() {
                     <span className="text-xs font-normal text-gray-6 dark:text-dark-6">(cartoon, cinematic, fast-cut)</span>
                   </div>
                   <select
-                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm text-dark outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
                     value={form.style}
                     onChange={(e) => setForm((prev) => ({ ...prev, style: e.target.value }))}
                   >
@@ -529,13 +593,71 @@ export default function ChannelsPage() {
                     ))}
                   </select>
                 </label>
+                <label className="relative block text-sm font-semibold text-dark dark:text-dark-7">
+                  <div className="flex items-center gap-2">
+                    <span>Language</span>
+                    <span className="text-xs font-normal text-gray-6 dark:text-dark-6">(English, Hindi, etc.)</span>
+                  </div>
+                  <div className="relative mt-2">
+                    <input
+                      className="w-full rounded-lg border border-gray-3 bg-white px-4 pr-10 py-3 text-sm text-dark outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+                      name="language"
+                      value={languageQuery}
+                      onFocus={() => setShowLanguageList(true)}
+                      onClick={() => setShowLanguageList(true)}
+                      onChange={(e) => {
+                        const next = e.target.value;
+                        setLanguageQuery(next);
+                        setForm((prev) => ({ ...prev, language: next }));
+                        setShowLanguageList(true);
+                      }}
+                      placeholder="Choose a language..."
+                      autoComplete="off"
+                      onBlur={() => setTimeout(() => setShowLanguageList(false), 120)}
+                    />
+                    <button
+                      type="button"
+                      aria-label="Show languages"
+                      onMouseDown={(ev) => {
+                        ev.preventDefault();
+                        setShowLanguageList((prev) => !prev);
+                      }}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 flex h-8 w-8 items-center justify-center rounded-md text-gray-6 transition hover:bg-gray-2 dark:text-dark-6 dark:hover:bg-dark-4"
+                    >
+                      ▼
+                    </button>
+                  </div>
+                  {showLanguageList && (
+                    <div className="absolute z-20 mt-1 max-h-56 w-full overflow-auto rounded-lg border border-gray-3 bg-white shadow-card-2 dark:border-stroke-dark dark:bg-dark-3">
+                      {filteredLanguages.length === 0 && (
+                        <div className="px-3 py-2 text-sm text-gray-6 dark:text-dark-6">No matches</div>
+                      )}
+                      {filteredLanguages.map((lang) => (
+                        <button
+                          type="button"
+                          key={`${lang.code}-${lang.label}`}
+                          className="flex w-full items-center justify-between px-3 py-2 text-left text-sm text-dark hover:bg-gray-1 dark:text-dark-8 dark:hover:bg-dark-4"
+                          onMouseDown={(ev) => {
+                            ev.preventDefault();
+                            setLanguageQuery(lang.label);
+                            setForm((prev) => ({ ...prev, language: lang.label }));
+                            setShowLanguageList(false);
+                          }}
+                        >
+                          <span>{lang.label}</span>
+                          <span className="text-xs text-gray-5 dark:text-dark-6">{lang.code.toUpperCase()}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </label>
                 <label className="block text-sm font-semibold text-dark dark:text-dark-7">
                   <div className="flex items-center gap-2">
                     <span>Topic / Universe</span>
                     <span className="text-xs font-normal text-gray-6 dark:text-dark-6">(main focus)</span>
                   </div>
                   <input
-                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm text-dark outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
                     placeholder="Chota Bheem cartoon"
                     value={form.topic}
                     onChange={(e) => setForm((prev) => ({ ...prev, topic: e.target.value }))}
@@ -547,7 +669,7 @@ export default function ChannelsPage() {
                     <span className="text-xs font-normal text-gray-6 dark:text-dark-6">(e.g., Kids 7–14, Hindi)</span>
                   </div>
                   <input
-                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm text-dark outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
                     placeholder="Kids 7–14, Hindi"
                     value={form.audience}
                     onChange={(e) => setForm((prev) => ({ ...prev, audience: e.target.value }))}
@@ -559,10 +681,82 @@ export default function ChannelsPage() {
                     <span className="text-xs font-normal text-gray-6 dark:text-dark-6">(Cartoon / Kids)</span>
                   </div>
                   <input
-                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm text-dark outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
                     placeholder="Cartoon / Kids"
                     value={form.contentType}
                     onChange={(e) => setForm((prev) => ({ ...prev, contentType: e.target.value }))}
+                  />
+                </label>
+                <label className="block text-sm font-semibold text-dark dark:text-dark-7">
+                  <div className="flex items-center gap-2">
+                    <span>Posting cadence</span>
+                    <span className="text-xs font-normal text-gray-6 dark:text-dark-6">(daily, M/W/F, weekends)</span>
+                  </div>
+                  <input
+                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm text-dark outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+                    placeholder="e.g., Daily at 5pm or M/W/F"
+                    value={form.postingFrequency}
+                    onChange={(e) => setForm((prev) => ({ ...prev, postingFrequency: e.target.value }))}
+                  />
+                </label>
+                <label className="block text-sm font-semibold text-dark dark:text-dark-7 md:col-span-2">
+                  <div className="flex items-center gap-2">
+                    <span>Content style rules</span>
+                    <span className="text-xs font-normal text-gray-6 dark:text-dark-6">(must-follow voice/structure)</span>
+                  </div>
+                  <textarea
+                    className="mt-2 h-20 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm text-dark outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+                    placeholder="Hook first, then conflict, then payoff. Keep kid-friendly jokes."
+                    value={form.styleRules}
+                    onChange={(e) => setForm((prev) => ({ ...prev, styleRules: e.target.value }))}
+                  />
+                </label>
+                <label className="block text-sm font-semibold text-dark dark:text-dark-7 md:col-span-2">
+                  <div className="flex items-center gap-2">
+                    <span>Visual style rules</span>
+                    <span className="text-xs font-normal text-gray-6 dark:text-dark-6">(colors, overlays, transitions)</span>
+                  </div>
+                  <textarea
+                    className="mt-2 h-20 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm text-dark outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+                    placeholder="Bright orange + purple gradients, bold subtitles, meme stickers."
+                    value={form.visualStyle}
+                    onChange={(e) => setForm((prev) => ({ ...prev, visualStyle: e.target.value }))}
+                  />
+                </label>
+                <label className="block text-sm font-semibold text-dark dark:text-dark-7">
+                  <div className="flex items-center gap-2">
+                    <span>Brand colors</span>
+                    <span className="text-xs font-normal text-gray-6 dark:text-dark-6">(comma separated)</span>
+                  </div>
+                  <input
+                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm text-dark outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+                    placeholder="#F97316, #7C3AED"
+                    value={form.brandColors}
+                    onChange={(e) => setForm((prev) => ({ ...prev, brandColors: e.target.value }))}
+                  />
+                </label>
+                <label className="block text-sm font-semibold text-dark dark:text-dark-7">
+                  <div className="flex items-center gap-2">
+                    <span>Brand fonts</span>
+                    <span className="text-xs font-normal text-gray-6 dark:text-dark-6">(comma separated)</span>
+                  </div>
+                  <input
+                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm text-dark outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+                    placeholder="Poppins, Satoshi"
+                    value={form.brandFonts}
+                    onChange={(e) => setForm((prev) => ({ ...prev, brandFonts: e.target.value }))}
+                  />
+                </label>
+                <label className="block text-sm font-semibold text-dark dark:text-dark-7 md:col-span-2">
+                  <div className="flex items-center gap-2">
+                    <span>End screen / template</span>
+                    <span className="text-xs font-normal text-gray-6 dark:text-dark-6">(optional)</span>
+                  </div>
+                  <input
+                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm text-dark outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+                    placeholder="End screen prompt or URL"
+                    value={form.endScreenTemplate}
+                    onChange={(e) => setForm((prev) => ({ ...prev, endScreenTemplate: e.target.value }))}
                   />
                 </label>
                 <label className="block text-sm font-semibold text-dark dark:text-dark-7">
@@ -571,7 +765,7 @@ export default function ChannelsPage() {
                     <span className="text-xs font-normal text-gray-6 dark:text-dark-6">(optional)</span>
                   </div>
                   <input
-                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm text-dark outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
                     placeholder="https://..."
                     value={form.logoUrl}
                     onChange={(e) => setForm((prev) => ({ ...prev, logoUrl: e.target.value }))}
@@ -583,7 +777,7 @@ export default function ChannelsPage() {
                     <span className="text-xs font-normal text-gray-6 dark:text-dark-6">(optional)</span>
                   </div>
                   <input
-                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm text-dark outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
                     placeholder="Chota Bheem"
                     value={form.characterName}
                     onChange={(e) => setForm((prev) => ({ ...prev, characterName: e.target.value }))}
@@ -595,7 +789,7 @@ export default function ChannelsPage() {
                     <span className="text-xs font-normal text-gray-6 dark:text-dark-6">(optional)</span>
                   </div>
                   <input
-                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm text-dark outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
                     placeholder="https://img1, https://img2"
                     value={form.characterImages}
                     onChange={(e) => setForm((prev) => ({ ...prev, characterImages: e.target.value }))}
@@ -607,7 +801,7 @@ export default function ChannelsPage() {
                     <span className="text-xs font-normal text-gray-6 dark:text-dark-6">(auto-add to posts)</span>
                   </div>
                   <input
-                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm text-dark outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
                     placeholder="#chotabheem, #cartoon, #shorts, #kids"
                     value={form.baseHashtags}
                     onChange={(e) => setForm((prev) => ({ ...prev, baseHashtags: e.target.value }))}
@@ -619,7 +813,7 @@ export default function ChannelsPage() {
                     <span className="text-xs font-normal text-gray-6 dark:text-dark-6">(subscribe, follow, etc.)</span>
                   </div>
                   <input
-                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm text-dark outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
                     placeholder="Subscribe for more Chota Bheem stories"
                     value={form.ctaDefault}
                     onChange={(e) => setForm((prev) => ({ ...prev, ctaDefault: e.target.value }))}
@@ -634,7 +828,7 @@ export default function ChannelsPage() {
                     type="number"
                     min={5}
                     max={300}
-                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm text-dark outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
                     placeholder="30"
                     value={form.durationDefault}
                     onChange={(e) => setForm((prev) => ({ ...prev, durationDefault: e.target.value }))}
@@ -714,7 +908,11 @@ export default function ChannelsPage() {
                   <p><strong>Persona:</strong> {detailRow.personaId || "—"}</p>
                   <p><strong>Tone:</strong> {detailRow.tone || "—"}</p>
                   <p><strong>Style:</strong> {detailRow.style || "—"}</p>
+                  <p><strong>Language:</strong> {labelForLanguage(detailRow.language) || "—"}</p>
+                  <p><strong>Posting cadence:</strong> {detailRow.postingFrequency || "—"}</p>
                   <p><strong>Default duration:</strong> {detailRow.durationDefault ?? "—"} sec</p>
+                  <p><strong>Style rules:</strong> {detailRow.styleRules || "—"}</p>
+                  <p><strong>Visual style:</strong> {detailRow.visualStyle || "—"}</p>
                 </div>
                 <div className="space-y-2 text-sm text-gray-7 dark:text-dark-7">
                   <p><strong>CTA:</strong> {detailRow.ctaDefault || "—"}</p>
@@ -722,6 +920,15 @@ export default function ChannelsPage() {
                     <strong>Base hashtags:</strong>{" "}
                     {detailRow.baseHashtags && detailRow.baseHashtags.length ? detailRow.baseHashtags.join(", ") : "—"}
                   </p>
+                  <p>
+                    <strong>Brand colors:</strong>{" "}
+                    {detailRow.brandColors && detailRow.brandColors.length ? detailRow.brandColors.join(", ") : "—"}
+                  </p>
+                  <p>
+                    <strong>Brand fonts:</strong>{" "}
+                    {detailRow.brandFonts && detailRow.brandFonts.length ? detailRow.brandFonts.join(", ") : "—"}
+                  </p>
+                  <p><strong>End screen:</strong> {detailRow.endScreenTemplate || "—"}</p>
                   <p><strong>Character:</strong> {detailRow.characterName || "—"}</p>
                   {detailRow.characterImages && detailRow.characterImages.length > 0 && (
                     <div className="flex flex-wrap gap-2">

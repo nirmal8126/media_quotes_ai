@@ -12,7 +12,7 @@ import { useSidebarContext } from "./sidebar-context";
 
 export function Sidebar() {
   const pathname = usePathname();
-  const { setIsOpen, isOpen, isMobile, toggleSidebar } = useSidebarContext();
+  const { setIsOpen, isOpen, isMobile, toggleSidebar, isCollapsed, toggleCollapse } = useSidebarContext();
   const [expandedItems, setExpandedItems] = useState<string[]>([]);
   const [isAdmin, setIsAdmin] = useState(false);
   const [adminResolved, setAdminResolved] = useState(!pathname?.startsWith("/admin"));
@@ -46,6 +46,12 @@ export function Sidebar() {
   }, [pathname]);
 
   useEffect(() => {
+    if (isCollapsed) {
+      setExpandedItems([]);
+    }
+  }, [isCollapsed]);
+
+  useEffect(() => {
     const loadSession = async () => {
       try {
         const res = await fetch("/api/auth/session", {
@@ -75,13 +81,17 @@ export function Sidebar() {
     return (
       <button
         onClick={() => (window.location.href = "/admin")}
-        className="mt-4 flex w-full items-center justify-between rounded-xl border border-primary/20 bg-primary/10 px-3 py-3 text-sm font-semibold text-primary transition hover:bg-primary/15"
+        title="Admin Dashboard"
+        className={cn(
+          "mt-4 flex items-center justify-between rounded-xl border border-primary/20 bg-primary/10 px-3 py-3 text-sm font-semibold text-primary transition hover:bg-primary/15",
+          isCollapsed && "w-12 justify-center px-0 py-2 text-xs",
+        )}
       >
-        <span>Admin Dashboard</span>
-        <span aria-hidden className="text-xs">→</span>
+        {isCollapsed ? <span aria-hidden>⚙️</span> : <span>Admin Dashboard</span>}
+        {!isCollapsed && <span aria-hidden className="text-xs">→</span>}
       </button>
     );
-  }, [isAdmin, pathname]);
+  }, [isAdmin, pathname, isCollapsed, adminResolved]);
 
   const backToUserLink = useMemo(() => {
     if (!adminResolved || !isAdmin) return null;
@@ -89,13 +99,17 @@ export function Sidebar() {
     return (
       <button
         onClick={() => (window.location.href = "/")}
-        className="mt-4 flex w-full items-center justify-between rounded-xl border border-primary/20 bg-primary/5 px-3 py-3 text-sm font-semibold text-primary transition hover:bg-primary/10"
+        title="Back to User Dashboard"
+        className={cn(
+          "mt-4 flex items-center justify-between rounded-xl border border-primary/20 bg-primary/5 px-3 py-3 text-sm font-semibold text-primary transition hover:bg-primary/10",
+          isCollapsed && "w-12 justify-center px-0 py-2 text-xs",
+        )}
       >
-        <span>Back to User Dashboard</span>
-        <span aria-hidden className="text-xs">→</span>
+        {isCollapsed ? <span aria-hidden>🏠</span> : <span>Back to User Dashboard</span>}
+        {!isCollapsed && <span aria-hidden className="text-xs">→</span>}
       </button>
     );
-  }, [isAdmin, pathname]);
+  }, [isAdmin, pathname, isCollapsed, adminResolved]);
 
   const navSections = useMemo(() => {
     if (pathname?.startsWith("/admin")) {
@@ -119,22 +133,67 @@ export function Sidebar() {
 
       <aside
         className={cn(
-          "max-w-[290px] overflow-hidden border-r border-gray-200 bg-white transition-[width] duration-200 ease-linear dark:border-gray-800 dark:bg-gray-dark",
-          isMobile ? "fixed bottom-0 top-0 z-50" : "sticky top-0 h-screen",
-          isOpen ? "w-full" : "w-0",
+          "relative overflow-hidden border-r border-gray-200 bg-white transition-[width] duration-200 ease-linear dark:border-gray-800 dark:bg-gray-dark",
+          isMobile ? "fixed bottom-0 top-0 z-50 max-w-[320px]" : "sticky top-0 h-screen",
+          isMobile
+            ? isOpen
+              ? "w-full"
+              : "w-0 opacity-0"
+            : isCollapsed
+              ? "w-[84px]"
+              : "w-[290px]",
         )}
         aria-label="Main navigation"
-        aria-hidden={!isOpen}
-        inert={!isOpen}
+        aria-hidden={isMobile && !isOpen}
+        inert={isMobile && !isOpen ? true : undefined}
       >
-        <div className="flex h-full flex-col py-10 pl-[25px] pr-[7px]">
-          <div className="relative pr-4.5">
+        {!isMobile && (
+          <button
+            onClick={toggleCollapse}
+            aria-label={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+            className={cn(
+              "absolute -right-4 top-16 z-20 flex h-10 w-10 items-center justify-center rounded-full bg-white shadow-lg ring-1 ring-black/5 transition hover:-translate-x-0.5 dark:bg-dark-2",
+              "border border-gray-100 dark:border-white/10",
+            )}
+          >
+            <span
+              className={cn(
+                "text-lg font-semibold text-gray-700 dark:text-gray-200 transition-transform",
+                isCollapsed ? "rotate-180" : "",
+              )}
+            >
+              ⏴
+            </span>
+          </button>
+        )}
+
+        <div
+          className={cn(
+            "flex h-full flex-col py-10 transition-all duration-200",
+            isCollapsed ? "pl-3 pr-2" : "pl-[25px] pr-[7px]",
+          )}
+        >
+          <div
+            className={cn(
+              "relative pr-4.5",
+              isCollapsed && "flex flex-col items-center justify-center gap-2 pr-0",
+            )}
+          >
             <Link
               href={"/"}
               onClick={() => isMobile && toggleSidebar()}
-              className="px-0 py-2.5 min-[850px]:py-0"
+              className={cn(
+                "px-0 py-2.5 min-[850px]:py-0",
+                isCollapsed && "flex items-center justify-center",
+              )}
             >
-              <Logo />
+              {isCollapsed ? (
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-sm font-bold text-primary dark:bg-white/10 dark:text-white">
+                  MQ
+                </div>
+              ) : (
+                <Logo />
+              )}
             </Link>
 
             {isMobile && (
@@ -150,7 +209,12 @@ export function Sidebar() {
           </div>
 
           {/* Navigation */}
-          <div className="custom-scrollbar mt-6 flex-1 overflow-y-auto pr-3 min-[850px]:mt-10">
+          <div
+            className={cn(
+              "custom-scrollbar mt-6 flex-1 overflow-y-auto pr-3 transition-[padding] duration-200 min-[850px]:mt-10",
+              isCollapsed && "pr-1",
+            )}
+          >
             {isLoadingAdmin ? (
               <div className="space-y-4">
                 <div className="h-4 w-24 rounded bg-gray-2 dark:bg-dark-3" />
@@ -160,49 +224,57 @@ export function Sidebar() {
                   ))}
                 </div>
               </div>
-            ) : (
-              <>
-                {navSections.map((section) => (
-                  <div key={section.label} className="mb-6">
-                    <h2 className="mb-5 text-sm font-medium text-dark-4 dark:text-dark-6">
-                      {section.label}
-                    </h2>
+              ) : (
+                <>
+                  {navSections.map((section) => (
+                    <div key={section.label} className="mb-6">
+                      {!isCollapsed && (
+                        <h2 className="mb-5 text-sm font-medium text-dark-4 dark:text-dark-6">
+                          {section.label}
+                        </h2>
+                      )}
 
-                    <nav role="navigation" aria-label={section.label}>
-                      <ul className="space-y-2">
-                        {section.items.map((item) => (
-                          <li key={item.title}>
-                            {item.items.length ? (
-                              <div>
-                                <MenuItem
-                                  isActive={item.items.some(
-                                    ({ url }) => url === pathname,
-                                  )}
-                                  onClick={() => toggleExpanded(item.title)}
-                                >
-                                  <item.icon
-                                    className="size-6 shrink-0"
-                                    aria-hidden="true"
-                                  />
-
-                                  <span>{item.title}</span>
-
-                                  <ChevronUp
-                                    className={cn(
-                                      "ml-auto rotate-180 transition-transform duration-200",
-                                      expandedItems.includes(item.title) &&
-                                        "rotate-0",
+                      <nav role="navigation" aria-label={section.label}>
+                        <ul className="space-y-2">
+                          {section.items.map((item) => (
+                            <li key={item.title}>
+                              {item.items.length ? (
+                                <div>
+                                  <MenuItem
+                                    isActive={item.items.some(
+                                      ({ url }) => url === pathname,
                                     )}
-                                    aria-hidden="true"
-                                  />
-                                </MenuItem>
-
-                                {expandedItems.includes(item.title) && (
-                                  <ul
-                                    className="ml-9 mr-0 space-y-1.5 pb-[15px] pr-0 pt-2"
-                                    role="menu"
+                                    iconOnly={isCollapsed}
+                                    onClick={() => toggleExpanded(item.title)}
                                   >
-                                    {item.items.map((subItem) => (
+                                    <item.icon
+                                      className={cn(
+                                        "size-6 shrink-0",
+                                        isCollapsed && "mx-auto",
+                                      )}
+                                      aria-hidden="true"
+                                    />
+
+                                    {!isCollapsed && <span>{item.title}</span>}
+
+                                    {!isCollapsed && (
+                                      <ChevronUp
+                                        className={cn(
+                                          "ml-auto rotate-180 transition-transform duration-200",
+                                          expandedItems.includes(item.title) &&
+                                            "rotate-0",
+                                        )}
+                                        aria-hidden="true"
+                                      />
+                                    )}
+                                  </MenuItem>
+
+                                  {!isCollapsed && expandedItems.includes(item.title) && (
+                                    <ul
+                                      className="ml-9 mr-0 space-y-1.5 pb-[15px] pr-0 pt-2"
+                                      role="menu"
+                                    >
+                                      {item.items.map((subItem) => (
                                       <li key={subItem.title} role="none">
                                         <MenuItem
                                           as="link"
@@ -230,13 +302,17 @@ export function Sidebar() {
                                     as="link"
                                     href={href}
                                     isActive={pathname === href}
+                                    iconOnly={isCollapsed}
                                   >
                                     <item.icon
-                                      className="size-6 shrink-0"
+                                      className={cn(
+                                        "size-6 shrink-0",
+                                        isCollapsed && "mx-auto",
+                                      )}
                                       aria-hidden="true"
                                     />
 
-                                    <span>{item.title}</span>
+                                    {!isCollapsed && <span>{item.title}</span>}
                                   </MenuItem>
                                 );
                               })()
@@ -247,8 +323,10 @@ export function Sidebar() {
                     </nav>
                   </div>
                 ))}
-                {adminLink}
-                {backToUserLink}
+                <div className={cn("space-y-2 pt-2", isCollapsed && "flex flex-col items-center space-y-3")}>
+                  {adminLink}
+                  {backToUserLink}
+                </div>
               </>
             )}
           </div>

@@ -152,6 +152,34 @@ export function FourCircle(props: PropsType) {
   );
 }
 
+export function Video(props: PropsType) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      width={24}
+      height={24}
+      viewBox="0 0 24 24"
+      fill="none"
+      {...props}
+    >
+      <path
+        d="M2.75 8.5A3.75 3.75 0 016.5 4.75h5a3.75 3.75 0 013.75 3.75v7A3.75 3.75 0 0111.5 19.25h-5A3.75 3.75 0 012.75 15.5v-7z"
+        stroke="currentColor"
+        strokeWidth={1.5}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M15.25 10.2l4.33-2.6a.9.9 0 011.37.77v6.26a.9.9 0 01-1.37.77l-4.33-2.6V10.2z"
+        stroke="currentColor"
+        strokeWidth={1.5}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 export function Authentication(props: PropsType) {
   return (
     <svg

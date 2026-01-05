@@ -11,7 +11,7 @@ export async function GET(request: Request) {
   const { user, applyCookies } = session;
   const { data, error } = await supabaseAdmin
     .from("scripts")
-    .select("id, input_prompt, tone, platform, text, created_at")
+    .select("*")
     .eq("user_id", user.id)
     .order("created_at", { ascending: false })
     .limit(50);
@@ -35,10 +35,10 @@ export async function GET(request: Request) {
     items: (data ?? []).map((row) => ({
       ...row,
       topic: row.input_prompt ?? "Untitled",
-      hook: null,
+      script: row.text ?? row.script ?? "",
+      hook: row.hook ?? null,
       caption: null,
       hashtags: [],
-      script: row.text,
     })),
   });
   applyCookies(response);

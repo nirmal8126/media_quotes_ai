@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
+import { IntegrityPanel } from "@/components/IntegrityPanel";
+import type { IntegrityFix, IntegrityReport } from "@/lib/integrity/types";
 
 function ModalPortal({ children }: { children: React.ReactNode }) {
   if (typeof document === "undefined") return null;
@@ -60,6 +62,12 @@ type Status =
   | { type: "loading"; message?: string }
   | { type: "error"; message: string }
   | { type: "success"; message: string };
+
+type IntegrityState = {
+  report: IntegrityReport | null;
+  status: "idle" | "loading" | "error";
+  message?: string;
+};
 
 const defaultForm = {
   topic: "",
@@ -178,6 +186,8 @@ type ImageSizeKey =
   | "custom";
 
 const FACEBOOK_ENABLED = false;
+
+const initialIntegrity: IntegrityState = { report: null, status: "idle" };
 
 const imageSizePresets: Record<
   ImageSizeKey,
@@ -360,6 +370,7 @@ function buildHashtags(row: QuoteRow) {
 
 export default function QuotesPage() {
   const [quotes, setQuotes] = useState<QuoteRow[]>([]);
+  const [integrityCache, setIntegrityCache] = useState<Record<string, IntegrityReport | null>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showModal, setShowModal] = useState(false);
@@ -402,7 +413,10 @@ export default function QuotesPage() {
     backgroundValue: "",
     gradientColors: ["#f97316", "#f43f5e"],
   });
+  const [integrityState, setIntegrityState] = useState<IntegrityState>(initialIntegrity);
+  const [integrityGate, setIntegrityGate] = useState<{ open: boolean; pending?: () => void }>({ open: false });
   const topicInputRef = useRef<HTMLInputElement | null>(null);
+  const integrityInFlight = useRef<Set<string>>(new Set());
   const anyModalOpen = showModal || Boolean(detailRow) || Boolean(deleteRow);
 
   useEffect(() => {
@@ -431,6 +445,95 @@ export default function QuotesPage() {
     }
     return { width: preset.width, height: preset.height };
   }, [customSize.height, customSize.width, imageSizeKey]);
+
+  const activeIntegrityRow = detailRow || null;
+
+  const integrityText = useMemo(() => {
+    if (!activeIntegrityRow) return "";
+    return extractQuoteList(activeIntegrityRow).join(" ");
+  }, [activeIntegrityRow]);
+
+  const computeIntegrity = useCallback(
+    async (text: string, row?: QuoteRow | null, opts?: { silent?: boolean }) => {
+      if (!opts?.silent) {
+        setIntegrityState((prev) => ({ report: prev.report, status: "loading" }));
+      }
+      try {
+        const contentId = row?.id || "temp";
+        const res = await fetch(`/api/content/quote/${encodeURIComponent(contentId)}/integrity`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            type: "quote",
+            textContent: text,
+            previousTexts: quotes
+              .filter((q) => !row || q.id !== row.id)
+              .flatMap((q) => extractQuoteList(q)),
+            generatedCount: quotes.length,
+            metadata: { userEdited: true },
+          }),
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(body?.error || "Integrity check failed");
+        if (!opts?.silent) {
+          setIntegrityState({ report: body.report ?? null, status: "idle" });
+        }
+        if (row?.id) {
+          setIntegrityCache((prev) => ({ ...prev, [row.id]: body.report ?? null }));
+        }
+      } catch (err) {
+        if (!opts?.silent) {
+          setIntegrityState({ report: null, status: "error", message: (err as Error).message });
+        }
+      }
+    },
+    [quotes],
+  );
+
+  useEffect(() => {
+    if (integrityText) {
+      void computeIntegrity(integrityText, activeIntegrityRow);
+    }
+  }, [integrityText, computeIntegrity, activeIntegrityRow]);
+
+  useEffect(() => {
+    if (!activeIntegrityRow) {
+      setIntegrityState(initialIntegrity);
+    }
+  }, [activeIntegrityRow]);
+
+  const inlineIntegrityBadge = (report: IntegrityReport | null | undefined) => {
+    if (!report) return null;
+    const base =
+      report.status === "risk"
+        ? "bg-red-100 text-red-700 border-red-200"
+        : report.status === "warn"
+          ? "bg-amber-100 text-amber-700 border-amber-200"
+          : "bg-green-100 text-green-700 border-green-200";
+    return (
+      <span
+        className={cn(
+          "inline-flex items-center gap-2 rounded-full px-3 py-1 text-[11px] font-semibold uppercase shadow-sm",
+          base,
+          report.status === "risk" && "border border-red-200",
+          report.status === "warn" && "border border-amber-200",
+          report.status === "safe" && "border border-green-200",
+        )}
+      >
+        <span>{report.status}</span>
+        <span className="text-[10px] font-bold opacity-80">{report.score ?? 0}/100</span>
+      </span>
+    );
+  };
+
+  const gateIntegrity = async (action: () => Promise<void> | void) => {
+    const status = integrityState.report?.status;
+    if (!status || status === "safe") {
+      await action();
+      return;
+    }
+    setIntegrityGate({ open: true, pending: () => void action() });
+  };
 
   useEffect(() => {
     const fetchQuotes = async () => {
@@ -529,18 +632,20 @@ export default function QuotesPage() {
   }, [detailRow, refreshFacebookStatus]);
 
   const handleShareText = async (text: string) => {
-    try {
-      if (typeof navigator !== "undefined" && navigator.share) {
-        await navigator.share({ text });
-        pushToast("Share sheet opened");
-        return;
+    await gateIntegrity(async () => {
+      try {
+        if (typeof navigator !== "undefined" && navigator.share) {
+          await navigator.share({ text });
+          pushToast("Share sheet opened");
+          return;
+        }
+        await navigator.clipboard.writeText(text);
+        pushToast("Copied for sharing");
+      } catch (err) {
+        console.error("Failed to share text", err);
+        pushToast("Share failed", "error");
       }
-      await navigator.clipboard.writeText(text);
-      pushToast("Copied for sharing");
-    } catch (err) {
-      console.error("Failed to share text", err);
-      pushToast("Share failed", "error");
-    }
+    });
   };
 
   const startFacebookConnect = async () => {
@@ -718,6 +823,22 @@ export default function QuotesPage() {
     const start = (currentPage - 1) * pageSize;
     return filteredRows.slice(start, start + pageSize);
   }, [filteredRows, currentPage, pageSize]);
+
+  // Background check for visible rows (first page slice)
+  useEffect(() => {
+    const rowsToCheck = pagedRows.slice(0, 5);
+    rowsToCheck.forEach((row) => {
+      if (!row.id) return;
+      if (integrityCache[row.id] !== undefined) return;
+      if (integrityInFlight.current.has(row.id)) return;
+      const text = extractQuoteList(row).join(" ");
+      if (!text) return;
+      integrityInFlight.current.add(row.id);
+      void computeIntegrity(text, row, { silent: true }).finally(() => {
+        integrityInFlight.current.delete(row.id);
+      });
+    });
+  }, [pagedRows, integrityCache, computeIntegrity]);
 
   useEffect(() => {
     setPage(1);
@@ -968,9 +1089,9 @@ export default function QuotesPage() {
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.35em] text-primary">Quotes</p>
           <h1 className="text-2xl font-bold text-dark dark:text-dark-8">Generated quotes</h1>
-          <p className="text-sm text-gray-6 dark:text-dark-6">View your recent quote packs and create new ones.</p>
-        </div>
-        <button
+            <p className="text-sm text-gray-6 dark:text-dark-6">View your recent quote packs and create new ones.</p>
+          </div>
+          <button
           onClick={() => {
             setSubmitStatus({ type: "idle" });
             setEditRow(null);
@@ -983,6 +1104,60 @@ export default function QuotesPage() {
           + Generate Quote
         </button>
       </div>
+
+      {integrityGate.open && integrityState.report && integrityState.report.status !== "safe" && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/50 px-4">
+          <div className="w-full max-w-lg rounded-xl border border-gray-200 bg-white p-4 shadow-xl dark:border-white/10 dark:bg-gray-900">
+            <h3 className="text-lg font-semibold text-dark dark:text-white">Content Integrity</h3>
+            <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">Status: {integrityState.report.status.toUpperCase()}</p>
+            <div className="mt-2 space-y-1 text-sm text-gray-700 dark:text-gray-200">
+              {(integrityState.report.issues || []).map((issue) => (
+                <div key={`${issue.code}-${issue.message}`} className="flex gap-2">
+                  <span className="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">{issue.code}</span>
+                  <span>{issue.message}</span>
+                </div>
+              ))}
+            </div>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <button
+                onClick={() => setIntegrityGate({ open: false })}
+                className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-800 hover:border-primary hover:text-primary dark:border-white/10 dark:text-white"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  if (integrityGate.pending) integrityGate.pending();
+                  setIntegrityGate({ open: false });
+                }}
+                className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary/90"
+              >
+                Proceed anyway
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {activeIntegrityRow && (
+        <IntegrityPanel
+          report={integrityState.report}
+          loading={integrityState.status === "loading"}
+          error={integrityState.status === "error" ? integrityState.message : null}
+          onRefresh={() => integrityText && computeIntegrity(integrityText, activeIntegrityRow)}
+          onFix={(fix: IntegrityFix) => {
+            setToast({ type: "success", message: `Fix: ${fix.label}` });
+            if (integrityText) {
+              void computeIntegrity(integrityText, activeIntegrityRow);
+            }
+          }}
+          subtitle={
+            activeIntegrityRow
+              ? `Assessing: ${activeIntegrityRow.topic || activeIntegrityRow.persona || activeIntegrityRow.id}`
+              : undefined
+          }
+        />
+      )}
 
       <div className="rounded-2xl border border-gray-3 bg-white p-4 shadow-card-2 dark:border-stroke-dark dark:bg-dark-2">
         {loading ? (
@@ -1050,19 +1225,22 @@ export default function QuotesPage() {
                         <div className="line-clamp-2 font-medium text-dark dark:text-dark-8">
                           {extractQuoteList(row)[0] || "—"}
                         </div>
-                        <div className="mt-2 flex flex-wrap gap-2 text-[11px] font-semibold uppercase">
-                          <span className="rounded-full bg-primary/10 px-2.5 py-1 text-primary dark:bg-primary/20">
+                        <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] font-semibold uppercase">
+                          <span className="rounded-full bg-primary/10 px-3 py-1 text-primary dark:bg-primary/20">
                             {row.persona || "Persona —"}
                           </span>
-                          <span className="rounded-full bg-gray-2 px-2.5 py-1 text-gray-7 dark:bg-dark-3 dark:text-dark-8">
+                          <span className="rounded-full bg-gray-2 px-3 py-1 text-gray-7 dark:bg-dark-3 dark:text-dark-8">
                             {labelForLanguage(row.language) || "Language —"}
                           </span>
-                          <span className="rounded-full bg-gray-2 px-2.5 py-1 text-gray-7 dark:bg-dark-3 dark:text-dark-8">
+                          <span className="rounded-full bg-gray-2 px-3 py-1 text-gray-7 dark:bg-dark-3 dark:text-dark-8">
                             {row.style || "Style —"}
                           </span>
-                          <span className="rounded-full bg-gray-2 px-2.5 py-1 text-gray-7 dark:bg-dark-3 dark:text-dark-8">
+                          <span className="rounded-full bg-gray-2 px-3 py-1 text-gray-7 dark:bg-dark-3 dark:text-dark-8">
                             {row.quote_type === "image" ? "Image" : "Text"}
                           </span>
+                          {inlineIntegrityBadge(integrityCache[row.id]) || (
+                            <span className="rounded-full bg-gray-2 px-3 py-1 text-gray-5">Not checked</span>
+                          )}
                         </div>
                       </td>
                       <td className="px-4 py-3 font-medium text-dark dark:text-dark-8">{row.topic || "—"}</td>
@@ -1080,19 +1258,25 @@ export default function QuotesPage() {
                         <div className="flex flex-wrap gap-2 text-xs font-semibold">
                           <button
                             className="rounded-md border border-gray-3 px-3 py-1 text-gray-7 transition hover:bg-gray-1 dark:border-stroke-dark dark:text-dark-7 dark:hover:bg-dark-3"
-                            onClick={() => setDetailRow(row)}
+                            onClick={() => {
+                              setDetailRow(row);
+                              const text = extractQuoteList(row).join(" ");
+                              if (text) void computeIntegrity(text, row);
+                            }}
                           >
                             Detail
                           </button>
                           <button
                             className="rounded-md border border-gray-3 px-3 py-1 text-gray-7 transition hover:bg-gray-1 dark:border-stroke-dark dark:text-dark-7 dark:hover:bg-dark-3"
-                            onClick={() => {
-                              setEditRow(row);
-                              setForm({
-                                topic: row.topic ?? "",
-                                tone: row.tone ?? "",
-                                persona: row.persona ?? "",
-                                language: labelForLanguage(row.language) || "English",
+                              onClick={() => {
+                                setEditRow(row);
+                                const text = extractQuoteList(row).join(" ");
+                                if (text) void computeIntegrity(text, row);
+                                setForm({
+                                  topic: row.topic ?? "",
+                                  tone: row.tone ?? "",
+                                  persona: row.persona ?? "",
+                                  language: labelForLanguage(row.language) || "English",
                                 style: row.style ?? "",
                                 count: extractQuoteList(row).length || row.quotes?.length || 5,
                                 wordLimit: row.word_limit ?? defaultForm.wordLimit,
@@ -1877,14 +2061,16 @@ export default function QuotesPage() {
                                 type="button"
                                 className="inline-flex items-center gap-2 rounded-md border border-gray-3 px-3 py-2 text-xs font-semibold text-gray-7 transition hover:bg-gray-1 dark:border-stroke-dark dark:bg-dark-2 dark:text-dark-7 dark:hover:bg-dark-4"
                                 onClick={async () => {
-                                  const tags = buildHashtags(detailRow).join(" ");
-                                  try {
-                                    await navigator.clipboard.writeText(tags);
-                                    pushToast("Hashtags copied");
-                                  } catch (err) {
-                                    console.error("Failed to copy hashtags", err);
-                                    pushToast("Failed to copy hashtags", "error");
-                                  }
+                                  await gateIntegrity(async () => {
+                                    const tags = buildHashtags(detailRow).join(" ");
+                                    try {
+                                      await navigator.clipboard.writeText(tags);
+                                      pushToast("Hashtags copied");
+                                    } catch (err) {
+                                      console.error("Failed to copy hashtags", err);
+                                      pushToast("Failed to copy hashtags", "error");
+                                    }
+                                  });
                                 }}
                               >
                                 Copy hashtags
@@ -1904,24 +2090,26 @@ export default function QuotesPage() {
                                     aspectRatio: `${previewDims.width}/${previewDims.height}`,
                                     minHeight: "260px",
                                   }}
-                                >
-                                  <div className="absolute right-2 top-2 flex gap-1">
-                                    <button
-                                      type="button"
-                                      aria-label="Copy quote"
-                                      onClick={async () => {
-                                        try {
-                                          await navigator.clipboard.writeText(q);
-                                          setCopiedIdx(idx);
-                                          setTimeout(() => setCopiedIdx((prev) => (prev === idx ? null : prev)), 1200);
-                                          pushToast("Quote copied");
-                                        } catch (err) {
-                                          console.error("Failed to copy quote", err);
-                                          pushToast("Failed to copy quote", "error");
-                                        }
-                                      }}
-                                      className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-white/60 bg-white/20 text-white transition hover:bg-white/30"
-                                    >
+                >
+                  <div className="absolute right-2 top-2 flex gap-1">
+                    <button
+                      type="button"
+                      aria-label="Copy quote"
+                      onClick={async () => {
+                        await gateIntegrity(async () => {
+                          try {
+                            await navigator.clipboard.writeText(q);
+                            setCopiedIdx(idx);
+                            setTimeout(() => setCopiedIdx((prev) => (prev === idx ? null : prev)), 1200);
+                            pushToast("Quote copied");
+                          } catch (err) {
+                            console.error("Failed to copy quote", err);
+                            pushToast("Failed to copy quote", "error");
+                          }
+                        });
+                      }}
+                      className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-white/60 bg-white/20 text-white transition hover:bg-white/30"
+                    >
                                       {copiedIdx === idx ? (
                                         <CheckIcon className="h-4 w-4 text-green-200" />
                                       ) : (
@@ -2049,15 +2237,17 @@ export default function QuotesPage() {
                                   type="button"
                                   aria-label="Copy quote"
                                   onClick={async () => {
-                                    try {
-                                      await navigator.clipboard.writeText(q);
-                                      setCopiedIdx(idx);
-                                      setTimeout(() => setCopiedIdx((prev) => (prev === idx ? null : prev)), 1200);
-                                      pushToast("Quote copied");
-                                    } catch (err) {
-                                      console.error("Failed to copy quote", err);
-                                      pushToast("Failed to copy quote", "error");
-                                    }
+                                    await gateIntegrity(async () => {
+                                      try {
+                                        await navigator.clipboard.writeText(q);
+                                        setCopiedIdx(idx);
+                                        setTimeout(() => setCopiedIdx((prev) => (prev === idx ? null : prev)), 1200);
+                                        pushToast("Quote copied");
+                                      } catch (err) {
+                                        console.error("Failed to copy quote", err);
+                                        pushToast("Failed to copy quote", "error");
+                                      }
+                                    });
                                   }}
                                   className="mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-gray-3 bg-white text-gray-6 transition hover:bg-gray-2 dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-7 dark:hover:bg-dark-4"
                                 >
@@ -2087,22 +2277,24 @@ export default function QuotesPage() {
                           </span>
                         ))}
                       </div>
-                      <button
-                        type="button"
-                        className="inline-flex items-center gap-2 rounded-md border border-gray-3 px-3 py-2 text-xs font-semibold text-gray-7 transition hover:bg-gray-1 dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-7 dark:hover:bg-dark-4"
-                        onClick={async () => {
-                          const tags = buildHashtags(detailRow).join(" ");
-                          try {
-                            await navigator.clipboard.writeText(tags);
-                            pushToast("Hashtags copied");
-                          } catch (err) {
-                            console.error("Failed to copy hashtags", err);
-                            pushToast("Failed to copy hashtags", "error");
-                          }
-                        }}
-                      >
-                        Copy hashtags
-                      </button>
+                              <button
+                                type="button"
+                                className="inline-flex items-center gap-2 rounded-md border border-gray-3 px-3 py-2 text-xs font-semibold text-gray-7 transition hover:bg-gray-1 dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-7 dark:hover:bg-dark-4"
+                                onClick={async () => {
+                                  await gateIntegrity(async () => {
+                                    const tags = buildHashtags(detailRow).join(" ");
+                                    try {
+                                      await navigator.clipboard.writeText(tags);
+                                      pushToast("Hashtags copied");
+                                    } catch (err) {
+                                      console.error("Failed to copy hashtags", err);
+                                      pushToast("Failed to copy hashtags", "error");
+                                    }
+                                  });
+                                }}
+                              >
+                                Copy hashtags
+                              </button>
                     </div>
                   )}
               </div>

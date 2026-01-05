@@ -24,6 +24,7 @@ export function MenuItem(
     className?: string;
     children: React.ReactNode;
     isActive: boolean;
+    iconOnly?: boolean;
   } & ({ as?: "button"; onClick: () => void } | { as: "link"; href: string }),
 ) {
   const { toggleSidebar, isMobile } = useSidebarContext();
@@ -37,7 +38,10 @@ export function MenuItem(
         className={cn(
           menuItemBaseStyles({
             isActive: props.isActive,
-            className: "relative block py-2",
+            className: cn(
+              "relative flex items-center gap-3 py-2",
+              props.iconOnly && "justify-center gap-0 px-2",
+            ),
           }),
           props.className,
         )}
@@ -53,7 +57,10 @@ export function MenuItem(
       aria-expanded={props.isActive}
       className={menuItemBaseStyles({
         isActive: props.isActive,
-        className: "flex w-full items-center gap-3 py-3",
+        className: cn(
+          "flex w-full items-center gap-3 py-3",
+          props.iconOnly && "justify-center gap-0 px-2",
+        ),
       })}
     >
       {props.children}
