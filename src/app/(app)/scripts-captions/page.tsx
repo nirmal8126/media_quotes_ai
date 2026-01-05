@@ -388,8 +388,8 @@ export default function ScriptsCaptionsPage() {
             tone: form.tone,
             platform: form.platform,
             hook: form.hook || null,
-            script: form.script || null,
-            caption: form.caption || null,
+            script: form.mode === "generate" ? null : (form.script || null),
+            caption: form.mode === "generate" ? null : (form.caption || null),
             length: form.length,
             pace: form.pace,
             contentType: form.contentType,
@@ -425,6 +425,7 @@ export default function ScriptsCaptionsPage() {
         setRows((prev) => prev.map((r) => (r.id === updated.id ? updated : r)));
         pushToast("Updated.");
       } else {
+        const sendSeeds = form.mode !== "generate";
         const res = await fetch("/api/scripts-captions/generate", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -440,8 +441,8 @@ export default function ScriptsCaptionsPage() {
             language: resolvedLanguage || null,
             hook: form.hook || null,
             variations: 3,
-            script: form.script || undefined,
-            caption: form.caption || undefined,
+            script: sendSeeds ? form.script || undefined : null,
+            caption: sendSeeds ? form.caption || undefined : null,
             durationSec: form.durationSec,
             pace: form.pace,
             audience: form.audience,
