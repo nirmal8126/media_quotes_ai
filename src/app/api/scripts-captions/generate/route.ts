@@ -38,7 +38,8 @@ type Payload = {
   hookStyle?: string;
   mustInclude?: string;
   mustAvoid?: string;
-  mode?: "generate" | "improve" | "rewrite" | "shorten" | "expand";
+  mode?: "generate" | "improve" | "rewrite" | "shorten" | "expand" | "repair";
+  regenerate?: boolean;
   channelId?: string;
   channel_id?: string;
 };

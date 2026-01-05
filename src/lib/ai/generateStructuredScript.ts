@@ -22,7 +22,7 @@ export type ScriptGenInput = {
   persona?: string | null;
   mustInclude?: string | null;
   mustAvoid?: string | null;
-  mode?: "generate" | "improve" | "rewrite" | "shorten" | "expand";
+  mode?: "generate" | "improve" | "rewrite" | "shorten" | "expand" | "repair";
   seedScript?: string | null;
   seedCaption?: string | null;
   variations?: number;
