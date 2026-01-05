@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { DragEvent } from "react";
 import { cn } from "@/lib/utils";
 import { labelForLanguage } from "@/lib/languages";
@@ -17,6 +17,9 @@ type ReelDetail = {
   language?: string | null;
   videoUrl?: string | null;
   thumbnailUrl?: string | null;
+  customSettings?: {
+    storyboard?: Array<{ label?: string; text: string; durationMs?: number; visualSuggestion?: string }>;
+  } | null;
 };
 
 type TabId = "settings" | "music" | "media" | "captions" | "thumbnail";
@@ -92,19 +95,75 @@ export default function ReelCustomizePage() {
   const [collapsedScenes, setCollapsedScenes] = useState<Record<number, boolean>>({});
   const [sceneOrder, setSceneOrder] = useState<number[]>([1, 2, 3]);
   const [draggingScene, setDraggingScene] = useState<number | null>(null);
+  const pollTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const platformLabel = (reel?.platform || "YOUTUBE_SHORTS").toString();
 
-  const collapseStateFor = (openScene?: number): Record<number, boolean> => {
-    const base: Record<number, boolean> = { 1: true, 2: true, 3: true };
-    if (openScene) {
-      base[openScene] = false;
-    }
-    return base;
-  };
+  const fallbackScenes = useMemo(
+    () => [
+      { label: "Hook", text: "Opening hook to grab attention." },
+      { label: "Body", text: "Core message or value delivery." },
+      { label: "CTA", text: "Call to action and wrap-up." },
+    ],
+    [],
+  );
+
+  const storyboardScenes = useMemo(() => {
+    const scenes = reel?.customSettings?.storyboard;
+    if (!Array.isArray(scenes)) return [];
+    return scenes.filter((scene) => scene && typeof scene.text === "string" && scene.text.trim().length > 0);
+  }, [reel?.customSettings]);
+
+  const scenes = useMemo(
+    () => (storyboardScenes.length ? storyboardScenes : fallbackScenes),
+    [storyboardScenes, fallbackScenes],
+  );
+
+  const scenesWithTiming = useMemo(() => {
+    let cursor = 0;
+    return scenes.map((scene, idx) => {
+      const durationSec = scene.durationMs ? Math.max(1, Math.round(scene.durationMs / 1000)) : 2;
+      const start = cursor;
+      const end = cursor + durationSec;
+      cursor = end;
+      return { ...scene, index: idx + 1, start, end };
+    });
+  }, [scenes]);
 
   useEffect(() => {
-    setCollapsedScenes({ 1: false, 2: true, 3: true });
-  }, []);
+    if (!scenesWithTiming.length) return;
+    const ids = scenesWithTiming.map((scene) => scene.index);
+    setSceneOrder(ids);
+    setCollapsedScenes(
+      ids.reduce((acc, id) => {
+        acc[id] = id !== ids[0];
+        return acc;
+      }, {} as Record<number, boolean>),
+    );
+    setActiveScene(ids[0]);
+  }, [scenesWithTiming.length]);
+
+  const isPlaceholderUrl = (url?: string | null) => {
+    if (!url) return false;
+    const normalized = url.toLowerCase();
+    return (
+      normalized.includes("bigbuckbunny") ||
+      normalized.includes("unsplash.com/photo-1526170375885") ||
+      normalized.includes("fallback") ||
+      normalized.includes("demo")
+    );
+  };
+
+  const previewVideoUrl = reel?.videoUrl && !isPlaceholderUrl(reel.videoUrl) ? reel.videoUrl : null;
+  const previewThumbUrl = reel?.thumbnailUrl && !isPlaceholderUrl(reel.thumbnailUrl) ? reel.thumbnailUrl : null;
+
+  const collapseStateFor = (openScene?: number): Record<number, boolean> => {
+    const ids = sceneOrder.length ? sceneOrder : scenesWithTiming.map((scene) => scene.index);
+    if (!ids.length) return {};
+    return ids.reduce((acc, id) => {
+      acc[id] = openScene ? id !== openScene : id !== ids[0];
+      return acc;
+    }, {} as Record<number, boolean>);
+  };
 
   const loadReel = async () => {
     if (!reelId) return;
@@ -127,6 +186,27 @@ export default function ReelCustomizePage() {
   useEffect(() => {
     void loadReel();
   }, [reelId]);
+
+  useEffect(() => {
+    if (!reelId) return;
+    if (reel?.status !== "RENDERING") {
+      if (pollTimer.current) {
+        clearInterval(pollTimer.current);
+        pollTimer.current = null;
+      }
+      return;
+    }
+    if (pollTimer.current) return;
+    pollTimer.current = setInterval(() => {
+      void loadReel();
+    }, 5000);
+    return () => {
+      if (pollTimer.current) {
+        clearInterval(pollTimer.current);
+        pollTimer.current = null;
+      }
+    };
+  }, [reel?.status, reelId]);
 
   const gatherSettings = () => ({
     pacing,
@@ -239,6 +319,39 @@ export default function ReelCustomizePage() {
       });
     } catch (err) {
       setActionStatus({ type: "error", message: (err as Error).message || "Action failed." });
+    }
+  };
+
+  const handleRegenerate = async () => {
+    if (!reelId) return;
+    setActionStatus({ type: "loading", message: "Regenerating reel..." });
+    try {
+      const res = await fetch("/api/reels/rerender", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          reelId,
+          durationSec: targetDuration,
+          style: captionStyle || reel?.style,
+          template: thumbStyle || reel?.template,
+          settings: {
+            ...gatherSettings(),
+            lastAction: "regenerate",
+          },
+        }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(body?.error || "Unable to regenerate reel.");
+      }
+      if (body?.reel) {
+        setReel(body.reel);
+      } else {
+        await loadReel();
+      }
+      setActionStatus({ type: "success", message: "Reel regeneration started." });
+    } catch (err) {
+      setActionStatus({ type: "error", message: (err as Error).message || "Regeneration failed." });
     }
   };
 
@@ -378,36 +491,6 @@ export default function ReelCustomizePage() {
                   className="w-full accent-primary"
                 />
               </div>
-            </div>
-
-            <div className="space-y-2 rounded-xl border border-gray-200 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-gray-900/60">
-              <p className="text-sm font-semibold text-dark dark:text-white">AI Scene Logic</p>
-              <label className="flex items-center gap-2 text-xs">
-                <input type="checkbox" checked={autoReorder} onChange={(e) => setAutoReorder(e.target.checked)} className="accent-primary" />
-                Auto scene reordering
-              </label>
-              <label className="flex items-center gap-2 text-xs">
-                <input type="checkbox" checked={autoScenes} onChange={(e) => setAutoScenes(e.target.checked)} className="accent-primary" />
-                Auto scene selection
-              </label>
-              <label className="flex items-center gap-2 text-xs">
-                <input
-                  type="checkbox"
-                  checked={emphasizeEmotion}
-                  onChange={(e) => setEmphasizeEmotion(e.target.checked)}
-                  className="accent-primary"
-                />
-                Emphasize emotional moments
-              </label>
-              <label className="flex items-center gap-2 text-xs">
-                <input
-                  type="checkbox"
-                  checked={removeLowEngagement}
-                  onChange={(e) => setRemoveLowEngagement(e.target.checked)}
-                  className="accent-primary"
-                />
-                Remove low-engagement scenes (AI)
-              </label>
             </div>
 
             <div className="space-y-3 rounded-xl border border-gray-200 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-gray-900/60">
@@ -616,6 +699,7 @@ export default function ReelCustomizePage() {
               <p className="text-sm font-semibold text-dark dark:text-white">Scenes</p>
               <div className="space-y-3">
                 {sceneOrder.map((idx) => {
+                  const sceneData = scenesWithTiming[idx - 1];
                   const isCollapsed = collapsedScenes[idx] ?? idx !== activeScene;
                   return (
                     <div
@@ -650,7 +734,8 @@ export default function ReelCustomizePage() {
                             <span className="text-base cursor-move" aria-hidden>
                               ☰
                             </span>
-                            Scene {idx} ({idx === 1 ? "0–2s" : idx === 2 ? "2–5s" : "5–8s"})
+                            {sceneData?.label ? `${sceneData.label}` : `Scene ${idx}`}{" "}
+                            {sceneData ? `(${Math.round(sceneData.start)}–${Math.round(sceneData.end)}s)` : ""}
                           </button>
                         </div>
                         <div className="flex gap-2">
@@ -733,6 +818,9 @@ export default function ReelCustomizePage() {
                               </div>
                             </div>
                           </div>
+                          {sceneData?.text ? (
+                            <p className="text-xs text-gray-600 dark:text-gray-300">{sceneData.text}</p>
+                          ) : null}
                           <div className="mt-2">
                             <p className="text-xs font-semibold text-gray-600 dark:text-gray-300">Zoom</p>
                             <div className="mt-1 flex flex-wrap gap-2">
@@ -765,7 +853,12 @@ export default function ReelCustomizePage() {
                           </div>
                           <div className="mt-3 rounded-lg border border-dashed border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-300/40 dark:bg-amber-900/30 dark:text-amber-100">
                             <div className="font-semibold">AI Suggestion:</div>
-                            <p>{idx === 1 ? "This scene could be stronger as the hook." : "Consider replacing weak visuals for better retention."}</p>
+                            <p>
+                              {sceneData?.visualSuggestion ||
+                                (idx === 1
+                                  ? "This scene could be stronger as the hook."
+                                  : "Consider replacing weak visuals for better retention.")}
+                            </p>
                             <div className="mt-2 flex gap-2">
                               <button className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white">Apply</button>
                               <button className="rounded-md border border-gray-200 px-3 py-1 text-xs font-semibold text-gray-700 hover:border-primary hover:text-primary dark:border-white/10 dark:text-gray-200">
@@ -1157,7 +1250,7 @@ export default function ReelCustomizePage() {
                 <span>Higher quality on export</span>
               </div>
               <div className="mt-2 aspect-[9/16] w-full overflow-hidden rounded-lg bg-gradient-to-br from-gray-200 to-gray-100 dark:from-gray-900 dark:to-gray-950">
-                {reel.videoUrl ? (
+                {previewVideoUrl ? (
                   <video
                     controls
                     className={cn(
@@ -1170,12 +1263,12 @@ export default function ReelCustomizePage() {
                             ? "ring-emerald-400"
                             : "ring-transparent",
                     )}
-                    src={reel.videoUrl}
-                    poster={reel.thumbnailUrl ?? undefined}
+                    src={previewVideoUrl}
+                    poster={previewThumbUrl ?? undefined}
                   />
-                ) : reel.thumbnailUrl ? (
+                ) : previewThumbUrl ? (
                   <img
-                    src={reel.thumbnailUrl}
+                    src={previewThumbUrl}
                     alt="Reel thumbnail"
                     className={cn(
                       "h-full w-full object-cover transition ring-2 ring-transparent",
@@ -1237,6 +1330,16 @@ export default function ReelCustomizePage() {
               )}
             >
               Next: Export
+            </button>
+            <button
+              onClick={handleRegenerate}
+              disabled={actionStatus.type === "loading"}
+              className={cn(
+                "flex-1 rounded-lg border border-primary/60 px-4 py-2 text-sm font-semibold text-primary transition hover:border-primary md:flex-none",
+                actionStatus.type === "loading" && "opacity-70",
+              )}
+            >
+              Re-generate
             </button>
           </div>
         </div>

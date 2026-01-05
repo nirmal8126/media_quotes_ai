@@ -31,6 +31,7 @@ export type ReelRecord = {
   videoUrl?: string | null;
   thumbnailUrl?: string | null;
   errorMessage?: string | null;
+  customSettings?: Record<string, unknown> | null;
   createdAt?: string | null;
   updatedAt?: string | null;
 };
@@ -169,6 +170,7 @@ function mapReel(row: Record<string, any>): ReelRecord {
     videoUrl: row.video_url ?? null,
     thumbnailUrl: row.thumbnail_url ?? null,
     errorMessage: row.error_message ?? null,
+    customSettings: row.custom_settings ?? null,
     createdAt: row.created_at ?? null,
     updatedAt: row.updated_at ?? null,
   };
@@ -432,26 +434,6 @@ async function updateReelStatus(reelId: string, userId: string, updates: Partial
   return mapReel(data);
 }
 
-function defaultAssets(jobId: string) {
-  const mediaCdn = process.env.MEDIA_CDN_BASE_URL?.replace(/\/$/, '');
-  if (mediaCdn) {
-    return {
-      videoUrl: `${mediaCdn}/renders/${jobId}.mp4`,
-      thumbnailUrl: `${mediaCdn}/renders/${jobId}.jpg`,
-    };
-  }
-  const fallbackVideo =
-    process.env.DEFAULT_REEL_VIDEO_URL ??
-    'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4';
-  const fallbackThumb =
-    process.env.DEFAULT_REEL_THUMB_URL ??
-    'https://images.unsplash.com/photo-1526170375885-4d8ecf77b99f?w=720&auto=format&fit=crop';
-  return {
-    videoUrl: `${fallbackVideo}?job=${jobId}`,
-    thumbnailUrl: `${fallbackThumb}&job=${jobId}`,
-  };
-}
-
 function formatRendererError(error: unknown): string {
   if (error instanceof Error) {
     const code = typeof (error as any)?.cause?.code === 'string' ? (error as any).cause.code : null;
@@ -464,7 +446,7 @@ function formatRendererError(error: unknown): string {
   }
 }
 
-async function triggerRenderer(options: {
+export async function triggerRenderer(options: {
   scriptText: string;
   style?: string | null;
   template?: string | null;
@@ -509,60 +491,104 @@ async function triggerRenderer(options: {
 
   const rendererUrl = process.env.RENDERER_API_URL;
   const rendererKey = process.env.RENDERER_API_KEY;
-  if (rendererUrl && rendererKey) {
-    try {
-      const res = await fetch(`${rendererUrl.replace(/\/$/, '')}/render`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${rendererKey}`,
-        },
-        body: JSON.stringify({
-          script: options.scriptText,
-          style: options.style,
-          template: options.template,
-          durationSec: options.durationSec,
-          brand: options.brand,
-          audioUrl,
-        }),
-      });
-
-      if (res.ok) {
-        const body = (await res.json().catch(() => ({}))) as {
-          jobId?: string;
-          status?: string;
-          videoUrl?: string;
-          thumbnailUrl?: string;
-          error?: string | null;
-        };
-        const status = body.status === 'ready' ? 'ready' : 'rendering';
-        const assets = defaultAssets(jobId);
-        return {
-          id: body.jobId || jobId,
-          status,
-          videoUrl: body.videoUrl || assets.videoUrl,
-          thumbnailUrl: body.thumbnailUrl || assets.thumbnailUrl,
-          audioUrl,
-          error: body.error || null,
-        };
-      }
-    } catch (err) {
-      renderError = formatRendererError(err);
-      // eslint-disable-next-line no-console
-      console.warn('Renderer call failed, falling back to defaults:', renderError);
-    }
+  if (!rendererUrl || !rendererKey) {
+    return {
+      id: jobId,
+      status: 'failed' as const,
+      videoUrl: null,
+      thumbnailUrl: null,
+      audioUrl,
+      error: 'Renderer not configured',
+    };
   }
 
-  // Fallback to placeholder assets
-  const assets = defaultAssets(jobId);
-  return {
-    id: jobId,
-    status: 'ready' as const,
-    videoUrl: assets.videoUrl,
-    thumbnailUrl: assets.thumbnailUrl,
-    audioUrl,
-    error: renderError,
-  };
+  try {
+    const res = await fetch(`${rendererUrl.replace(/\/$/, '')}/render`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${rendererKey}`,
+      },
+      body: JSON.stringify({
+        script: options.scriptText,
+        style: options.style,
+        template: options.template,
+        durationSec: options.durationSec,
+        brand: options.brand,
+        audioUrl,
+      }),
+    });
+
+    const body = (await res.json().catch(() => ({}))) as Record<string, any>;
+    const jobIdFromBody = body.jobId || body.job_id || body.id || body.renderId || body.render_id;
+    const statusRaw = (body.status || body.state || '').toString().toLowerCase();
+    const videoUrl = body.videoUrl || body.video_url || null;
+    const thumbnailUrl = body.thumbnailUrl || body.thumbnail_url || null;
+    const errorMessage = body.error || body.message || null;
+
+    if (!res.ok) {
+      return {
+        id: jobIdFromBody || jobId,
+        status: 'failed' as const,
+        videoUrl: null,
+        thumbnailUrl: null,
+        audioUrl,
+        error: errorMessage || `Renderer failed (${res.status})`,
+      };
+    }
+
+    const normalizedStatus = statusRaw || 'rendering';
+    if (normalizedStatus === 'ready') {
+      if (!videoUrl || !thumbnailUrl) {
+        return {
+          id: jobIdFromBody || jobId,
+          status: 'failed' as const,
+          videoUrl: null,
+          thumbnailUrl: null,
+          audioUrl,
+          error: 'Renderer returned ready without assets',
+        };
+      }
+      return {
+        id: jobIdFromBody || jobId,
+        status: 'ready' as const,
+        videoUrl,
+        thumbnailUrl,
+        audioUrl,
+        error: errorMessage || null,
+      };
+    }
+
+    if (normalizedStatus === 'failed') {
+      return {
+        id: jobIdFromBody || jobId,
+        status: 'failed' as const,
+        videoUrl: null,
+        thumbnailUrl: null,
+        audioUrl,
+        error: errorMessage || 'Renderer job failed',
+      };
+    }
+
+    return {
+      id: jobIdFromBody || jobId,
+      status: 'rendering' as const,
+      videoUrl: null,
+      thumbnailUrl: null,
+      audioUrl,
+      error: errorMessage || null,
+    };
+  } catch (err) {
+    renderError = formatRendererError(err);
+    return {
+      id: jobId,
+      status: 'failed' as const,
+      videoUrl: null,
+      thumbnailUrl: null,
+      audioUrl,
+      error: renderError,
+    };
+  }
 }
 
 export async function startReelGeneration(user: User, payload: GeneratePayload): Promise<ReelGenerationResult> {
@@ -649,7 +675,8 @@ export async function startReelGeneration(user: User, payload: GeneratePayload):
     },
   });
 
-  const reelStatus: ReelStatus = rendererJob.status === 'ready' ? 'READY' : 'RENDERING';
+  const reelStatus: ReelStatus =
+    rendererJob.status === 'ready' ? 'READY' : rendererJob.status === 'failed' ? 'FAILED' : 'RENDERING';
   const reel = await insertReelRecord({
     userId: user.id,
     channelId,
@@ -677,6 +704,47 @@ export async function startReelGeneration(user: User, payload: GeneratePayload):
   return { script, reel };
 }
 
+async function fetchRendererStatus(jobId: string) {
+  const rendererUrl = process.env.RENDERER_API_URL;
+  const rendererKey = process.env.RENDERER_API_KEY;
+  if (!rendererUrl || !rendererKey) return null;
+  const baseUrl = rendererUrl.replace(/\/$/, '');
+  const endpoints = [`${baseUrl}/render/${jobId}`, `${baseUrl}/status/${jobId}`];
+  let lastError: string | null = null;
+
+  for (const endpoint of endpoints) {
+    const res = await fetch(endpoint, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${rendererKey}`,
+      },
+    });
+
+    const body = (await res.json().catch(() => ({}))) as Record<string, any>;
+    const statusRaw = (body.status || body.state || '').toString().toLowerCase();
+    const videoUrl = body.videoUrl || body.video_url || null;
+    const thumbnailUrl = body.thumbnailUrl || body.thumbnail_url || null;
+    const errorMessage = body.error || body.message || null;
+
+    if (!res.ok) {
+      lastError = errorMessage || `Renderer status failed (${res.status})`;
+      if (res.status === 404) {
+        continue;
+      }
+      return { status: 'failed', error: lastError };
+    }
+
+    return {
+      status: statusRaw || 'rendering',
+      videoUrl,
+      thumbnailUrl,
+      error: errorMessage || null,
+    };
+  }
+
+  return lastError ? { status: 'failed', error: lastError } : null;
+}
+
 export async function fetchReelStatus(userId: string, reelId: string): Promise<ReelRecord> {
   const { data, error } = await supabaseAdmin
     .from('reels')
@@ -699,6 +767,31 @@ export async function fetchReelStatus(userId: string, reelId: string): Promise<R
     throw new HttpError('Reel not found', 404);
   }
 
-  // If you have a real renderer, poll it here when status === RENDERING
+  if (data.status === 'RENDERING' && data.renderer_job_id) {
+    const rendererStatus = await fetchRendererStatus(data.renderer_job_id);
+    if (rendererStatus) {
+      if (rendererStatus.status === 'ready') {
+        if (!rendererStatus.videoUrl || !rendererStatus.thumbnailUrl) {
+          return await updateReelStatus(reelId, userId, {
+            status: 'FAILED',
+            errorMessage: 'Renderer returned ready without assets',
+          });
+        }
+        return await updateReelStatus(reelId, userId, {
+          status: 'READY',
+          videoUrl: rendererStatus.videoUrl,
+          thumbnailUrl: rendererStatus.thumbnailUrl,
+          errorMessage: rendererStatus.error || null,
+        });
+      }
+      if (rendererStatus.status === 'failed') {
+        return await updateReelStatus(reelId, userId, {
+          status: 'FAILED',
+          errorMessage: rendererStatus.error || 'Renderer job failed',
+        });
+      }
+    }
+  }
+
   return mapReel(data);
 }
