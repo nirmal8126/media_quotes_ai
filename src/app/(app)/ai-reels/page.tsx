@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 import { labelForLanguage, languageOptions, resolveLanguageCode } from "@/lib/languages";
@@ -200,7 +200,15 @@ export default function AiReelsPage() {
     setPage(1);
   }, [search, pageSize, history.length, channelFilter, platformFilter, toneFilter, statusFilter, dateFrom, dateTo]);
 
-  const loadHistory = async () => {
+  const resetFormState = useCallback(() => {
+    setResult(null);
+    setStatus({ type: "idle" });
+    setForm({ ...defaultForm });
+    setLanguageQuery(labelForLanguage(defaultForm.language));
+    setShowLanguageList(false);
+  }, []);
+
+  const loadHistory = useCallback(async () => {
     setHistoryLoading(true);
     setHistoryError(null);
     try {
@@ -226,9 +234,9 @@ export default function AiReelsPage() {
     } finally {
       setHistoryLoading(false);
     }
-  };
+  }, [channelFilter, dateFrom, dateTo, platformFilter, statusFilter, toneFilter]);
 
-  const loadChannels = async () => {
+  const loadChannels = useCallback(async () => {
     setChannelLoading(true);
     try {
       const res = await fetch("/api/channels", { cache: "no-store" });
@@ -241,15 +249,15 @@ export default function AiReelsPage() {
     } finally {
       setChannelLoading(false);
     }
-  };
-
-  useEffect(() => {
-    void loadChannels();
   }, []);
 
   useEffect(() => {
+    void loadChannels();
+  }, [loadChannels]);
+
+  useEffect(() => {
     void loadHistory();
-  }, [channelFilter, platformFilter, toneFilter, statusFilter, dateFrom, dateTo]);
+  }, [loadHistory]);
 
   const handleGenerate = async () => {
     if (status.type === "loading") return;
@@ -279,13 +287,8 @@ export default function AiReelsPage() {
         }
       : null;
 
-    const languageValue = (
-      channelDefaults?.language ||
-      form.language ||
-      languageQuery ||
-      ""
-    ).trim();
-    const normalizedLanguage = languageValue ? resolveLanguageCode(languageValue) : undefined;
+      const languageValue = (channelDefaults?.language || form.language || languageQuery || "").trim();
+      const normalizedLanguage = languageValue ? resolveLanguageCode(languageValue) : undefined;
 
     const payloadDuration = Number(channelDefaults?.durationSec ?? form.durationSec) || 15;
     const brand = selectedChannel
@@ -424,11 +427,7 @@ export default function AiReelsPage() {
         </div>
         <button
           onClick={() => {
-            setResult(null);
-            setStatus({ type: "idle" });
-            setForm({ ...defaultForm });
-            setLanguageQuery(labelForLanguage(defaultForm.language));
-            setShowLanguageList(false);
+            resetFormState();
             setShowModal(true);
           }}
           className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-primary/90"
@@ -798,10 +797,7 @@ export default function AiReelsPage() {
                   type="button"
                   onClick={() => {
                     setShowModal(false);
-                    setStatus({ type: "idle" });
-                    setForm({ ...defaultForm });
-                    setLanguageQuery(labelForLanguage(defaultForm.language));
-                    setShowLanguageList(false);
+                    resetFormState();
                   }}
                   className="rounded-full bg-gray-1 px-3 py-1 text-sm font-semibold text-gray-7 hover:bg-gray-2 dark:bg-dark-3 dark:text-dark-7 dark:hover:bg-dark-4"
                 >

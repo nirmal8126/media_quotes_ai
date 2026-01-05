@@ -199,13 +199,15 @@ async function generateScriptFromIdea(options: {
   const prompt = [
     `Write a ${durationSec}-second vertical video script for ${platform}.`,
     `Tone: ${tone}.`,
-    language ? `Language: ${language}.` : '',
+    language ? `Language: ${language}.` : null,
     `Idea: ${idea}.`,
     'Keep it on-topic for the channel and avoid going off-theme.',
     'Return the script as plain text with clear voiceover lines.',
     'Avoid scene numbers; keep it concise and punchy.',
     ...channelLines,
-  ].join(' ');
+  ]
+    .filter(Boolean)
+    .join(' ');
 
   const text = await generateCompletion(prompt, { temperature: 0.65, maxTokens: 500, provider });
   const cleaned = normalizeText(text);
@@ -234,6 +236,7 @@ async function insertScriptRecord(payload: {
   inputPrompt?: string | null;
   text: string;
 }): Promise<ScriptRecord> {
+  const now = new Date().toISOString();
   const fullPayload = {
     user_id: payload.userId,
     channel_id: payload.channelId || null,
@@ -252,8 +255,8 @@ async function insertScriptRecord(payload: {
     duration_sec: payload.durationSec ?? null,
     input_prompt: payload.inputPrompt || null,
     text: payload.text,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
+    created_at: now,
+    updated_at: now,
   };
 
   let { data, error } = await supabaseAdmin.from('scripts').insert(fullPayload).select('*').maybeSingle();
@@ -278,8 +281,8 @@ async function insertScriptRecord(payload: {
         duration_sec: payload.durationSec ?? null,
         input_prompt: payload.inputPrompt || null,
         text: payload.text,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
+        created_at: now,
+        updated_at: now,
       };
       const retry = await supabaseAdmin.from('scripts').insert(trimmed).select('*').maybeSingle();
       if (!retry.error && retry.data) {
@@ -323,6 +326,7 @@ async function insertReelRecord(payload: {
   thumbnailUrl?: string | null;
   errorMessage?: string | null;
 }): Promise<ReelRecord> {
+  const now = new Date().toISOString();
   const fullInsert = {
     user_id: payload.userId,
     script_id: payload.scriptId,
@@ -345,8 +349,8 @@ async function insertReelRecord(payload: {
     video_url: payload.videoUrl || null,
     thumbnail_url: payload.thumbnailUrl || null,
     error_message: payload.errorMessage || null,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
+    created_at: now,
+    updated_at: now,
   };
 
   let { data, error } = await supabaseAdmin.from('reels').insert(fullInsert).select('*').maybeSingle();
@@ -375,8 +379,8 @@ async function insertReelRecord(payload: {
         video_url: payload.videoUrl || null,
         thumbnail_url: payload.thumbnailUrl || null,
         error_message: payload.errorMessage || null,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
+        created_at: now,
+        updated_at: now,
       };
       const retry = await supabaseAdmin.from('reels').insert(trimmed).select('*').maybeSingle();
       if (!retry.error && retry.data) {
@@ -532,11 +536,12 @@ async function triggerRenderer(options: {
           error?: string | null;
         };
         const status = body.status === 'ready' ? 'ready' : 'rendering';
+        const assets = defaultAssets(jobId);
         return {
           id: body.jobId || jobId,
           status,
-          videoUrl: body.videoUrl || defaultAssets(jobId).videoUrl,
-          thumbnailUrl: body.thumbnailUrl || defaultAssets(jobId).thumbnailUrl,
+          videoUrl: body.videoUrl || assets.videoUrl,
+          thumbnailUrl: body.thumbnailUrl || assets.thumbnailUrl,
           audioUrl,
           error: body.error || null,
         };
@@ -645,7 +650,7 @@ export async function startReelGeneration(user: User, payload: GeneratePayload):
   });
 
   const reelStatus: ReelStatus = rendererJob.status === 'ready' ? 'READY' : 'RENDERING';
-  let reel = await insertReelRecord({
+  const reel = await insertReelRecord({
     userId: user.id,
     channelId,
     scriptId: script.id,
@@ -669,11 +674,6 @@ export async function startReelGeneration(user: User, payload: GeneratePayload):
     errorMessage: rendererJob.error,
   });
 
-  if (rendererJob.status === 'ready') {
-    return { script, reel };
-  }
-
-  // If renderer is async, you could return a queued job here. For now, everything is ready.
   return { script, reel };
 }
 
