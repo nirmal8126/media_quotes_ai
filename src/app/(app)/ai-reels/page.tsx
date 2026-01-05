@@ -455,7 +455,7 @@ export default function AiReelsPage() {
       setShowModal(false);
       await loadHistory();
       if (body.reel?.id) {
-        router.push(`/reels/${body.reel.id}/customize`);
+        router.push(`/ai-reels/${body.reel.id}/customize`);
       }
     } catch (err) {
       setStatus({
@@ -751,7 +751,7 @@ export default function AiReelsPage() {
                         <div className="flex flex-wrap justify-end gap-2">
                           <button
                             className="rounded-md border border-gray-3 px-3 py-2 text-xs font-semibold text-gray-7 transition hover:bg-gray-1 dark:border-stroke-dark dark:text-dark-7 dark:hover:bg-dark-2"
-                            onClick={() => router.push(`/reels/${item.id}/customize`)}
+                            onClick={() => router.push(`/ai-reels/${item.id}/customize`)}
                           >
                             Detail
                           </button>
