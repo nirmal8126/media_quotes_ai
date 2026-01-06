@@ -1,7 +1,13 @@
 import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/api-auth";
 import { startReelGeneration } from "@/lib/reels-pipeline";
-import { generateScriptVariants, generateStoryboard } from "@/lib/reel-service";
+import {
+  generateCaptionContent,
+  generateHashtagList,
+  generateScriptVariants,
+  generateStoryboard,
+  generateThumbnailPrompt,
+} from "@/lib/reel-service";
 import { pickProvider } from "@/lib/llm-provider";
 import { defaultProvider } from "@/lib/openai";
 import { getChannel } from "@/lib/channel-service";
@@ -22,6 +28,10 @@ export async function POST(request: Request) {
   try {
     const result = await startReelGeneration(user, body);
 
+    const topic = body.idea || channel?.topic || channel?.name || "Untitled";
+    const tone = body.tone || channel?.tone || "motivational";
+    const platform = body.platform || channel?.platform || "INSTAGRAM";
+
     let variants: null | {
       hooks: string[];
       titles: string[];
@@ -29,12 +39,15 @@ export async function POST(request: Request) {
       hashtags: string[][];
     } = null;
     let storyboard: null | Array<{ label?: string; text: string; durationMs?: number; visualSuggestion?: string }> = null;
+    let caption: { text: string; callToAction: string } | null = null;
+    let hashtags: string[] | null = null;
+    let thumbnailPrompt: string | null = null;
 
     if (body.multiVariants) {
       variants = await generateScriptVariants({
-        topic: body.idea || channel?.topic || channel?.name || "Untitled",
-        tone: body.tone || channel?.tone || "motivational",
-        platform: body.platform || channel?.platform || "INSTAGRAM",
+        topic,
+        tone,
+        platform,
         count: Number(body.variantCount) || 3,
         provider,
       });
@@ -43,18 +56,69 @@ export async function POST(request: Request) {
     if (body.storyboard) {
       storyboard = await generateStoryboard({
         script: result.script.text,
-        tone: body.tone || channel?.tone || "motivational",
-        platform: body.platform || channel?.platform || "INSTAGRAM",
+        tone,
+        platform,
         provider,
       });
-      if (result.reel?.id && storyboard?.length) {
-        const { error: settingsError } = await supabaseAdmin
-          .from("reels")
-          .update({ custom_settings: { storyboard } })
-          .eq("id", result.reel.id)
-          .eq("user_id", user.id);
+    }
+
+    try {
+      const captionResult = await generateCaptionContent(tone, platform, topic, undefined, provider);
+      caption = { text: captionResult.caption, callToAction: captionResult.callToAction };
+    } catch (err) {
+      console.warn("Caption generation failed:", err);
+    }
+    try {
+      hashtags = await generateHashtagList(tone, platform, provider);
+    } catch (err) {
+      console.warn("Hashtag generation failed:", err);
+    }
+    try {
+      thumbnailPrompt = await generateThumbnailPrompt(tone, platform, provider);
+    } catch (err) {
+      console.warn("Thumbnail prompt generation failed:", err);
+    }
+
+    if (result.reel?.id) {
+      const settingsPayload = {
+        custom_settings: {
+          ...(storyboard?.length ? { storyboard } : {}),
+          caption,
+          hashtags,
+          thumbnailPrompt,
+        },
+        caption: caption?.text ?? null,
+        hashtags: hashtags ?? null,
+        thumbnail_prompt: thumbnailPrompt ?? null,
+      };
+      let { error: settingsError } = await supabaseAdmin
+        .from("reels")
+        .update(settingsPayload)
+        .eq("id", result.reel.id)
+        .eq("user_id", user.id);
+
+      if (settingsError) {
+        const msg = (settingsError.message || "").toLowerCase();
+        if (msg.includes("custom_settings")) {
+          const legacyOnly = {
+            caption: caption?.text ?? null,
+            hashtags: hashtags ?? null,
+            thumbnail_prompt: thumbnailPrompt ?? null,
+          };
+          ({ error: settingsError } = await supabaseAdmin
+            .from("reels")
+            .update(legacyOnly)
+            .eq("id", result.reel.id)
+            .eq("user_id", user.id));
+        } else if (msg.includes("caption") || msg.includes("hashtags") || msg.includes("thumbnail_prompt")) {
+          ({ error: settingsError } = await supabaseAdmin
+            .from("reels")
+            .update({ custom_settings: settingsPayload.custom_settings })
+            .eq("id", result.reel.id)
+            .eq("user_id", user.id));
+        }
         if (settingsError && !settingsError.message?.toLowerCase().includes("custom_settings")) {
-          console.warn("Unable to persist storyboard in custom_settings:", settingsError.message || settingsError);
+          console.warn("Unable to persist reel metadata:", settingsError.message || settingsError);
         }
       }
     }
@@ -65,6 +129,9 @@ export async function POST(request: Request) {
       script: result.script,
       variants,
       storyboard,
+      caption,
+      hashtags,
+      thumbnailPrompt,
     });
     applyCookies(response);
     return response;

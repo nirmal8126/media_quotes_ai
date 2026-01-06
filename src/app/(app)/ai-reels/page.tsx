@@ -24,22 +24,6 @@ type ReelHistoryItem = {
   channelId?: string | null;
 };
 
-type ReelState = {
-  reel?: ReelHistoryItem;
-  script?: {
-    id: string;
-    text: string;
-    inputPrompt?: string | null;
-  };
-  variants?: {
-    hooks?: string[];
-    titles?: string[];
-    scripts?: string[];
-    hashtags?: string[][];
-  };
-  storyboard?: Array<{ label?: string; text: string; durationMs?: number; visualSuggestion?: string }>;
-};
-
 type Channel = {
   id: string;
   name: string;
@@ -106,7 +90,6 @@ export default function AiReelsPage() {
   const router = useRouter();
   const [form, setForm] = useState({ ...defaultForm });
   const [status, setStatus] = useState<Status>({ type: "idle" });
-  const [result, setResult] = useState<ReelState | null>(null);
   const [polling, setPolling] = useState(false);
   const [history, setHistory] = useState<ReelHistoryItem[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -201,7 +184,6 @@ export default function AiReelsPage() {
   }, [search, pageSize, history.length, channelFilter, platformFilter, toneFilter, statusFilter, dateFrom, dateTo]);
 
   const resetFormState = useCallback(() => {
-    setResult(null);
     setStatus({ type: "idle" });
     setForm({ ...defaultForm });
     setLanguageQuery(labelForLanguage(defaultForm.language));
@@ -319,8 +301,6 @@ export default function AiReelsPage() {
           style: channelDefaults?.style || form.style,
           template: channelDefaults?.template || form.template,
           durationSec: payloadDuration,
-          multiVariants: true,
-          storyboard: true,
           ...(hasBrand ? { brand } : {}),
         }),
       });
@@ -328,12 +308,6 @@ export default function AiReelsPage() {
       if (!res.ok) {
         throw new Error(body?.error || "Failed to start reel generation.");
       }
-      setResult({
-        reel: body.reel,
-        script: body.script,
-        variants: body.variants,
-        storyboard: body.storyboard,
-      });
       setStatus({
         type: "success",
         message:
@@ -341,9 +315,6 @@ export default function AiReelsPage() {
       });
       setShowModal(false);
       await loadHistory();
-      if (body.reel?.id) {
-        router.push(`/ai-reels/${body.reel.id}/customize`);
-      }
     } catch (err) {
       setStatus({
         type: "error",
@@ -352,26 +323,20 @@ export default function AiReelsPage() {
     }
   };
 
-  const handlePoll = async (reelId?: string) => {
-    const idToPoll = reelId ?? result?.reel?.id;
-    if (!idToPoll || polling) return;
+  const handlePoll = async (reelId: string) => {
+    if (!reelId || polling) return;
     setPolling(true);
     try {
       const res = await fetch(
-        `/api/reels/status?reelId=${encodeURIComponent(idToPoll)}`
+        `/api/reels/status?reelId=${encodeURIComponent(reelId)}`
       );
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {
         throw new Error(body?.error || "Failed to load status.");
       }
-      setResult((prev) =>
-        prev?.reel?.id === idToPoll
-          ? { ...(prev ?? {}), reel: body.reel }
-          : prev
-      );
       setHistory((prev) =>
         prev.map((item) =>
-          item.id === idToPoll ? { ...item, ...body.reel } : item
+          item.id === reelId ? { ...item, ...body.reel } : item
         )
       );
       setStatus({
@@ -634,9 +599,9 @@ export default function AiReelsPage() {
                         <div className="flex flex-wrap justify-end gap-2">
                           <button
                             className="rounded-md border border-gray-3 px-3 py-2 text-xs font-semibold text-gray-7 transition hover:bg-gray-1 dark:border-stroke-dark dark:text-dark-7 dark:hover:bg-dark-2"
-                            onClick={() => router.push(`/ai-reels/${item.id}/customize`)}
+                            onClick={() => router.push(`/ai-reels/${item.id}`)}
                           >
-                            Detail
+                            View
                           </button>
                           <button
                             className="rounded-md border border-gray-3 px-3 py-2 text-xs font-semibold text-gray-7 transition hover:bg-gray-1 dark:border-stroke-dark dark:text-dark-7 dark:hover:bg-dark-2"
@@ -698,83 +663,6 @@ export default function AiReelsPage() {
           </div>
         )}
       </div>
-
-      {result?.variants || (result?.storyboard && result.storyboard.length > 0) ? (
-        <div className="rounded-2xl border border-gray-3 bg-white p-4 shadow-card-2 dark:border-stroke-dark dark:bg-dark-2">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.35em] text-primary">
-                Generated extras
-              </p>
-              <h3 className="text-lg font-bold text-dark dark:text-dark-8">Variants & storyboard</h3>
-            </div>
-          </div>
-
-          <div className="mt-4 grid gap-3 md:grid-cols-2">
-            {result?.variants && (result.variants.hooks?.length || result.variants.scripts?.length) ? (
-              <div className="space-y-2 rounded-lg border border-gray-3 p-3 dark:border-stroke-dark">
-                <div className="text-sm font-semibold text-dark dark:text-dark-8">Variants</div>
-                <div className="space-y-1 text-sm text-gray-7 dark:text-dark-7">
-                  {result.variants.hooks?.length ? (
-                    <div>
-                      <div className="text-xs font-semibold uppercase text-gray-6 dark:text-dark-6">Hooks</div>
-                      <ul className="list-disc pl-5">
-                        {result.variants.hooks.slice(0, 3).map((hook, idx) => (
-                          <li key={`hook-${idx}`}>{hook}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  ) : null}
-                  {result.variants.scripts?.length ? (
-                    <div>
-                      <div className="text-xs font-semibold uppercase text-gray-6 dark:text-dark-6">Scripts (preview)</div>
-                      <ul className="list-disc pl-5">
-                        {result.variants.scripts.slice(0, 2).map((script, idx) => (
-                          <li key={`script-${idx}`} className="line-clamp-2">
-                            {script}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  ) : null}
-                  {result.variants.titles?.length ? (
-                    <div>
-                      <div className="text-xs font-semibold uppercase text-gray-6 dark:text-dark-6">Titles</div>
-                      <ul className="list-disc pl-5">
-                        {result.variants.titles.slice(0, 3).map((title, idx) => (
-                          <li key={`title-${idx}`}>{title}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  ) : null}
-                </div>
-              </div>
-            ) : null}
-
-            {result?.storyboard && result.storyboard.length > 0 ? (
-              <div className="space-y-2 rounded-lg border border-gray-3 p-3 dark:border-stroke-dark">
-                <div className="text-sm font-semibold text-dark dark:text-dark-8">Storyboard (up to 5 scenes)</div>
-                <ol className="space-y-2 text-sm text-gray-7 dark:text-dark-7">
-                  {result.storyboard
-                    .filter((scene) => scene.text && scene.text.length > 6)
-                    .slice(0, 5)
-                    .map((scene, idx) => (
-                    <li key={`scene-${idx}`} className="rounded-lg bg-gray-1/60 p-2 dark:bg-dark-3/70">
-                      <div className="text-xs font-semibold uppercase text-gray-6 dark:text-dark-6">
-                        {scene.label || `Scene ${idx + 1}`} {scene.durationMs ? `• ${Math.round(scene.durationMs / 1000)}s` : ""}
-                      </div>
-                      <div>{scene.text}</div>
-                      {scene.visualSuggestion ? (
-                        <div className="text-[11px] text-gray-5 dark:text-dark-6">Visual: {scene.visualSuggestion}</div>
-                      ) : null}
-                    </li>
-                  ))}
-                </ol>
-              </div>
-            ) : null}
-          </div>
-        </div>
-      ) : null}
 
       {showModal && (
         <ModalPortal>

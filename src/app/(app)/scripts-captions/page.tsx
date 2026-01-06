@@ -9,8 +9,6 @@ import type {
   Platform,
   ToneStyle,
 } from "@/types/generation";
-import { IntegrityPanel } from "@/components/IntegrityPanel";
-import type { IntegrityFix, IntegrityReport } from "@/lib/integrity/types";
 import {
   labelForLanguage,
   languageOptions,
@@ -21,6 +19,37 @@ function ModalPortal({ children }: { children: React.ReactNode }) {
   if (typeof document === "undefined") return null;
   return createPortal(children, document.body);
 }
+
+const CopyIcon = ({ className }: { className?: string }) => (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    className={className ?? "h-4 w-4"}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.6"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+  </svg>
+);
+
+const CheckIcon = ({ className }: { className?: string }) => (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    className={className ?? "h-4 w-4"}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.6"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <path d="M20 6 9 17l-5-5" />
+  </svg>
+);
 
 type ScriptRow = {
   id: string;
@@ -41,12 +70,6 @@ type Status =
   | { type: "loading"; message?: string }
   | { type: "error"; message: string }
   | { type: "success"; message: string };
-
-type IntegrityState = {
-  report: IntegrityReport | null;
-  status: "idle" | "loading" | "error";
-  message?: string;
-};
 
 const contentTypes: ContentType[] = ["short_script", "long_script", "caption"];
 const platformOptions: Platform[] = ["instagram_reels", "youtube_shorts", "tiktok", "facebook_reels"];
@@ -86,12 +109,8 @@ const defaultForm = {
   mode: "generate" as "generate" | "improve" | "rewrite" | "shorten" | "expand",
 };
 
-const initialIntegrity: IntegrityState = { report: null, status: "idle" };
-
 export default function ScriptsCaptionsPage() {
   const [rows, setRows] = useState<ScriptRow[]>([]);
-  const [integrityCache, setIntegrityCache] = useState<Record<string, IntegrityReport | null>>({});
-  const integrityInFlight = useRef<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [form, setForm] = useState({ ...defaultForm });
@@ -108,13 +127,14 @@ export default function ScriptsCaptionsPage() {
     type: "success" | "error";
     message: string;
   } | null>(null);
+  const [copiedScript, setCopiedScript] = useState(false);
+  const [copiedCaption, setCopiedCaption] = useState(false);
+  const [copiedHashtags, setCopiedHashtags] = useState(false);
   const [search, setSearch] = useState("");
   const [pageSize, setPageSize] = useState(5);
   const [page, setPage] = useState(1);
-  const [plannerBusyId, setPlannerBusyId] = useState<string | null>(null);
+  
   const topicInputRef = useRef<HTMLInputElement | null>(null);
-  const [integrityState, setIntegrityState] = useState<IntegrityState>(initialIntegrity);
-  const [integrityGate, setIntegrityGate] = useState<{ open: boolean; pending?: () => void }>({ open: false });
 
   const filteredLanguages = useMemo(() => {
     if (!showLanguageList) return [];
@@ -183,51 +203,32 @@ export default function ScriptsCaptionsPage() {
     );
   };
 
-  const integrityBlocking = integrityState.report && (integrityState.report.status === "warn" || integrityState.report.status === "risk");
-
-  const copyToClipboard = async (text: string, label: string) => {
-    const run = async () => {
-      try {
+  const copyToClipboard = async (text: string, label: string): Promise<boolean> => {
+    try {
+      if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
         await navigator.clipboard.writeText(text);
         pushToast(`${label} copied`);
-      } catch (err) {
-        console.error("Failed to copy", err);
-        pushToast(`Could not copy ${label}`, "error");
+        return true;
       }
-    };
-    const status = integrityState.report?.status;
-    if (!status || status === "safe") {
-      await run();
-      return;
-    }
-    setIntegrityGate({ open: true, pending: () => void run() });
-  };
-
-  const addToPlanner = async (row: ScriptRow) => {
-    setPlannerBusyId(row.id);
-    try {
-      const res = await fetch("/api/calendar", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          reelId: row.id,
-          platform: row.platform ?? "instagram",
-        }),
-      });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(body?.error || "Failed to add to planner");
+      const textarea = document.createElement("textarea");
+      textarea.value = text;
+      textarea.setAttribute("readonly", "");
+      textarea.style.position = "fixed";
+      textarea.style.opacity = "0";
+      document.body.appendChild(textarea);
+      textarea.focus();
+      textarea.select();
+      const succeeded = document.execCommand("copy");
+      document.body.removeChild(textarea);
+      if (!succeeded) {
+        throw new Error("Copy command failed");
       }
-      if (body?.warning) {
-        pushToast(body.warning, "error");
-      } else {
-        pushToast("Added to planner");
-      }
+      pushToast(`${label} copied`);
+      return true;
     } catch (err) {
-      console.error("Planner add failed", err);
-      pushToast((err as Error).message || "Could not add to planner", "error");
-    } finally {
-      setPlannerBusyId((prev) => (prev === row.id ? null : prev));
+      console.error("Failed to copy", err);
+      pushToast(`Could not copy ${label}`, "error");
+      return false;
     }
   };
 
@@ -260,105 +261,12 @@ export default function ScriptsCaptionsPage() {
     });
   }, [rows, search]);
 
-  const activeIntegrityRow = detailRow || null;
-
-  const integrityText = useMemo(() => {
-    if (!activeIntegrityRow) return "";
-    return [activeIntegrityRow.hook, activeIntegrityRow.script, activeIntegrityRow.caption].filter(Boolean).join(" ");
-  }, [activeIntegrityRow]);
-
-  const computeIntegrity = useCallback(
-    async (text: string, row?: ScriptRow | null, opts?: { silent?: boolean }) => {
-      if (!opts?.silent) {
-        setIntegrityState((prev) => ({ report: prev.report, status: "loading" }));
-      }
-      try {
-        const contentId = row?.id || "temp";
-        const res = await fetch(`/api/content/script/${encodeURIComponent(contentId)}/integrity`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            type: "script",
-            textContent: text,
-            previousTexts: rows
-              .filter((r) => !row || r.id !== row.id)
-              .map((r) => [r.hook, r.script, r.caption].filter(Boolean).join(" ")),
-            generatedCount: rows.length,
-            metadata: { userEdited: true },
-          }),
-        });
-        const body = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(body?.error || "Integrity check failed");
-        if (!opts?.silent) {
-          setIntegrityState({ report: body.report ?? null, status: "idle" });
-        }
-        if (row?.id) {
-          setIntegrityCache((prev) => ({ ...prev, [row.id]: body.report ?? null }));
-        }
-      } catch (err) {
-        if (!opts?.silent) {
-          setIntegrityState({ report: null, status: "error", message: (err as Error).message });
-        }
-      }
-    },
-    [rows],
-  );
-
-  useEffect(() => {
-    if (integrityText) {
-      void computeIntegrity(integrityText, activeIntegrityRow);
-    }
-  }, [integrityText, computeIntegrity, activeIntegrityRow]);
-
-  useEffect(() => {
-    if (!activeIntegrityRow) {
-      setIntegrityState(initialIntegrity);
-    }
-  }, [activeIntegrityRow]);
-
-  const inlineIntegrityBadge = (report: IntegrityReport | null | undefined) => {
-    if (!report) return null;
-    const base =
-      report.status === "risk"
-        ? "bg-red-100 text-red-700 border-red-200 border"
-        : report.status === "warn"
-          ? "bg-amber-100 text-amber-700 border-amber-200 border"
-          : "bg-green-100 text-green-700 border-green-200 border";
-    return (
-      <span
-        className={cn(
-          "inline-flex items-center gap-2 rounded-full px-3 py-1 text-[11px] font-semibold uppercase shadow-sm",
-          base,
-        )}
-      >
-        <span>{report.status}</span>
-        <span className="text-[10px] font-bold opacity-80">{report.score ?? 0}/100</span>
-      </span>
-    );
-  };
-
   const pageCount = Math.max(1, Math.ceil(filteredRows.length / pageSize));
   const currentPage = Math.min(page, pageCount);
   const pagedRows = useMemo(() => {
     const start = (currentPage - 1) * pageSize;
     return filteredRows.slice(start, start + pageSize);
   }, [filteredRows, currentPage, pageSize]);
-
-  // Background check for visible rows (first page slice)
-  useEffect(() => {
-    const rowsToCheck = pagedRows.slice(0, 5);
-    rowsToCheck.forEach((row) => {
-      if (!row.id) return;
-      if (integrityCache[row.id] !== undefined) return;
-      if (integrityInFlight.current.has(row.id)) return;
-      const text = [row.hook, row.script, row.caption].filter(Boolean).join(" ");
-      if (!text) return;
-      integrityInFlight.current.add(row.id);
-      void computeIntegrity(text, row, { silent: true }).finally(() => {
-        integrityInFlight.current.delete(row.id);
-      });
-    });
-  }, [pagedRows, integrityCache, computeIntegrity]);
 
   useEffect(() => {
     setPage(1);
@@ -508,52 +416,18 @@ export default function ScriptsCaptionsPage() {
   return (
       <div className="space-y-4">
         {toast && (
-          <div
-            className={cn(
-              "fixed right-4 top-4 z-30 rounded-md px-4 py-3 text-sm font-semibold shadow-lg",
-            toast.type === "success"
-              ? "bg-green-100 text-green-700"
-              : "bg-red-100 text-red-700"
-          )}
-        >
-          {toast.message}
-          </div>
-        )}
-
-        {integrityGate.open && integrityBlocking && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
-            <div className="w-full max-w-lg rounded-xl border border-gray-200 bg-white p-4 shadow-2xl dark:border-white/10 dark:bg-gray-900">
-              <h3 className="text-lg font-semibold text-dark dark:text-white">Content Integrity</h3>
-              <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
-                Status: {integrityState.report?.status.toUpperCase()}
-              </p>
-              <div className="mt-2 space-y-1 text-sm text-gray-700 dark:text-gray-200">
-                {(integrityState.report?.issues || []).map((issue) => (
-                  <div key={`${issue.code}-${issue.message}`} className="flex gap-2">
-                    <span className="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">{issue.code}</span>
-                    <span>{issue.message}</span>
-                  </div>
-                ))}
-              </div>
-              <div className="mt-4 flex flex-wrap gap-2">
-                <button
-                  onClick={() => setIntegrityGate({ open: false })}
-                  className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-800 hover:border-primary hover:text-primary dark:border-white/10 dark:text-white"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={() => {
-                    if (integrityGate.pending) integrityGate.pending();
-                    setIntegrityGate({ open: false });
-                  }}
-                  className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary/90"
-                >
-                  Proceed anyway
-                </button>
-              </div>
+          <ModalPortal>
+            <div
+              className={cn(
+                "fixed right-4 top-4 z-[12000] rounded-md px-4 py-3 text-sm font-semibold shadow-lg",
+                toast.type === "success"
+                  ? "bg-green-100 text-green-700"
+                  : "bg-red-100 text-red-700"
+              )}
+            >
+              {toast.message}
             </div>
-          </div>
+          </ModalPortal>
         )}
 
         <div className="rounded-2xl border border-gray-3 bg-white p-5 shadow-card-2 dark:border-stroke-dark dark:bg-dark-2">
@@ -580,23 +454,6 @@ export default function ScriptsCaptionsPage() {
         >
           + Generate Script
           </button>
-        </div>
-
-        <div className="mt-3">
-          {activeIntegrityRow && (
-            <IntegrityPanel
-              report={integrityState.report}
-              loading={integrityState.status === "loading"}
-              error={integrityState.status === "error" ? integrityState.message : null}
-              onRefresh={() => integrityText && computeIntegrity(integrityText, activeIntegrityRow)}
-              onFix={(fix: IntegrityFix) => {
-                setToast({ type: "success", message: `Fix: ${fix.label}` });
-                if (integrityText) {
-                  void computeIntegrity(integrityText, activeIntegrityRow);
-                }
-              }}
-            />
-          )}
         </div>
 
         {/* Removed variation cards to reduce duplication; the table below shows latest items */}
@@ -694,9 +551,6 @@ export default function ScriptsCaptionsPage() {
                           <span className="rounded-full bg-gray-2 px-3 py-1 text-gray-7 dark:bg-dark-3 dark:text-dark-7">
                             {row.hashtags && row.hashtags.length ? `${row.hashtags.length} tags` : "0 tags"}
                           </span>
-                          {inlineIntegrityBadge(integrityCache[row.id]) || (
-                            <span className="rounded-full bg-gray-2 px-3 py-1 text-gray-5 dark:bg-dark-3">Not checked</span>
-                          )}
                         </div>
                       </td>
                       <td className="px-4 py-3 align-middle text-gray-7 dark:text-dark-7">
@@ -766,13 +620,7 @@ export default function ScriptsCaptionsPage() {
                           >
                             Delete
                           </button>
-                          <button
-                            className="rounded-md border border-gray-3 px-3 py-1 text-gray-7 transition hover:bg-gray-1 disabled:opacity-60 dark:border-stroke-dark dark:text-dark-7 dark:hover:bg-dark-3"
-                            onClick={() => addToPlanner(row)}
-                            disabled={plannerBusyId === row.id}
-                          >
-                            {plannerBusyId === row.id ? "Adding..." : "Add to Planner"}
-                          </button>
+                          
                         </div>
                       </td>
                     </tr>
@@ -1248,23 +1096,74 @@ export default function ScriptsCaptionsPage() {
 
               <div className="space-y-4">
                 <div className="rounded-lg border border-gray-3 bg-gray-1 p-4 dark:border-stroke-dark dark:bg-dark-3">
-                  <p className="text-xs font-semibold uppercase text-gray-6 dark:text-dark-6">Script</p>
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-xs font-semibold uppercase text-gray-6 dark:text-dark-6">Script</p>
+                    <button
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-gray-3 text-gray-7 transition hover:bg-gray-1 dark:border-stroke-dark dark:text-dark-7 dark:hover:bg-dark-4"
+                      onClick={async () => {
+                        const ok = await copyToClipboard(detailRow.script || "", "Script");
+                        if (ok) {
+                          setCopiedScript(true);
+                          setTimeout(() => setCopiedScript(false), 1200);
+                        }
+                      }}
+                      disabled={!detailRow.script}
+                    >
+                      {copiedScript ? <CheckIcon className="h-4 w-4 text-green-600" /> : <CopyIcon className="h-4 w-4" />}
+                    </button>
+                  </div>
                   <p className="mt-2 whitespace-pre-line text-sm text-dark dark:text-dark-8">{detailRow.script || "—"}</p>
                 </div>
                 <div className="rounded-lg border border-gray-3 bg-gray-1 p-4 dark:border-stroke-dark dark:bg-dark-3">
-                  <p className="text-xs font-semibold uppercase text-gray-6 dark:text-dark-6">Caption</p>
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-xs font-semibold uppercase text-gray-6 dark:text-dark-6">Caption</p>
+                    <button
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-gray-3 text-gray-7 transition hover:bg-gray-1 dark:border-stroke-dark dark:text-dark-7 dark:hover:bg-dark-4"
+                      onClick={async () => {
+                        const ok = await copyToClipboard(detailRow.caption || "", "Caption");
+                        if (ok) {
+                          setCopiedCaption(true);
+                          setTimeout(() => setCopiedCaption(false), 1200);
+                        }
+                      }}
+                      disabled={!detailRow.caption}
+                    >
+                      {copiedCaption ? <CheckIcon className="h-4 w-4 text-green-600" /> : <CopyIcon className="h-4 w-4" />}
+                    </button>
+                  </div>
                   <p className="mt-2 whitespace-pre-line text-sm text-dark dark:text-dark-8">{detailRow.caption || "—"}</p>
                 </div>
                 {detailRow.hashtags && detailRow.hashtags.length > 0 && (
-                  <div className="flex flex-wrap gap-2">
-                    {detailRow.hashtags.map((tag) => (
-                      <span
-                        key={tag}
-                        className="rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold uppercase text-primary dark:bg-primary/20"
-                      >
-                        {tag}
-                      </span>
-                    ))}
+                  <div className="flex flex-wrap items-center gap-3">
+                    <div className="flex flex-wrap gap-2">
+                      {detailRow.hashtags.map((tag) => (
+                        <span
+                          key={tag}
+                          className="rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold uppercase text-primary dark:bg-primary/20"
+                        >
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+                    <button
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-gray-3 text-gray-7 transition hover:bg-gray-1 dark:border-stroke-dark dark:text-dark-7 dark:hover:bg-dark-4"
+                      onClick={async () => {
+                        const text = detailRow.hashtags?.join(" ") || "";
+                        const ok = await copyToClipboard(text, "Hashtags");
+                        if (ok) {
+                          setCopiedHashtags(true);
+                          setTimeout(() => setCopiedHashtags(false), 1200);
+                        }
+                      }}
+                      disabled={!detailRow.hashtags?.length}
+                      aria-label="Copy hashtags"
+                    >
+                      {copiedHashtags ? (
+                        <CheckIcon className="h-4 w-4 text-green-600" />
+                      ) : (
+                        <CopyIcon className="h-4 w-4" />
+                      )}
+                    </button>
                   </div>
                 )}
               </div>
