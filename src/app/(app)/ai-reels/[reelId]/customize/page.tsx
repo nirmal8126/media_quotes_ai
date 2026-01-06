@@ -2,13 +2,10 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { DragEvent } from "react";
 import { cn } from "@/lib/utils";
 import { labelForLanguage } from "@/lib/languages";
-import type { SafetyReport } from "@/types/safety";
-import type { IntegrityReport, IntegrityFix } from "@/lib/integrity/types";
-import { IntegrityPanel } from "@/components/IntegrityPanel";
 
 type ReelDetail = {
   id: string;
@@ -20,6 +17,9 @@ type ReelDetail = {
   language?: string | null;
   videoUrl?: string | null;
   thumbnailUrl?: string | null;
+  customSettings?: {
+    storyboard?: Array<{ label?: string; text: string; durationMs?: number; visualSuggestion?: string }>;
+  } | null;
 };
 
 type TabId = "settings" | "music" | "media" | "captions" | "thumbnail";
@@ -95,29 +95,75 @@ export default function ReelCustomizePage() {
   const [collapsedScenes, setCollapsedScenes] = useState<Record<number, boolean>>({});
   const [sceneOrder, setSceneOrder] = useState<number[]>([1, 2, 3]);
   const [draggingScene, setDraggingScene] = useState<number | null>(null);
-  const [safetyReport, setSafetyReport] = useState<SafetyReport | null>(null);
-  const [safetyStatus, setSafetyStatus] = useState<{ type: "idle" | "loading" | "error"; message?: string }>({
-    type: "idle",
-  });
-  const [integrityReport, setIntegrityReport] = useState<IntegrityReport | null>(null);
-  const [integrityStatus, setIntegrityStatus] = useState<{ type: "idle" | "loading" | "error"; message?: string }>({
-    type: "idle",
-  });
-  const [showExportGate, setShowExportGate] = useState(false);
-  const [pendingExportAction, setPendingExportAction] = useState<null | { action: ActionKind; message?: string }>(null);
+  const pollTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const platformLabel = (reel?.platform || "YOUTUBE_SHORTS").toString();
 
-  const collapseStateFor = (openScene?: number): Record<number, boolean> => {
-    const base: Record<number, boolean> = { 1: true, 2: true, 3: true };
-    if (openScene) {
-      base[openScene] = false;
-    }
-    return base;
-  };
+  const fallbackScenes = useMemo(
+    () => [
+      { label: "Hook", text: "Opening hook to grab attention." },
+      { label: "Body", text: "Core message or value delivery." },
+      { label: "CTA", text: "Call to action and wrap-up." },
+    ],
+    [],
+  );
+
+  const storyboardScenes = useMemo(() => {
+    const scenes = reel?.customSettings?.storyboard;
+    if (!Array.isArray(scenes)) return [];
+    return scenes.filter((scene) => scene && typeof scene.text === "string" && scene.text.trim().length > 0);
+  }, [reel?.customSettings]);
+
+  const scenes = useMemo(
+    () => (storyboardScenes.length ? storyboardScenes : fallbackScenes),
+    [storyboardScenes, fallbackScenes],
+  );
+
+  const scenesWithTiming = useMemo(() => {
+    let cursor = 0;
+    return scenes.map((scene, idx) => {
+      const durationSec = scene.durationMs ? Math.max(1, Math.round(scene.durationMs / 1000)) : 2;
+      const start = cursor;
+      const end = cursor + durationSec;
+      cursor = end;
+      return { ...scene, index: idx + 1, start, end };
+    });
+  }, [scenes]);
 
   useEffect(() => {
-    setCollapsedScenes({ 1: false, 2: true, 3: true });
-  }, []);
+    if (!scenesWithTiming.length) return;
+    const ids = scenesWithTiming.map((scene) => scene.index);
+    setSceneOrder(ids);
+    setCollapsedScenes(
+      ids.reduce((acc, id) => {
+        acc[id] = id !== ids[0];
+        return acc;
+      }, {} as Record<number, boolean>),
+    );
+    setActiveScene(ids[0]);
+  }, [scenesWithTiming.length]);
+
+  const isPlaceholderUrl = (url?: string | null) => {
+    if (!url) return false;
+    const normalized = url.toLowerCase();
+    return (
+      normalized.includes("bigbuckbunny") ||
+      normalized.includes("unsplash.com/photo-1526170375885") ||
+      normalized.includes("fallback") ||
+      normalized.includes("demo")
+    );
+  };
+
+  const previewVideoUrl = reel?.videoUrl && !isPlaceholderUrl(reel.videoUrl) ? reel.videoUrl : null;
+  const previewThumbUrl = reel?.thumbnailUrl && !isPlaceholderUrl(reel.thumbnailUrl) ? reel.thumbnailUrl : null;
+
+  const collapseStateFor = (openScene?: number): Record<number, boolean> => {
+    const ids = sceneOrder.length ? sceneOrder : scenesWithTiming.map((scene) => scene.index);
+    if (!ids.length) return {};
+    return ids.reduce((acc, id) => {
+      acc[id] = openScene ? id !== openScene : id !== ids[0];
+      return acc;
+    }, {} as Record<number, boolean>);
+  };
 
   const loadReel = async () => {
     if (!reelId) return;
@@ -137,43 +183,30 @@ export default function ReelCustomizePage() {
     }
   };
 
-  const loadSafety = async () => {
-    if (!reelId) return;
-    setSafetyStatus({ type: "loading", message: "Checking safety..." });
-    try {
-      const res = await fetch(`/api/reels/${encodeURIComponent(reelId)}/safety-report`, { cache: "no-store" });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(body?.error || "Unable to load safety report.");
-      }
-      setSafetyReport(body.report ?? null);
-      setSafetyStatus({ type: "idle" });
-    } catch (err) {
-      setSafetyStatus({ type: "error", message: (err as Error).message });
-    }
-  };
-
-  const loadIntegrity = async () => {
-    if (!reelId) return;
-    setIntegrityStatus({ type: "loading", message: "Checking integrity..." });
-    try {
-      const res = await fetch(`/api/content/reel/${encodeURIComponent(reelId)}/integrity`, { cache: "no-store" });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(body?.error || "Unable to load integrity report.");
-      }
-      setIntegrityReport(body.report ?? null);
-      setIntegrityStatus({ type: "idle" });
-    } catch (err) {
-      setIntegrityStatus({ type: "error", message: (err as Error).message });
-    }
-  };
-
   useEffect(() => {
     void loadReel();
-    void loadSafety();
-    void loadIntegrity();
   }, [reelId]);
+
+  useEffect(() => {
+    if (!reelId) return;
+    if (reel?.status !== "RENDERING") {
+      if (pollTimer.current) {
+        clearInterval(pollTimer.current);
+        pollTimer.current = null;
+      }
+      return;
+    }
+    if (pollTimer.current) return;
+    pollTimer.current = setInterval(() => {
+      void loadReel();
+    }, 5000);
+    return () => {
+      if (pollTimer.current) {
+        clearInterval(pollTimer.current);
+        pollTimer.current = null;
+      }
+    };
+  }, [reel?.status, reelId]);
 
   const gatherSettings = () => ({
     pacing,
@@ -223,13 +256,7 @@ export default function ReelCustomizePage() {
     sceneOrder,
   });
 
-  const safetyBadgeClass = (level: SafetyReport["status"]) => {
-    if (level === "risk") return "bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-200";
-    if (level === "warn") return "bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-200";
-    return "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-100";
-  };
-
-  type ActionKind = "save" | "export" | "publish" | "applySuggestion" | "ignoreSuggestion";
+  type ActionKind = "save" | "export" | "publish";
 
   const performAction = async (action: ActionKind, options?: { message?: string; suggestion?: string }) => {
     if (!reelId) {
@@ -241,23 +268,12 @@ export default function ReelCustomizePage() {
       save: "Changes saved",
       export: "Export queued",
       publish: "Publish queued",
-      applySuggestion: "Suggestion applied",
-      ignoreSuggestion: "Suggestion ignored",
     };
 
     const normalizedPlatform = (reel?.platform || trendingPlatform || "INSTAGRAM")
       .toString()
       .toUpperCase()
       .replace(/\s+/g, "_");
-
-    if (action === "export" || action === "publish") {
-      // Always show gate when integrity is warn/risk
-      if (integrityReport && (integrityReport.status === "warn" || integrityReport.status === "risk")) {
-        setPendingExportAction({ action, message: options?.message });
-        setShowExportGate(true);
-        return;
-      }
-    }
 
     setActionStatus({ type: "loading", message: options?.message || defaultMessages[action] || "Working..." });
 
@@ -303,6 +319,39 @@ export default function ReelCustomizePage() {
       });
     } catch (err) {
       setActionStatus({ type: "error", message: (err as Error).message || "Action failed." });
+    }
+  };
+
+  const handleRegenerate = async () => {
+    if (!reelId) return;
+    setActionStatus({ type: "loading", message: "Regenerating reel..." });
+    try {
+      const res = await fetch("/api/reels/rerender", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          reelId,
+          durationSec: targetDuration,
+          style: captionStyle || reel?.style,
+          template: thumbStyle || reel?.template,
+          settings: {
+            ...gatherSettings(),
+            lastAction: "regenerate",
+          },
+        }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(body?.error || "Unable to regenerate reel.");
+      }
+      if (body?.reel) {
+        setReel(body.reel);
+      } else {
+        await loadReel();
+      }
+      setActionStatus({ type: "success", message: "Reel regeneration started." });
+    } catch (err) {
+      setActionStatus({ type: "error", message: (err as Error).message || "Regeneration failed." });
     }
   };
 
@@ -373,35 +422,36 @@ export default function ReelCustomizePage() {
     setActionStatus({ type: "success", message: `Optimized for ${platform === "instagram" ? "Instagram Reels" : platform === "youtube" ? "YouTube Shorts" : "TikTok"}` });
   };
 
-  const applyQuickMode = (mode: "viral" | "kids" | "repurpose") => {
-    if (mode === "viral") {
-      setPacing("fast");
-      setHookEmphasis(80);
-      setCaptionStyle("MrBeast");
-      setCaptionSpeed(75);
-      setAutoDuck(true);
-      setBeatSync(true);
-      setMood("happy");
-      setActionStatus({ type: "success", message: "Viral mode applied: faster cuts, bold captions, trending pacing." });
-    } else if (mode === "kids") {
-      setPacing("normal");
-      setCaptionStyle("Kids Cartoon");
-      setEmojiBoost(true);
-      setHighlightColor("#FDE68A");
-      setCaptionSpeed(50);
-      setMood("calm");
-      setActionStatus({ type: "success", message: "Kids-safe mode applied: simple words, friendly visuals, softer pacing." });
-    } else {
-      setActionStatus({ type: "success", message: "Repurpose: duplicate this reel for another platform." });
-    }
-  };
-
   function renderTabContent(tab: TabId) {
     switch (tab) {
       case "settings":
         return (
           <div className="space-y-6 text-sm text-gray-700 dark:text-gray-200">
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary">AI Brain + Structure</p>
+
+            <div className="space-y-2 rounded-xl border border-gray-200 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-gray-900/60">
+              <p className="text-sm font-semibold text-dark dark:text-white">Target platform</p>
+              <select
+                onChange={(e) =>
+                  applyPlatformOptimizer(
+                    e.target.value === "Instagram Reels"
+                      ? "instagram"
+                      : e.target.value === "YouTube Shorts"
+                        ? "youtube"
+                        : "tiktok",
+                  )
+                }
+                className="mt-2 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-dark outline-none focus:border-primary dark:border-white/10 dark:bg-black dark:text-white"
+                defaultValue="Target"
+              >
+                <option disabled value="Target">
+                  Target platform
+                </option>
+                <option>YouTube Shorts</option>
+                <option>Instagram Reels</option>
+                <option>TikTok</option>
+              </select>
+            </div>
 
             <div className="space-y-3 rounded-xl border border-gray-200 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-gray-900/60">
               <div className="flex items-center justify-between">
@@ -441,36 +491,6 @@ export default function ReelCustomizePage() {
                   className="w-full accent-primary"
                 />
               </div>
-            </div>
-
-            <div className="space-y-2 rounded-xl border border-gray-200 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-gray-900/60">
-              <p className="text-sm font-semibold text-dark dark:text-white">AI Scene Logic</p>
-              <label className="flex items-center gap-2 text-xs">
-                <input type="checkbox" checked={autoReorder} onChange={(e) => setAutoReorder(e.target.checked)} className="accent-primary" />
-                Auto scene reordering
-              </label>
-              <label className="flex items-center gap-2 text-xs">
-                <input type="checkbox" checked={autoScenes} onChange={(e) => setAutoScenes(e.target.checked)} className="accent-primary" />
-                Auto scene selection
-              </label>
-              <label className="flex items-center gap-2 text-xs">
-                <input
-                  type="checkbox"
-                  checked={emphasizeEmotion}
-                  onChange={(e) => setEmphasizeEmotion(e.target.checked)}
-                  className="accent-primary"
-                />
-                Emphasize emotional moments
-              </label>
-              <label className="flex items-center gap-2 text-xs">
-                <input
-                  type="checkbox"
-                  checked={removeLowEngagement}
-                  onChange={(e) => setRemoveLowEngagement(e.target.checked)}
-                  className="accent-primary"
-                />
-                Remove low-engagement scenes (AI)
-              </label>
             </div>
 
             <div className="space-y-3 rounded-xl border border-gray-200 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-gray-900/60">
@@ -679,6 +699,7 @@ export default function ReelCustomizePage() {
               <p className="text-sm font-semibold text-dark dark:text-white">Scenes</p>
               <div className="space-y-3">
                 {sceneOrder.map((idx) => {
+                  const sceneData = scenesWithTiming[idx - 1];
                   const isCollapsed = collapsedScenes[idx] ?? idx !== activeScene;
                   return (
                     <div
@@ -713,7 +734,8 @@ export default function ReelCustomizePage() {
                             <span className="text-base cursor-move" aria-hidden>
                               ☰
                             </span>
-                            Scene {idx} ({idx === 1 ? "0–2s" : idx === 2 ? "2–5s" : "5–8s"})
+                            {sceneData?.label ? `${sceneData.label}` : `Scene ${idx}`}{" "}
+                            {sceneData ? `(${Math.round(sceneData.start)}–${Math.round(sceneData.end)}s)` : ""}
                           </button>
                         </div>
                         <div className="flex gap-2">
@@ -796,6 +818,9 @@ export default function ReelCustomizePage() {
                               </div>
                             </div>
                           </div>
+                          {sceneData?.text ? (
+                            <p className="text-xs text-gray-600 dark:text-gray-300">{sceneData.text}</p>
+                          ) : null}
                           <div className="mt-2">
                             <p className="text-xs font-semibold text-gray-600 dark:text-gray-300">Zoom</p>
                             <div className="mt-1 flex flex-wrap gap-2">
@@ -828,7 +853,12 @@ export default function ReelCustomizePage() {
                           </div>
                           <div className="mt-3 rounded-lg border border-dashed border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-300/40 dark:bg-amber-900/30 dark:text-amber-100">
                             <div className="font-semibold">AI Suggestion:</div>
-                            <p>{idx === 1 ? "This scene could be stronger as the hook." : "Consider replacing weak visuals for better retention."}</p>
+                            <p>
+                              {sceneData?.visualSuggestion ||
+                                (idx === 1
+                                  ? "This scene could be stronger as the hook."
+                                  : "Consider replacing weak visuals for better retention.")}
+                            </p>
                             <div className="mt-2 flex gap-2">
                               <button className="rounded-md bg-primary px-3 py-1 text-xs font-semibold text-white">Apply</button>
                               <button className="rounded-md border border-gray-200 px-3 py-1 text-xs font-semibold text-gray-700 hover:border-primary hover:text-primary dark:border-white/10 dark:text-gray-200">
@@ -1144,16 +1174,6 @@ export default function ReelCustomizePage() {
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <div className="text-xs font-semibold text-gray-600 dark:text-gray-300">
-              <label className="flex items-center gap-1">
-                <span>Versions</span>
-                <select className="rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs font-semibold text-gray-700 outline-none transition hover:border-primary hover:text-primary dark:border-white/10 dark:bg-black dark:text-gray-200">
-                  <option>v1 (original)</option>
-                  <option>v2</option>
-                  <option>v3</option>
-                </select>
-              </label>
-            </div>
             <Link
               href="/ai-reels"
               className="rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700 transition hover:border-primary hover:text-primary dark:border-white/10 dark:text-gray-200"
@@ -1202,215 +1222,6 @@ export default function ReelCustomizePage() {
             </div>
           )}
 
-          {showExportGate && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
-              <div className="w-full max-w-lg rounded-xl border border-gray-200 bg-white p-4 shadow-2xl dark:border-white/10 dark:bg-gray-900">
-                <h3 className="text-lg font-semibold text-dark dark:text-white">Content Integrity Check</h3>
-                <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
-                  Status: <span className={cn("font-semibold", badgeClass(integrityReport?.status || "warn"))}>{integrityReport?.status?.toUpperCase() || "PENDING"}</span>
-                </p>
-                <div className="mt-2 space-y-1 text-sm text-gray-700 dark:text-gray-200">
-                  {(integrityReport?.issues || []).map((issue) => (
-                    <div key={`${issue.code}-${issue.message}`} className="flex gap-2">
-                      <span className="text-xs font-semibold uppercase text-gray-500 dark:text-gray-400">{issue.code}</span>
-                      <span>{issue.message}</span>
-                    </div>
-                  ))}
-                  {!integrityReport?.issues?.length && <div>No issues reported.</div>}
-                </div>
-                <div className="mt-4 flex flex-wrap gap-2">
-                  <button
-                    onClick={() => setShowExportGate(false)}
-                    className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-800 hover:border-primary hover:text-primary dark:border-white/10 dark:text-white"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={() => {
-                      if (pendingExportAction) {
-                        setShowExportGate(false);
-                        void performAction(pendingExportAction.action, { message: pendingExportAction.message });
-                        setPendingExportAction(null);
-                      } else {
-                        setShowExportGate(false);
-                      }
-                    }}
-                    className={cn(
-                      "rounded-lg px-4 py-2 text-sm font-semibold text-white",
-                      integrityReport?.status === "risk" ? "bg-red-600 hover:bg-red-700" : "bg-primary hover:bg-primary/90",
-                    )}
-                  >
-                    {integrityReport?.status === "risk" ? "Export anyway (acknowledge risk)" : "Proceed"}
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          <div className="grid gap-3 md:grid-cols-2">
-            <IntegrityPanel
-              report={integrityReport ? { ...integrityReport, fixes: integrityReport.fixes } : null}
-              loading={integrityStatus.type === "loading"}
-              error={integrityStatus.type === "error" ? integrityStatus.message : null}
-              onRefresh={() => void loadIntegrity()}
-              onFix={(fix) =>
-                performAction(fix.action === "REGENERATE" || fix.action === "REWRITE" ? "applySuggestion" : "save", {
-                  message: `Fix triggered: ${fix.label}`,
-                  suggestion: fix.action,
-                })
-              }
-            />
-
-            <div className="rounded-xl border border-gray-200 bg-white p-3 shadow-sm dark:border-white/10 dark:bg-gray-900">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.15em] text-primary">Renderer Safety</p>
-                  <div className="mt-1 flex items-center gap-2">
-                    <span
-                      className={cn(
-                        "rounded-full px-3 py-1 text-xs font-semibold",
-                        safetyReport ? safetyBadgeClass(safetyReport.status) : "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300",
-                      )}
-                    >
-                      {safetyReport ? safetyReport.status.toUpperCase() : "PENDING"}
-                    </span>
-                    {safetyReport && (
-                      <span className="text-sm font-semibold text-gray-700 dark:text-gray-200">
-                        Score: {safetyReport.score}/100
-                      </span>
-                    )}
-                  </div>
-                </div>
-                <button
-                  onClick={() => void loadSafety()}
-                  disabled={safetyStatus.type === "loading"}
-                  className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-semibold text-gray-700 transition hover:border-primary hover:text-primary disabled:opacity-60 dark:border-white/10 dark:text-gray-200"
-                >
-                  {safetyStatus.type === "loading" ? "Checking..." : "Refresh"}
-                </button>
-              </div>
-
-              {safetyStatus.type === "error" && (
-                <p className="mt-3 text-sm text-red">{safetyStatus.message}</p>
-              )}
-
-              <div className="mt-3 space-y-2">
-                {(safetyReport?.reasons || [
-                  { code: "PENDING", level: "warn", message: "Safety analysis pending." },
-                ]).map((reason) => (
-                  <div
-                    key={`${reason.code}-${reason.message}`}
-                    className={cn(
-                      "flex items-start gap-2 rounded-lg border px-3 py-2 text-sm",
-                      reason.level === "risk"
-                        ? "border-red-200 bg-red-50 dark:border-red-500/20 dark:bg-red-500/10"
-                        : reason.level === "warn"
-                          ? "border-amber-200 bg-amber-50 dark:border-amber-500/20 dark:bg-amber-500/10"
-                          : "border-emerald-200 bg-emerald-50 dark:border-emerald-500/20 dark:bg-emerald-500/10",
-                    )}
-                  >
-                    <span className="text-xs font-semibold uppercase text-gray-600 dark:text-gray-300">
-                      {reason.code}
-                    </span>
-                    <span className="text-gray-800 dark:text-gray-100">{reason.message}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          <div className="grid gap-3 md:grid-cols-[minmax(0,1.3fr)_minmax(320px,0.7fr)]">
-            <div className="space-y-3 rounded-xl border border-gray-200 bg-white p-3 shadow-sm dark:border-white/10 dark:bg-gray-900">
-              <div className="text-sm font-semibold text-dark dark:text-white">Reel strategy</div>
-              <div className="grid gap-2 md:grid-cols-2">
-                <label className="text-sm font-semibold text-gray-700 dark:text-white">
-                  Target platform
-                  <select
-                    onChange={(e) =>
-                      applyPlatformOptimizer(
-                        e.target.value === "Instagram Reels"
-                          ? "instagram"
-                          : e.target.value === "YouTube Shorts"
-                            ? "youtube"
-                            : "tiktok",
-                      )
-                    }
-                    className="mt-2 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-dark outline-none focus:border-primary dark:border-white/10 dark:bg-black dark:text-white"
-                    defaultValue="Target"
-                  >
-                    <option disabled value="Target">
-                      Target platform
-                    </option>
-                    <option>YouTube Shorts</option>
-                    <option>Instagram Reels</option>
-                    <option>TikTok</option>
-                  </select>
-                </label>
-
-                <label className="text-sm font-semibold text-gray-700 dark:text-white">
-                  AI Style
-                  <select
-                    onChange={(e) =>
-                      applyQuickMode(
-                        e.target.value === "Viral" ? "viral" : e.target.value === "Kids-safe" ? "kids" : "repurpose",
-                      )
-                    }
-                    className="mt-2 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-dark outline-none focus:border-primary dark:border-white/10 dark:bg-black dark:text-white"
-                    defaultValue="Default"
-                  >
-                    <option>Default</option>
-                    <option>Viral</option>
-                    <option>Kids-safe</option>
-                  </select>
-                </label>
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  onClick={() => performAction("save", { message: "Version saved" })}
-                  disabled={actionStatus.type === "loading"}
-                  className={cn(
-                    "rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700 transition hover:border-primary hover:text-primary dark:border-white/10 dark:text-gray-200",
-                    actionStatus.type === "loading" && "opacity-70",
-                  )}
-                >
-                  Save version
-                </button>
-              </div>
-            </div>
-
-            <div className="rounded-xl border border-gray-200 bg-white p-3 shadow-sm dark:border-white/10 dark:bg-gray-900">
-              <div className="flex items-center justify-between text-sm font-semibold text-dark dark:text-white">
-                <span>AI Suggestions</span>
-              </div>
-              <div className="mt-2 space-y-2 text-xs text-gray-600 dark:text-gray-300">
-                {[
-                  "Shorten hook by 1s to boost retention.",
-                  "Increase caption speed slightly.",
-                  "Add CTA in final 2s.",
-                  "Try trending audio for your region.",
-                ].map((tip) => (
-                  <div key={tip} className="flex items-start justify-between rounded-lg border border-gray-200 bg-white px-2 py-2 dark:border-white/10 dark:bg-gray-800/60">
-                    <span className="mr-2">{tip}</span>
-                    <div className="flex gap-1">
-                      <button
-                        onClick={() => performAction("applySuggestion", { message: `Applied: ${tip}`, suggestion: tip })}
-                        className="rounded-md bg-primary px-2 py-1 text-[11px] font-semibold text-white"
-                      >
-                        Apply
-                      </button>
-                      <button
-                        onClick={() => performAction("ignoreSuggestion", { message: "Ignored suggestion", suggestion: tip })}
-                        className="rounded-md border border-gray-200 px-2 py-1 text-[11px] font-semibold text-gray-700 hover:border-primary hover:text-primary dark:border-white/10 dark:text-gray-200"
-                      >
-                        Ignore
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-
           <div className="space-y-3 rounded-xl border border-gray-200 bg-white p-3 shadow-sm dark:border-white/10 dark:bg-gray-900">
             <div className="flex flex-wrap items-center gap-2 border-b border-gray-100 pb-3 text-sm font-semibold text-gray-700 dark:border-white/5 dark:text-gray-200">
               {tabs.map((tab) => (
@@ -1439,7 +1250,7 @@ export default function ReelCustomizePage() {
                 <span>Higher quality on export</span>
               </div>
               <div className="mt-2 aspect-[9/16] w-full overflow-hidden rounded-lg bg-gradient-to-br from-gray-200 to-gray-100 dark:from-gray-900 dark:to-gray-950">
-                {reel.videoUrl ? (
+                {previewVideoUrl ? (
                   <video
                     controls
                     className={cn(
@@ -1452,12 +1263,12 @@ export default function ReelCustomizePage() {
                             ? "ring-emerald-400"
                             : "ring-transparent",
                     )}
-                    src={reel.videoUrl}
-                    poster={reel.thumbnailUrl ?? undefined}
+                    src={previewVideoUrl}
+                    poster={previewThumbUrl ?? undefined}
                   />
-                ) : reel.thumbnailUrl ? (
+                ) : previewThumbUrl ? (
                   <img
-                    src={reel.thumbnailUrl}
+                    src={previewThumbUrl}
                     alt="Reel thumbnail"
                     className={cn(
                       "h-full w-full object-cover transition ring-2 ring-transparent",
@@ -1519,6 +1330,16 @@ export default function ReelCustomizePage() {
               )}
             >
               Next: Export
+            </button>
+            <button
+              onClick={handleRegenerate}
+              disabled={actionStatus.type === "loading"}
+              className={cn(
+                "flex-1 rounded-lg border border-primary/60 px-4 py-2 text-sm font-semibold text-primary transition hover:border-primary md:flex-none",
+                actionStatus.type === "loading" && "opacity-70",
+              )}
+            >
+              Re-generate
             </button>
           </div>
         </div>

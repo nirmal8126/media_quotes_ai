@@ -127,19 +127,33 @@ function labelForLanguage(input?: string | null) {
 
 const normalizeQuote = (input: unknown) => {
   if (typeof input !== "string") return "";
+
   let text = input
     .replace(/```[\w-]*\s*/gi, "")
+    .replace(/```/g, "")
     .replace(/^\s*\[\s*|\s*\]\s*$/g, "")
-    .replace(/^[\d]+\.\s*/, "")
-    .replace(/^[-–]\s*/, "")
+    .replace(/^\s*\(?\d+\)?[.)]\s*/g, "") // "1." "(1)" "1)"
+    .replace(/^\s*[-–•]\s*/g, "")
     .trim();
+
+  // Remove common trailing “label garbage”
+  text = text
+    .replace(/\s*\(\s*\d+\s*\)\s*—\s*.*$/g, "") // "(1) — something"
+    .replace(/\s*—\s*[^|]{0,80}\|\s*$/g, "")    // "— title |"
+    .replace(/\s*\|\s*$/g, "")                  // trailing "|"
+    .trim();
+
+  // Strip surrounding quotes/backticks again
   text = text.replace(/^['"`]+/, "").replace(/['"`]+$/, "").trim();
+
   if (!text) return "";
   const lower = text.toLowerCase();
   if (lower === "json") return "";
   if (text === "[" || text === "]") return "";
+
   return text;
 };
+
 
 const extractQuoteList = (row: QuoteRow) => {
   if (row.image_quotes && row.image_quotes.length > 0) {

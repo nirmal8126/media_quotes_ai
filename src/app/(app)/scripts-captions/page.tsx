@@ -48,9 +48,9 @@ type IntegrityState = {
   message?: string;
 };
 
-const contentTypes: ContentType[] = ["short_script", "long_script", "caption", "script_and_caption"];
+const contentTypes: ContentType[] = ["short_script", "long_script", "caption"];
 const platformOptions: Platform[] = ["instagram_reels", "youtube_shorts", "tiktok", "facebook_reels"];
-const toneOptions: ToneStyle[] = ["informative", "motivational", "funny", "storytelling", "calm"];
+const toneOptions: ToneStyle[] = ["informative", "motivational", "funny", "poetic", "emotional", "business", "default"];
 const durationOptions = [10, 15, 20, 30, 45, 60];
 const audienceOptions = ["kids", "teens", "general", "professionals"];
 const goalOptions = ["educate", "motivate", "entertain", "sell", "story"];
@@ -388,8 +388,8 @@ export default function ScriptsCaptionsPage() {
             tone: form.tone,
             platform: form.platform,
             hook: form.hook || null,
-            script: form.script || null,
-            caption: form.caption || null,
+            script: form.mode === "generate" ? null : (form.script || null),
+            caption: form.mode === "generate" ? null : (form.caption || null),
             length: form.length,
             pace: form.pace,
             contentType: form.contentType,
@@ -397,7 +397,6 @@ export default function ScriptsCaptionsPage() {
             language: resolvedLanguage || null,
             regenerate: false,
             durationSec: form.durationSec,
-            pace: form.pace,
             audience: form.audience,
             goal: form.goal,
             cta: form.cta,
@@ -425,6 +424,7 @@ export default function ScriptsCaptionsPage() {
         setRows((prev) => prev.map((r) => (r.id === updated.id ? updated : r)));
         pushToast("Updated.");
       } else {
+        const sendSeeds = form.mode !== "generate";
         const res = await fetch("/api/scripts-captions/generate", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -440,10 +440,9 @@ export default function ScriptsCaptionsPage() {
             language: resolvedLanguage || null,
             hook: form.hook || null,
             variations: 3,
-            script: form.script || undefined,
-            caption: form.caption || undefined,
+            script: sendSeeds ? form.script || undefined : null,
+            caption: sendSeeds ? form.caption || undefined : null,
             durationSec: form.durationSec,
-            pace: form.pace,
             audience: form.audience,
             goal: form.goal,
             cta: form.cta,
@@ -596,11 +595,6 @@ export default function ScriptsCaptionsPage() {
                   void computeIntegrity(integrityText, activeIntegrityRow);
                 }
               }}
-              subtitle={
-                activeIntegrityRow
-                  ? `Assessing: ${activeIntegrityRow.topic || activeIntegrityRow.platform || activeIntegrityRow.id}`
-                  : undefined
-              }
             />
           )}
         </div>
@@ -924,13 +918,11 @@ export default function ScriptsCaptionsPage() {
                     >
                       {contentTypes.map((type) => (
                         <option key={type} value={type}>
-                          {type === "script_and_caption"
-                            ? "Script + Caption"
-                            : type === "short_script"
-                              ? "Short script"
-                              : type === "long_script"
-                                ? "Long script"
-                                : "Caption only"}
+                          {type === "short_script"
+                            ? "Short script"
+                            : type === "long_script"
+                              ? "Long script"
+                              : "Caption only"}
                         </option>
                       ))}
                     </select>

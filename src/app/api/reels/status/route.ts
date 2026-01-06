@@ -62,6 +62,7 @@ function mapReelRow(row: Record<string, any>) {
     videoUrl: row.video_url ?? null,
     thumbnailUrl: row.thumbnail_url ?? null,
     errorMessage: row.error_message ?? null,
+    customSettings: row.custom_settings ?? null,
     createdAt: row.created_at ?? null,
     updatedAt: row.updated_at ?? null,
   };

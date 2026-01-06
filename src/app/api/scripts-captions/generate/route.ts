@@ -1,18 +1,20 @@
+import crypto from "crypto";
 import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/api-auth";
-import { generateStructuredScript } from "@/lib/ai/generateStructuredScript";
 import {
-  generateCaptionContent,
-  generateHashtagList,
-  generateScriptAssets,
-} from "@/lib/reel-service";
+  generateStructuredScript,
+  type Goal,
+  type HookStyle,
+  type Pace,
+  type ScriptGenInput,
+} from "@/lib/ai/generateStructuredScript";
+import { generateHashtagList } from "@/lib/reel-service";
 import { pickProvider } from "@/lib/llm-provider";
-import { defaultProvider, generateCompletion } from "@/lib/openai";
+import { getTextProviders } from "@/lib/ai/providers";
 import { normalizeScriptCaptionRequest } from "@/lib/generation-normalize";
 import type { ScriptCaptionRequest } from "@/types/generation";
 import { supabaseAdmin } from "@/lib/supabase";
-import { buildRepairPrompt, normalizeTopic, runQualityChecks, toSections, topicHash } from "@/lib/script-qc";
-import { pickTemplate } from "@/lib/scriptTemplates";
+export type ScriptSectionType = "hook" | "setup" | "value" | "steps" | "cta";
 
 type Payload = {
   topic?: string;
@@ -36,17 +38,14 @@ type Payload = {
   hookStyle?: string;
   mustInclude?: string;
   mustAvoid?: string;
-  mode?: "generate" | "improve" | "rewrite" | "shorten" | "expand";
+  mode?: "generate" | "improve" | "rewrite" | "shorten" | "expand" | "repair";
+  regenerate?: boolean;
+  channelId?: string;
+  channel_id?: string;
 };
 
-type StructuredOutput = {
-  script?: { title?: string; sections?: Array<{ tStart: number; tEnd: number; type?: string; text: string }> };
-  caption?: { text?: string; hashtags?: string[] };
-  qc?: { issues?: string[]; fixesApplied?: string[] };
-};
-
-function cleanJsonLike(input: string) {
-  return input.replace(/```json/gi, "").replace(/```/g, "").trim();
+function computeSha256(value: string) {
+  return crypto.createHash("sha256").update(value).digest("hex");
 }
 
 function stripLabels(text: string) {
@@ -56,127 +55,92 @@ function stripLabels(text: string) {
     .trim();
 }
 
-function countWords(text: string) {
-  return text
-    .replace(/\s+/g, " ")
-    .trim()
-    .split(" ")
-    .filter(Boolean).length;
+type ScriptSection = { tStart: number; tEnd: number; type: ScriptSectionType; text: string };
+
+function buildFallbackSections(topic: string, cta: string, durationSec: number): ScriptSection[] {
+  const topicClean = topic.trim();
+  const hook = `Struggling with ${topicClean.toLowerCase()}? Here's a simple way to start today.`;
+
+  const step1 = `Step 1: Make it tiny. Pick one 5-minute action you can do right now.`;
+  const step2 = `Step 2: Remove one distraction. Put your phone away or close extra tabs.`;
+  const step3 = `Step 3: Track a win. Write down what you finished and repeat tomorrow.`;
+
+  const closing = cta && cta !== "none"
+    ? (cta === "follow" ? "Follow for more tips like this." : `Do it now — and ${cta}.`)
+    : "Save this and try it today.";
+
+  // Spread time across sections
+  const hookEnd = Math.max(2, Math.floor(durationSec * 0.2));
+  const valueEnd = Math.max(hookEnd + 6, Math.floor(durationSec * 0.85));
+
+  const valueText =
+    durationSec <= 30
+      ? `${step1} ${step2}`
+      : `${step1} ${step2} ${step3}`;
+
+  return [
+    { tStart: 0, tEnd: hookEnd, type: "hook", text: hook },
+    { tStart: hookEnd, tEnd: valueEnd, type: "value", text: valueText },
+    { tStart: valueEnd, tEnd: durationSec, type: "cta", text: closing },
+  ];
 }
 
-function computeTargetWords(language: string, durationSec: number, pace: "slow" | "normal" | "fast") {
-  const lang = (language || "en").toLowerCase();
-  const base = lang === "hi" ? 2.0 : 2.2;
-  const paceFactor = pace === "slow" ? 0.85 : pace === "fast" ? 1.15 : 1;
-  return Math.max(20, Math.round(durationSec * base * paceFactor));
+
+function isLowQualityScript(text: string, topic: string) {
+  const cleaned = text.replace(/\s+/g, " ").trim();
+  if (!cleaned) return true;
+  const words = cleaned.split(" ").filter(Boolean);
+  if (words.length < 35) return true;
+  const unique = new Set(words.map((w) => w.toLowerCase()));
+  const uniqueRatio = unique.size / Math.max(words.length, 1);
+  if (uniqueRatio < 0.32) return true;
+  const lowered = cleaned.toLowerCase();
+  const topicLower = topic.toLowerCase();
+  const repeats = lowered.split(topicLower).length - 1;
+  return repeats >= 6;
 }
 
-function buildPrompt(params: {
-  topic: string;
+async function fetchPreviousTexts(params: {
+  userId: string;
   platform: string;
-  tone: string;
-  audience: string;
-  goal: string;
-  cta: string;
-  durationSec: number;
-  targetWords: number;
-  hook?: string;
-  hookStyle?: string;
-  language?: string;
-  mustInclude?: string;
-  mustAvoid?: string;
-  mode?: string;
-  scriptSeed?: string;
-  captionSeed?: string;
-  template: Array<{ tStart: number; tEnd: number; type: string }>;
+  language: string;
+  topicHash: string;
 }) {
-  const lines = [
-    "You are a professional short-form content writer for social media.",
-    `Platform: ${params.platform}. Tone: ${params.tone}. Audience: ${params.audience || "general"}. Language: ${params.language || "en"}.`,
-    `Topic: ${params.topic}. Duration: ${params.durationSec} seconds. Target words (guidance): ${params.targetWords}. Goal: ${params.goal}.`,
-    params.hook ? `Use this hook/angle: ${params.hook}.` : "",
-    params.hookStyle ? `Hook style: ${params.hookStyle}.` : "Choose the best suited hook style for this platform.",
-    params.mustInclude ? `Must include: ${params.mustInclude}.` : "",
-    params.mustAvoid ? `Must avoid: ${params.mustAvoid}.` : "",
-    params.scriptSeed ? `Reference script (for improve/rehash): ${params.scriptSeed}` : "",
-    "",
-    `Use this section template (keep timings/types, fill text): ${JSON.stringify(params.template)}`,
-    "",
-    "STRICT RULES:",
-    "Return JSON ONLY with keys: script:{title,sections:[{tStart,tEnd,type,text}]}, caption:{text,hashtags[]}, qc:{issues,fixesApplied}.",
-    'Do NOT include labels like "Hook:", "Intro:", or "Conclusion" inside text.',
-    "Script must be clean, spoken-language friendly, and naturally fit the duration. Caption must be platform-ready with CTA if provided. No truncation or placeholders.",
-    "Avoid copyrighted phrases or famous quotes; ensure originality.",
-    params.cta && params.cta !== "none" ? `CTA to weave in: ${params.cta}.` : "CTA: none.",
-    "",
-    "Return the JSON. No extra text.",
-  ].filter(Boolean);
-  return lines.join(" ");
-}
+  const { userId, platform, language, topicHash } = params;
+  const selectCols = "text, script, output_json";
 
-function applyFixes(
-  parsed: StructuredOutput,
-  params: { targetWords: number; hook?: string; cta?: string; mustAvoid?: string },
-): StructuredOutput {
-  const clone: StructuredOutput = { ...parsed };
-  clone.voiceoverScript = Array.isArray(parsed.voiceoverScript) ? [...parsed.voiceoverScript] : [];
-  if (!clone.voiceoverScript.length) {
-    clone.voiceoverScript = [{ t: "0-2s", line: params.hook || "Hook: listen up" }];
-  }
+  let { data, error } = await supabaseAdmin
+    .from("scripts")
+    .select(selectCols)
+    .eq("user_id", userId)
+    .eq("platform", platform)
+    .eq("language", language)
+    .eq("topic_hash", topicHash)
+    .order("created_at", { ascending: false })
+    .limit(10);
 
-  // Ensure hook at start
-  if (params.hook && clone.voiceoverScript[0]) {
-    if (!clone.voiceoverScript[0].line.toLowerCase().includes(params.hook.toLowerCase())) {
-      clone.voiceoverScript.unshift({ t: "0-2s", line: params.hook });
+  if (error) {
+    const msg = error.message?.toLowerCase() ?? "";
+    if (msg.includes("language")) {
+      // Fallback if language column is missing
+      ({ data, error } = await supabaseAdmin
+        .from("scripts")
+        .select(selectCols)
+        .eq("user_id", userId)
+        .eq("platform", platform)
+        .eq("topic_hash", topicHash)
+        .order("created_at", { ascending: false })
+        .limit(10));
     }
   }
 
-  // Ensure CTA
-  if (params.cta && params.cta !== "none") {
-    const lastIdx = clone.voiceoverScript.length - 1;
-    const ctaLine = `CTA: ${params.cta}`;
-    if (lastIdx >= 0) {
-      if (!clone.voiceoverScript[lastIdx].line.toLowerCase().includes(params.cta.toLowerCase())) {
-        clone.voiceoverScript.push({ t: "last-cta", line: ctaLine });
-      }
-    } else {
-      clone.voiceoverScript.push({ t: "cta", line: ctaLine });
-    }
-  }
+  if (error) return [];
 
-  // Trim or pad to target words
-  const flatScript = clone.voiceoverScript.map((v) => v.line).join(" ");
-  const totalWords = countWords(flatScript);
-  const lower = Math.floor(params.targetWords * 0.85);
-  const upper = Math.ceil(params.targetWords * 1.15);
-  if (totalWords > upper) {
-    const trimmed = flatScript.split(" ").slice(0, params.targetWords).join(" ");
-    clone.voiceoverScript = [{ t: `0-${parsed.durationSec || 0}s`, line: trimmed }];
-  } else if (totalWords < lower) {
-    const filler = `Quick tip: ${params.hook || "stay tuned"} for more.`;
-    clone.voiceoverScript.push({ t: "pad", line: filler });
-  }
-
-  // Captions fallback
-  if (!Array.isArray(parsed.onScreenCaptions) || !parsed.onScreenCaptions.length) {
-    clone.onScreenCaptions = clone.voiceoverScript.map((v) => ({ t: v.t, text: v.line.slice(0, 60) }));
-  }
-
-  // Post caption
-  clone.postCaption = parsed.postCaption || params.hook || "Watch till the end!";
-  clone.hashtags = Array.isArray(parsed.hashtags) && parsed.hashtags.length ? parsed.hashtags : ["#learnonreels"];
-  clone.safety = parsed.safety || { copyrightRisk: "low", notes: ["Original phrasing"] };
-
-  // Must avoid
-  if (params.mustAvoid) {
-    clone.voiceoverScript = clone.voiceoverScript.map((v) => ({
-      ...v,
-      line: v.line.replace(new RegExp(params.mustAvoid, "gi"), ""),
-    }));
-    clone.postCaption = clone.postCaption.replace(new RegExp(params.mustAvoid, "gi"), "");
-  }
-
-  return clone;
+  return (
+    data
+      ?.map((row: any) => row?.text || row?.script || row?.output_json?.script?.text || "")
+      .filter((t: string) => typeof t === "string" && t.trim().length > 0) || []
+  );
 }
 
 export async function POST(request: Request) {
@@ -197,202 +161,147 @@ export async function POST(request: Request) {
     language: body.language ?? undefined,
     variations: body.variations,
   });
+
   if (!normalized.description) {
     const response = NextResponse.json({ error: "Topic/description is required" }, { status: 400 });
     applyCookies(response);
     return response;
   }
 
-  const hook = (body.hook ?? "").trim() || undefined;
   const durationSec = Math.max(10, Math.min(Number(body.durationSec) || 30, 120));
-  const pace = (body.pace as "slow" | "normal" | "fast") || "normal";
+  const pace: Pace = (body.pace as Pace) || "normal";
   const audience = body.audience || "general";
-  const goal = body.goal || "educate";
-  const cta = body.cta || "follow";
-  const hookStyle = body.hookStyle || "question";
+  const goal = (["educate", "motivate", "entertain", "sell", "story"].includes(body.goal || "")
+    ? body.goal
+    : "educate") as Goal;
+  const cta = (body.cta || "follow").trim() || "follow";
+  const hookStyle = (body.hookStyle as HookStyle) || "best";
   const mustInclude = body.mustInclude || "";
   const mustAvoid = body.mustAvoid || "";
   const mode = (body.mode as Payload["mode"]) || "generate";
-  const channelId = (body.channelId ?? body.channel_id ?? "").trim() || null;
-  const provider = pickProvider({ bodyProvider: body.provider, user, fallback: defaultProvider });
-  const userScript = typeof body.script === "string" ? body.script.trim() : "";
-  const userCaption = typeof body.caption === "string" ? body.caption.trim() : "";
-  const targetWords = Math.round((durationSec / 60) * 150);
-  let finalHook = hook;
-  const normalizedTopic = normalizeTopic(normalized.description);
-  const topic_hash = topicHash(normalized.description);
+  const regenerate = body.regenerate === true;
+  const providerPref = pickProvider({ bodyProvider: body.provider, user, fallback: "gemini" as any });
+  const { primary, fallback } = getTextProviders({
+    primary: providerPref === "openai" ? "openai" : "gemini",
+  });
 
-  // Load previous texts for dedupe, scoped by user + module + platform + topic + language
-  const { data: prevRows } = await supabaseAdmin
-    .from("scripts")
-    .select("text, script, output_json")
-    .eq("user_id", user.id)
-    .eq("module", "scripts")
-    .eq("platform", normalized.platform)
-    .eq("topic_hash", topic_hash)
-    .limit(20);
-  const previousTexts =
-    prevRows
-      ?.map((row: any) => row?.text || row?.script || row?.output_json?.script?.text || "")
-      .filter((t: string) => typeof t === "string" && t.trim().length > 0) || [];
+  const allowSeed = regenerate || mode === "repair";
+  const userScript = allowSeed && typeof body.script === "string" ? body.script.trim() : "";
+  const userCaption = allowSeed && typeof body.caption === "string" ? body.caption.trim() : "";
+  const sanitizedHook = allowSeed && typeof body.hook === "string" ? body.hook.trim() : "";
+  const durationBucket = durationSec <= 30 ? "30" : durationSec <= 45 ? "45" : "60";
+  const topicScope = [
+    normalized.description.trim().toLowerCase(),
+    normalized.platform,
+    normalized.language || "en",
+    durationBucket,
+    normalized.contentType,
+    goal,
+  ].join("|");
+  const topic_hash = computeSha256(topicScope);
+  const language = normalized.language || "en";
 
-  async function generateStructured() {
-    const template = pickTemplate(durationSec);
-    const prompt = buildPrompt({
-      topic: normalized.description,
-      platform: normalized.platform,
-      tone: normalized.tone,
-      audience,
-      goal,
-      cta,
-      durationSec,
-      targetWords,
-      hook,
-      hookStyle,
-      language: normalized.language,
-      mustInclude,
-      mustAvoid,
-      mode,
-      scriptSeed: userScript,
-      captionSeed: userCaption,
-      template,
-    });
-    const raw = await generateCompletion(prompt, { temperature: 0.4, maxTokens: 900, provider });
-    const cleaned = cleanJsonLike(raw);
-    let parsed: StructuredOutput | null = null;
-    try {
-      parsed = JSON.parse(cleaned) as StructuredOutput;
-    } catch {
-      parsed = null;
-    }
-    if (!parsed?.script?.sections?.length || !parsed.caption?.text) {
-      // Fallback structured
-      parsed = {
-        script: {
-          title: normalized.description,
-          sections: template.map((slot) => ({
-            ...slot,
-            text: slot.type === "hook" && hook ? hook : normalized.description,
-          })),
-        },
-        caption: { text: userCaption || normalized.description, hashtags: ["#learnonreels"] },
-        qc: { issues: ["fallback"], fixesApplied: [] },
-      };
-    }
-    return parsed;
-  }
+  console.log("[scripts-captions] generate", {
+    mode,
+    regenerate,
+    durationSec,
+    contentType: normalized.contentType,
+    topic: normalized.description,
+    hasIncomingScript: !!body.script,
+  });
+
+  const previousTexts = await fetchPreviousTexts({
+    userId: user.id,
+    platform: normalized.platform,
+    language,
+    topicHash: topic_hash,
+  });
+
+  const structuredInput: ScriptGenInput = {
+    topic: normalized.description,
+    description: normalized.description,
+    contentType: (normalized.contentType || "script_and_caption") as ScriptGenInput["contentType"],
+    platform: (normalized.platform as ScriptGenInput["platform"]) || "instagram_reels",
+    tone: normalized.tone || "informative",
+    language,
+    durationSec,
+    pace,
+    audience,
+    goal,
+    cta,
+    hookStyle,
+    persona: body.persona || null,
+    mustInclude: mustInclude || null,
+    mustAvoid: mustAvoid || null,
+    mode,
+    seedScript: userScript || null,
+    seedCaption: userCaption || null,
+    previousTexts,
+  };
 
   try {
-    const structured = await generateStructured();
-    const template = pickTemplate(durationSec);
+    const structured = await generateStructuredScript(structuredInput, { primary, fallback });
 
-    let sections = (structured.script?.sections || []).map((s) => ({
-      tStart: Math.max(0, Math.round(Number(s.tStart) || 0)),
-      tEnd: Math.max(Math.round(Number(s.tEnd) || 0), Math.round(Number(s.tStart) || 0) + 1),
-      type: s.type || "",
-      text: stripLabels(s.text || ""),
+    let sections = structured.script?.sections ?? [];
+    let source: "ai" | "fallback" = "ai";
+
+    // helper to build text consistently
+    const joinSections = (secs: typeof sections) =>
+      secs.map((s) => stripLabels(s.text || "")).join(" ").replace(/\s+/g, " ").trim();
+
+    // 1) Candidate from AI
+    let scriptTextCandidate = joinSections(sections);
+
+    const issuesCount = structured.qc?.issues?.length ?? 0;
+    const useFallback =
+      !sections.length ||
+      !scriptTextCandidate ||
+      issuesCount >= 3;
+
+    if (useFallback) {
+      console.warn("[scripts-captions] using fallback (initial)", {
+        issues: structured.qc?.issues,
+        issuesCount,
+        sectionsLen: sections.length,
+        hasText: !!scriptTextCandidate,
+      });
+      sections = buildFallbackSections(normalized.description, cta, durationSec);
+      source = "fallback";
+      scriptTextCandidate = joinSections(sections);
+    }
+
+    // 2) Normalize section texts AFTER final sections chosen
+    sections = sections.map((s) => ({
+      ...s,
+      text: stripLabels(s.text || normalized.description),
     }));
 
-    if (!sections.length) {
-      sections = template.map((slot) => ({
-        ...slot,
-        text: slot.type === "hook" && hook ? hook : normalized.description,
-      }));
-    }
+    let scriptText = joinSections(sections);
 
-    let scriptText = sections.map((s) => s.text).join(" ").trim();
-    let captionText = stripLabels((structured.caption?.text || userCaption || "").trim());
-    let hashtags =
-      structured.caption?.hashtags && structured.caption.hashtags.length
-        ? structured.caption.hashtags
-        : await generateHashtagList(normalized.tone, normalized.platform, provider);
-
-    // If the structured output is too thin, regenerate with the simpler script/caption helpers
-    if (countWords(scriptText) < 30) {
-      const scriptResult = await generateScriptAssets(
-        normalized.tone || "informative",
-        normalized.platform || "instagram",
-        normalized.description,
-        hook,
-        provider,
-      );
-      scriptText = stripLabels(scriptResult.script || scriptText).replace(/\.\s*/g, ".\n").trim();
-      finalHook = finalHook || scriptResult.hook || hook;
-      sections = toSections(scriptText, durationSec);
-    }
-
-    if (!captionText || captionText.length < 10) {
-      const captionResult = await generateCaptionContent(
-        normalized.tone || "informative",
-        normalized.platform || "instagram",
-        normalized.description,
-        finalHook || hook,
-        provider,
-      );
-      captionText = stripLabels(`${captionResult.caption} ${captionResult.callToAction}`.trim());
-    }
-
-    if (!hashtags || hashtags.length < 3) {
-      hashtags = await generateHashtagList(normalized.tone, normalized.platform, provider);
-    }
-
-    // QC and repair
-    const qc = runQualityChecks({
-      scriptText,
-      captionText,
-      durationSec,
-      cta,
-      previousTexts,
-      contentType: normalized.contentType,
-      requiredTypes: ["hook", "cta"],
-      minSections: template.length,
-      targetWords,
-      topic: normalized.description,
-      sections,
-    });
-
-    let repaired = false;
-    if (qc.issues.length > 0) {
-      const repairPrompt = buildRepairPrompt({
-        topic: normalized.description,
-        platform: normalized.platform,
-        tone: normalized.tone,
-        language: normalized.language || "en",
-        durationSec,
-        cta,
-        captionText,
-        scriptText,
-        issues: qc.issues,
+    // 3) Low-quality fallback ONLY if AI was used (avoid overriding fallback with fallback again)
+    if (source === "ai" && isLowQualityScript(scriptText, normalized.description)) {
+      console.warn("[scripts-captions] ai_script_low_quality -> fallback", {
+        issues: structured.qc?.issues,
       });
-      try {
-        const repairedRaw = await generateCompletion(repairPrompt, { temperature: 0.4, maxTokens: 900, provider });
-        const fixed = JSON.parse(cleanJsonLike(repairedRaw)) as {
-          script?: { title?: string; sections?: Array<{ tStart: number; tEnd: number; text: string; type?: string }> };
-          caption?: { text?: string; hashtags?: string[] };
-          qc?: { issues?: string[]; fixesApplied?: string[] };
-        };
-        if (fixed?.script?.sections?.length) {
-          sections = fixed.script.sections.map((s) => ({
-            tStart: Math.max(0, Math.round(Number(s.tStart) || 0)),
-            tEnd: Math.max(Math.round(Number(s.tEnd) || 0), Math.round(Number(s.tStart) || 0) + 1),
-            type: s.type || "",
-            text: stripLabels(s.text || ""),
-          }));
-          scriptText = sections.map((s) => s.text).join(" ").trim();
-        }
-        if (fixed?.caption?.text) {
-          captionText = stripLabels(fixed.caption.text);
-          hashtags = fixed.caption.hashtags ?? hashtags;
-        }
-        if (fixed?.qc?.issues) {
-          qc.issues = fixed.qc.issues;
-        }
-        qc.fixesApplied = [...(qc.fixesApplied || []), "repair_prompt"];
-        repaired = true;
-      } catch (err) {
-        console.warn("Repair prompt failed, using original content", err);
-      }
+      sections = buildFallbackSections(normalized.description, cta, durationSec).map((s) => ({
+        ...s,
+        text: stripLabels(s.text || normalized.description),
+      }));
+      scriptText = joinSections(sections);
+      source = "fallback";
     }
+
+    // Caption logic stays same
+    let captionText = stripLabels(structured.caption?.text || userCaption || normalized.description);
+    let hashtags = structured.caption?.hashtags ?? [];
+
+    if (!hashtags.length) {
+      hashtags = await generateHashtagList(structuredInput.tone, structuredInput.platform, providerPref);
+    }
+    if (!captionText) {
+      captionText = normalized.description;
+    }
+
 
     const responsePayload = {
       script: {
@@ -403,29 +312,27 @@ export async function POST(request: Request) {
         text: captionText,
         hashtags,
       },
-      qc: {
-        ...qc,
-        fixesApplied: qc.fixesApplied || (repaired ? ["repair_prompt"] : []),
-      },
+      qc: structured.qc,
     };
 
-    // Persist to scripts table for history (avoid reels insert to skip script_id constraint issues)
     const basePayload: Record<string, unknown> = {
       user_id: user.id,
       platform: normalized.platform,
       tone: normalized.tone,
+      language,
       input_prompt: normalized.description,
-      hook: finalHook ?? hook ?? null,
+      hook: sanitizedHook || null,
       audience: audience || null,
       topic_hash,
       module: "scripts",
       caption: captionText,
-      qc: responsePayload.qc,
+      qc: structured.qc,
+      duration_sec: durationSec,
       output_json: {
         ...responsePayload,
         metadata: {
           userEdited: false,
-          language: normalized.language || "en",
+          language,
           module: "scripts",
           topic_hash,
         },
@@ -452,7 +359,6 @@ export async function POST(request: Request) {
       const msg = firstTry.error.message.toLowerCase();
       const retryPayload = { ...basePayload };
 
-      // If hook/audience columns are missing, drop them and retry
       if (msg.includes("hook")) {
         delete (retryPayload as any).hook;
       }
@@ -465,39 +371,43 @@ export async function POST(request: Request) {
       if (msg.includes("topic_hash")) {
         delete (retryPayload as any).topic_hash;
       }
+      if (msg.includes("language")) {
+        delete (retryPayload as any).language;
+      }
+      if (msg.includes("duration_sec")) {
+        delete (retryPayload as any).duration_sec;
+      }
+      if (msg.includes("output_json")) {
+        delete (retryPayload as any).output_json;
+      }
+      if (msg.includes("qc")) {
+        delete (retryPayload as any).qc;
+      }
+      if (msg.includes("caption")) {
+        delete (retryPayload as any).caption;
+      }
 
       if (msg.includes("text") && msg.includes("schema cache")) {
-        // Supabase schema cache missing text column; try fallback field name
-        const fallback = await supabaseAdmin
+        const fallbackInsert = await supabaseAdmin
           .from("scripts")
           .insert({ ...retryPayload, script: scriptText })
           .select("id, hook, audience, input_prompt, text, script, tone, platform, created_at")
           .maybeSingle();
-        if (!fallback.error) {
-          recordId = fallback.data?.id ?? null;
+        if (!fallbackInsert.error) {
+          recordId = fallbackInsert.data?.id ?? null;
         } else {
-          console.error("Script insert fallback failed", fallback.error);
+          console.error("Script insert fallback failed", fallbackInsert.error);
         }
       } else {
-        // Retry with cleaned payload and text column if we removed fields
-        if (
-          (retryPayload as any).hook === undefined ||
-          (retryPayload as any).audience === undefined ||
-          (retryPayload as any).module === undefined ||
-          (retryPayload as any).topic_hash === undefined
-        ) {
-          const retry = await supabaseAdmin
-            .from("scripts")
-            .insert({ ...retryPayload, text: scriptText })
-            .select("id, hook, audience, input_prompt, text, script, tone, platform, created_at")
-            .maybeSingle();
-          if (!retry.error) {
-            recordId = retry.data?.id ?? null;
-          } else {
-            console.error("Script insert retry failed", retry.error);
-          }
+        const retry = await supabaseAdmin
+          .from("scripts")
+          .insert({ ...retryPayload, text: scriptText })
+          .select("id, hook, audience, input_prompt, text, script, tone, platform, created_at")
+          .maybeSingle();
+        if (!retry.error) {
+          recordId = retry.data?.id ?? null;
         } else {
-          console.error("Script insert failed", firstTry.error);
+          console.error("Script insert retry failed", retry.error);
         }
       }
     }
@@ -522,6 +432,20 @@ export async function POST(request: Request) {
       caption: responsePayload.caption,
       qc: responsePayload.qc,
       id: recordId ?? `local-${Date.now()}`,
+      variations: [
+        {
+          id: recordId ?? `local-${Date.now()}`,
+          topic: normalized.description,
+          tone: normalized.tone,
+          platform: normalized.platform,
+          hook: sections.find((s) => s.type === "hook")?.text ?? null,
+          script: scriptText,
+          caption: captionText,
+          hashtags,
+          language,
+          created_at: new Date().toISOString(),
+        },
+      ],
     });
     applyCookies(response);
     return response;

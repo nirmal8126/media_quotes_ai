@@ -1,5 +1,5 @@
 import { supabaseAdmin } from '@/lib/supabase';
-import { evaluateQuota, normalizePlanTier, type PlanTier } from '@/lib/plan';
+import { evaluateQuota, normalizePlanTier } from '@/lib/plan';
 import { generateCompletion, type LlmProvider } from '@/lib/openai';
 
 export interface GeneratedReelRecord {
@@ -59,6 +59,7 @@ export async function incrementUserQuota(userId: string, amount = 1) {
 }
 
 export async function storeGeneratedReel(record: GeneratedReelRecord) {
+  const now = new Date().toISOString();
   let scriptId: string | null = null;
   if (record.script) {
     const { data: scriptRow, error: scriptErr } = await supabaseAdmin
@@ -69,7 +70,7 @@ export async function storeGeneratedReel(record: GeneratedReelRecord) {
         tone: record.tone ?? null,
         input_prompt: record.thumbnailPrompt ?? record.hook ?? null,
         text: record.script,
-        created_at: new Date().toISOString(),
+        created_at: now,
       })
       .select('id')
       .maybeSingle();
@@ -85,7 +86,7 @@ export async function storeGeneratedReel(record: GeneratedReelRecord) {
     tone: record.tone ?? null,
     status: record.status ?? 'generated',
     script_id: scriptId,
-    created_at: new Date().toISOString(),
+    created_at: now,
   };
 
   const { data, error } = await supabaseAdmin
@@ -130,9 +131,9 @@ function cleanJsonLike(input: string) {
     .trim();
 }
 
-function tryParseJson(input: string): any | null {
+function parseJsonMaybe<T = any>(input: string): T | null {
   try {
-    return JSON.parse(input);
+    return JSON.parse(input) as T;
   } catch {
     return null;
   }
@@ -160,8 +161,8 @@ export async function generateScriptAssets(
 ) {
   const prompt = [
     `Write a short ${tone} script for a ${platform} reel.`,
-    topic ? `Topic: ${topic}.` : "",
-    hookHint ? `Use this hook or angle: ${hookHint}.` : "",
+    topic ? `Topic: ${topic}.` : null,
+    hookHint ? `Use this hook or angle: ${hookHint}.` : null,
     `Return plain text only (no JSON). Format as:`,
     `Hook: <one engaging line>\nIntro: <1-2 lines>\nValue: <2-3 lines>\nCTA: <1 line>`,
   ]
@@ -170,7 +171,11 @@ export async function generateScriptAssets(
   const raw = await generateCompletion(prompt, { temperature: 0.65, maxTokens: 450, provider });
 
   const cleaned = cleanJsonLike(raw);
-  const parsed = tryParseJson(cleaned);
+  const parsed = parseJsonMaybe<{
+    script?: string;
+    shots?: string[];
+    hook?: string;
+  }>(cleaned);
 
   let script = normalizeGeneratedField(parsed?.script ?? cleaned, 'script');
   let shotBreakdown: string[] = Array.isArray(parsed?.shots) ? parsed!.shots : [];
@@ -192,8 +197,8 @@ export async function generateCaptionContent(
 ) {
   const prompt = [
     `Generate a ${tone} caption for a ${platform} reel.`,
-    topic ? `Topic: ${topic}.` : "",
-    hookHint ? `Hook: ${hookHint}.` : "",
+    topic ? `Topic: ${topic}.` : null,
+    hookHint ? `Hook: ${hookHint}.` : null,
     `Return plain text (no JSON). Include a short CTA at the end.`,
   ]
     .filter(Boolean)
@@ -201,7 +206,10 @@ export async function generateCaptionContent(
   const raw = await generateCompletion(prompt, { temperature: 0.7, maxTokens: 180, provider });
 
   const cleaned = cleanJsonLike(raw);
-  const parsed = tryParseJson(cleaned);
+  const parsed = parseJsonMaybe<{
+    caption?: string;
+    callToAction?: string;
+  }>(cleaned);
 
   let caption = normalizeGeneratedField(parsed?.caption ?? cleaned, 'caption');
   let callToAction = parsed?.callToAction ?? 'Drop a comment.';
@@ -238,33 +246,37 @@ export async function generateScriptVariants(options: {
   const fallback = { hooks: [], titles: [], scripts: [], hashtags: [] as string[][] };
   const raw = await generateCompletion(prompt, { temperature: 0.85, maxTokens: 900, provider });
 
-  try {
-    const parsed = JSON.parse(raw) as {
-      hooks?: unknown[];
-      titles?: unknown[];
-      scripts?: unknown[];
-      hashtags?: unknown[];
-    };
-    const hooks = Array.isArray(parsed.hooks) ? parsed.hooks.map((h) => String(h || '')).filter(Boolean) : [];
-    const titles = Array.isArray(parsed.titles) ? parsed.titles.map((h) => String(h || '')).filter(Boolean) : [];
-    const scripts = Array.isArray(parsed.scripts) ? parsed.scripts.map((h) => String(h || '')).filter(Boolean) : [];
-    const hashtags = Array.isArray(parsed.hashtags)
-      ? parsed.hashtags.map((set) =>
-          Array.isArray(set) ? set.map((t) => String(t || '')).filter(Boolean) : String(set || '').split(/[,\n]/).map((t) => t.trim()).filter(Boolean),
-        )
-      : [];
-
-    return {
-      hooks: hooks.slice(0, count),
-      titles: titles.slice(0, count),
-      scripts: scripts.slice(0, count),
-      hashtags: hashtags.slice(0, count).map((set) =>
-        set.map((tag) => (tag.startsWith('#') ? tag : `#${tag}`)).slice(0, 8),
-      ),
-    };
-  } catch {
+  const parsed = parseJsonMaybe<{
+    hooks?: unknown[];
+    titles?: unknown[];
+    scripts?: unknown[];
+    hashtags?: unknown[];
+  }>(raw);
+  if (!parsed) {
     return fallback;
   }
+  const hooks = Array.isArray(parsed.hooks) ? parsed.hooks.map((h) => String(h || '')).filter(Boolean) : [];
+  const titles = Array.isArray(parsed.titles) ? parsed.titles.map((h) => String(h || '')).filter(Boolean) : [];
+  const scripts = Array.isArray(parsed.scripts) ? parsed.scripts.map((h) => String(h || '')).filter(Boolean) : [];
+  const hashtags = Array.isArray(parsed.hashtags)
+    ? parsed.hashtags.map((set) =>
+        Array.isArray(set)
+          ? set.map((t) => String(t || '')).filter(Boolean)
+          : String(set || '')
+              .split(/[,\n]/)
+              .map((t) => t.trim())
+              .filter(Boolean),
+      )
+    : [];
+
+  return {
+    hooks: hooks.slice(0, count),
+    titles: titles.slice(0, count),
+    scripts: scripts.slice(0, count),
+    hashtags: hashtags.slice(0, count).map((set) =>
+      set.map((tag) => (tag.startsWith('#') ? tag : `#${tag}`)).slice(0, 8),
+    ),
+  };
 }
 
 export async function generateStoryboard(options: {
@@ -303,19 +315,17 @@ export async function generateStoryboard(options: {
       .filter((s) => s && s.text && s.text.length > 6)
       .slice(0, 8) as Array<{ label?: string; text: string; durationMs?: number; visualSuggestion?: string }>;
 
-  try {
-    const parsed = JSON.parse(raw) as Array<{
+  const parsed = parseJsonMaybe<
+    Array<{
       label?: string;
       text?: string;
       durationMs?: number;
       visualSuggestion?: string;
-    }>;
-    if (Array.isArray(parsed)) {
-      const normalized = normalize(parsed);
-      if (normalized.length) return normalized;
-    }
-  } catch {
-    // fall through
+    }>
+  >(raw);
+  if (Array.isArray(parsed)) {
+    const normalized = normalize(parsed);
+    if (normalized.length) return normalized;
   }
 
   const splitFallback = raw
@@ -334,8 +344,4 @@ export async function generateHashtagList(tone: string, platform: string, provid
     .filter((tag) => tag.length > 0)
     .map((tag) => (tag.startsWith('#') ? tag : `#${tag}`));
   return tags.slice(0, 12);
-}
-
-export async function resolvePlanTier(planTier?: string): Promise<PlanTier> {
-  return normalizePlanTier(planTier);
 }

@@ -38,10 +38,53 @@ export async function GET(request: Request) {
   if (dateFrom) query = query.gte('created_at', dateFrom);
   if (dateTo) query = query.lte('created_at', dateTo);
 
-  const { data, error } = await query;
+  let { data, error } = await query;
 
-  // If reels table is missing (older deployments), fall back to reels
-  if (error && (error.message ?? '').toLowerCase().includes('relation "reels"')) {
+  const normalizedError = (error?.message ?? '').toLowerCase();
+
+  if (error && (normalizedError.includes('scripts') || normalizedError.includes('schema cache'))) {
+    const { data: fallbackData, error: fallbackError } = await supabaseAdmin
+      .from('reels')
+      .select(
+        'id, status, platform, tone, style, duration_sec, renderer_job_id, video_url, thumbnail_url, error_message, channel_id, script_id, created_at, updated_at',
+      )
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false })
+      .limit(limit);
+
+    if (fallbackError) {
+      const response = NextResponse.json({ error: 'Failed to load reels history' }, { status: 500 });
+      applyCookies(response);
+      return response;
+    }
+
+    const reels =
+      fallbackData?.map((row: any) => ({
+        id: row.id,
+        status: row.status,
+        platform: row.platform,
+        tone: row.tone,
+        style: row.style,
+        durationSec: row.duration_sec,
+        rendererJobId: row.renderer_job_id,
+        videoUrl: row.video_url,
+        thumbnailUrl: row.thumbnail_url,
+        errorMessage: row.error_message,
+        channelId: row.channel_id,
+        scriptId: row.script_id,
+        scriptText: null,
+        inputPrompt: null,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+      })) ?? [];
+
+    const response = NextResponse.json({ reels });
+    applyCookies(response);
+    return response;
+  }
+
+  // If reels table is missing (older deployments), fall back to legacy shape
+  if (error && normalizedError.includes('relation "reels"')) {
     const fallbackSelect = 'id, tone, platform, script, caption, hashtags, thumbnail_prompt, channel_id, created_at, status';
     let fallback = await supabaseAdmin
       .from('reels')

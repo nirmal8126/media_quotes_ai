@@ -5,6 +5,7 @@ import { generateScriptVariants, generateStoryboard } from "@/lib/reel-service";
 import { pickProvider } from "@/lib/llm-provider";
 import { defaultProvider } from "@/lib/openai";
 import { getChannel } from "@/lib/channel-service";
+import { supabaseAdmin } from "@/lib/supabase";
 
 export async function POST(request: Request) {
   const session = await requireUser(request);
@@ -46,6 +47,16 @@ export async function POST(request: Request) {
         platform: body.platform || channel?.platform || "INSTAGRAM",
         provider,
       });
+      if (result.reel?.id && storyboard?.length) {
+        const { error: settingsError } = await supabaseAdmin
+          .from("reels")
+          .update({ custom_settings: { storyboard } })
+          .eq("id", result.reel.id)
+          .eq("user_id", user.id);
+        if (settingsError && !settingsError.message?.toLowerCase().includes("custom_settings")) {
+          console.warn("Unable to persist storyboard in custom_settings:", settingsError.message || settingsError);
+        }
+      }
     }
 
     const response = NextResponse.json({
