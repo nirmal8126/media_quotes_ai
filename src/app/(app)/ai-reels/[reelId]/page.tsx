@@ -2,9 +2,8 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
-import { DEFAULT_LANGUAGE, labelForLanguage } from "@/lib/languages";
 
 type ReelDetail = {
   id: string;
@@ -39,14 +38,13 @@ export default function ReelDetailPage() {
   const [reel, setReel] = useState<ReelDetail | null>(null);
   const [status, setStatus] = useState<Status>({ type: "idle" });
   const [loading, setLoading] = useState(true);
-  const pollTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const loadDetail = async () => {
     if (!reelId) return;
     setLoading(true);
     setStatus({ type: "loading", message: "Loading reel..." });
     try {
-      const res = await fetch(`/api/reels/detail?reelId=${encodeURIComponent(reelId)}`, { cache: "no-store" });
+      const res = await fetch(`/api/reels/${encodeURIComponent(reelId)}`, { cache: "no-store" });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {
         throw new Error(body?.error || "Unable to load reel.");
@@ -64,36 +62,30 @@ export default function ReelDetailPage() {
     void loadDetail();
   }, [reelId]);
 
-  useEffect(() => {
-    if (!reelId) return;
-    if (reel?.status !== "RENDERING") {
-      if (pollTimer.current) {
-        clearInterval(pollTimer.current);
-        pollTimer.current = null;
-      }
-      return;
-    }
-    if (pollTimer.current) return;
-    pollTimer.current = setInterval(() => {
-      void loadDetail();
-    }, 5000);
-    return () => {
-      if (pollTimer.current) {
-        clearInterval(pollTimer.current);
-        pollTimer.current = null;
-      }
-    };
-  }, [reel?.status, reelId]);
-
   return (
     <div className="min-h-screen space-y-6 bg-gray-50 px-4 pb-12 pt-6 text-dark dark:bg-gray-950 dark:text-white md:px-8">
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-gray-200 bg-white p-5 shadow-card-2 dark:border-white/10 dark:bg-gray-900">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.35em] text-primary">AI Reels</p>
           <h1 className="text-2xl font-bold text-dark dark:text-white">Reel details</h1>
-          <p className="text-sm text-gray-6 dark:text-dark-6">
-            {reel?.platform || "Platform"} {reel?.tone ? `• ${reel.tone}` : ""}
-          </p>
+          <div className="mt-1 flex items-center gap-2 text-sm text-gray-6 dark:text-dark-6">
+            <span>{reel?.platform || "Platform"}</span>
+            {reel?.tone ? <span>• {reel.tone}</span> : null}
+            {reel?.status ? (
+              <span
+                className={cn(
+                  "rounded-full px-2 py-0.5 text-xs font-semibold",
+                  reel.status === "READY"
+                    ? "bg-green-100 text-green-700"
+                    : reel.status === "FAILED"
+                      ? "bg-red-100 text-red-700"
+                      : "bg-amber-100 text-amber-700",
+                )}
+              >
+                {reel.status}
+              </span>
+            ) : null}
+          </div>
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -142,76 +134,57 @@ export default function ReelDetailPage() {
                 <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary">Video preview</p>
                 <div className="text-sm text-gray-6 dark:text-dark-6">Status: {reel.status || "PENDING"}</div>
               </div>
-              {reel.errorMessage ? (
-                <div className="text-xs font-semibold text-red-600">{reel.errorMessage}</div>
+              {reel.status === "RENDERING" ? (
+                <button
+                  onClick={() => void loadDetail()}
+                  className="rounded-lg border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-700 transition hover:border-primary hover:text-primary dark:border-white/10 dark:text-gray-200"
+                >
+                  Refresh
+                </button>
               ) : null}
             </div>
 
+            {reel.status === "FAILED" ? (
+              <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                {reel.errorMessage || "Render failed."}
+              </div>
+            ) : null}
+
             <div className="aspect-[9/16] w-full overflow-hidden rounded-xl border border-gray-100 bg-gray-100 dark:border-white/10 dark:bg-gray-950">
-              {reel.videoUrl ? (
-                <video controls className="h-full w-full object-cover" src={reel.videoUrl} poster={reel.thumbnailUrl ?? undefined} />
+              {reel.status === "READY" && reel.videoUrl ? (
+                <video
+                  key={reel.videoUrl}
+                  src={reel.videoUrl}
+                  controls
+                  playsInline
+                  preload="metadata"
+                  className="w-full rounded-lg bg-black"
+                />
               ) : reel.thumbnailUrl ? (
                 <img src={reel.thumbnailUrl} alt="Reel thumbnail" className="h-full w-full object-cover" />
               ) : (
                 <div className="flex h-full items-center justify-center text-sm text-gray-500 dark:text-gray-400">
-                  Video rendering in progress...
+                  {reel.status === "RENDERING" ? "Rendering..." : "No preview yet."}
                 </div>
               )}
             </div>
+
+            {reel.videoUrl ? (
+              <a
+                href={reel.videoUrl}
+                download
+                className="inline-flex items-center justify-center rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700 transition hover:border-primary hover:text-primary dark:border-white/10 dark:text-gray-200"
+              >
+                Download video
+              </a>
+            ) : null}
           </div>
 
           <div className="space-y-4">
             <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-card-2 dark:border-white/10 dark:bg-gray-900">
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary">Summary</p>
-              <div className="mt-2 grid gap-2 text-sm text-gray-7 dark:text-dark-7">
-                <div>
-                  <span className="font-semibold">Platform:</span> {reel.platform || "—"}
-                </div>
-                <div>
-                  <span className="font-semibold">Tone:</span> {reel.tone || "—"}
-                </div>
-                <div>
-                  <span className="font-semibold">Language:</span>{" "}
-                  {labelForLanguage(reel.language || DEFAULT_LANGUAGE)}
-                </div>
-                <div>
-                  <span className="font-semibold">Duration:</span>{" "}
-                  {reel.durationSec ? `${reel.durationSec}s` : "—"}
-                </div>
-                <div>
-                  <span className="font-semibold">Created:</span>{" "}
-                  {reel.createdAt ? new Date(reel.createdAt).toLocaleString() : "—"}
-                </div>
-              </div>
-            </div>
-
-            <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-card-2 dark:border-white/10 dark:bg-gray-900">
               <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary">Script</p>
               <div className="mt-2 whitespace-pre-wrap text-sm text-gray-7 dark:text-dark-7">
                 {reel.scriptText || "No script stored yet."}
-              </div>
-            </div>
-
-            <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-card-2 dark:border-white/10 dark:bg-gray-900">
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary">Caption</p>
-              <div className="mt-2 whitespace-pre-wrap text-sm text-gray-7 dark:text-dark-7">
-                {reel.caption || "No caption stored yet."}
-              </div>
-              {reel.hashtags?.length ? (
-                <div className="mt-3 flex flex-wrap gap-2 text-xs text-gray-6 dark:text-dark-6">
-                  {reel.hashtags.map((tag) => (
-                    <span key={tag} className="rounded-full bg-gray-1 px-2 py-1 dark:bg-dark-3">
-                      {tag.startsWith("#") ? tag : `#${tag}`}
-                    </span>
-                  ))}
-                </div>
-              ) : null}
-            </div>
-
-            <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-card-2 dark:border-white/10 dark:bg-gray-900">
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary">Thumbnail</p>
-              <div className="mt-2 text-sm text-gray-7 dark:text-dark-7">
-                {reel.thumbnailPrompt || "No thumbnail prompt stored yet."}
               </div>
             </div>
           </div>

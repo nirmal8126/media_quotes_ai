@@ -11,8 +11,6 @@ type ReelHistoryItem = {
   status?: string | null;
   platform?: string | null;
   tone?: string | null;
-  style?: string | null;
-  template?: string | null;
   language?: string | null;
   videoUrl?: string | null;
   thumbnailUrl?: string | null;
@@ -28,18 +26,8 @@ type Channel = {
   id: string;
   name: string;
   platform?: string | null;
-  handle?: string | null;
-  tone?: string | null;
-  style?: string | null;
-  template?: string | null;
-  brandColors?: string[] | null;
-  brandFonts?: string[] | null;
-  logoUrl?: string | null;
-  endScreenTemplate?: string | null;
-  durationDefault?: number | null;
-  topic?: string | null;
-  language?: string | null;
 };
+
 type Status =
   | { type: "idle"; message?: string }
   | { type: "loading"; message?: string }
@@ -55,29 +43,19 @@ const platforms = [
   "LINKEDIN",
 ];
 const tones = ["motivational", "educational", "funny", "dramatic", "emotional"];
-const styles = [
-  "cinematic",
-  "minimal",
-  "aesthetic",
-  "bold",
-  "fast-cut",
-  "cartoon",
-  "meme",
-  "talking_head",
-];
+const styles = ["cinematic", "minimal", "aesthetic", "bold", "fast-cut", "cartoon"];
 const templates = ["cinematic", "cartoon", "meme", "talking_head", "minimal"];
 
 const defaultForm = {
   idea: "",
   scriptText: "",
+  channelId: "",
   platform: "INSTAGRAM",
   tone: "motivational",
-  style: "cinematic",
   template: "cinematic",
-  personaId: "",
+  style: "cinematic",
   durationSec: 15,
   withVoiceover: true,
-  channelId: "",
   language: DEFAULT_LANGUAGE,
 };
 
@@ -90,79 +68,23 @@ export default function AiReelsPage() {
   const router = useRouter();
   const [form, setForm] = useState({ ...defaultForm });
   const [status, setStatus] = useState<Status>({ type: "idle" });
-  const [polling, setPolling] = useState(false);
   const [history, setHistory] = useState<ReelHistoryItem[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
-  const [deleteRow, setDeleteRow] = useState<ReelHistoryItem | null>(null);
-  const [deleteStatus, setDeleteStatus] = useState<Status>({ type: "idle" });
-  const [search, setSearch] = useState("");
-  const [pageSize, setPageSize] = useState(5);
-  const [page, setPage] = useState(1);
   const [channels, setChannels] = useState<Channel[]>([]);
   const [channelLoading, setChannelLoading] = useState(false);
   const [showModal, setShowModal] = useState(false);
-  const [channelFilter, setChannelFilter] = useState<string>("");
-  const [platformFilter, setPlatformFilter] = useState<string>("");
-  const [toneFilter, setToneFilter] = useState<string>("");
-  const [statusFilter, setStatusFilter] = useState<string>("");
-  const [dateFrom, setDateFrom] = useState<string>("");
-  const [dateTo, setDateTo] = useState<string>("");
   const [languageQuery, setLanguageQuery] = useState(labelForLanguage(defaultForm.language));
   const [showLanguageList, setShowLanguageList] = useState(false);
-  const selectedChannel = useMemo(
-    () => channels.find((c) => c.id === form.channelId),
-    [channels, form.channelId]
+  const sortedHistory = useMemo(
+    () =>
+      [...history].sort((a, b) => {
+        const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return bTime - aTime;
+      }),
+    [history],
   );
-  const filteredHistory = useMemo(() => {
-    const term = search.trim().toLowerCase();
-    const filteredByChannel =
-      channelFilter === ""
-        ? history
-        : channelFilter === "none"
-        ? history.filter((h) => !h.channelId)
-        : history.filter((h) => h.channelId === channelFilter);
-
-    const filteredByMeta = filteredByChannel.filter((item) => {
-      const matchesPlatform = !platformFilter
-        ? true
-        : (item.platform ?? "").toLowerCase().includes(platformFilter.toLowerCase());
-      const matchesTone = !toneFilter
-        ? true
-        : (item.tone ?? "").toLowerCase().includes(toneFilter.toLowerCase());
-      const matchesStatus = !statusFilter
-        ? true
-        : (item.status ?? "").toLowerCase() === statusFilter.toLowerCase();
-      const created = item.createdAt ? new Date(item.createdAt) : null;
-      const matchesFrom = !dateFrom || !created ? true : created >= new Date(dateFrom);
-      const matchesTo = !dateTo || !created ? true : created <= new Date(dateTo);
-      return matchesPlatform && matchesTone && matchesStatus && matchesFrom && matchesTo;
-    });
-
-    if (!term) return filteredByMeta;
-
-    return filteredByMeta.filter((item) => {
-      const text = [
-        item.id,
-        item.status,
-        item.rendererJobId,
-        item.scriptText,
-        item.videoUrl,
-        item.thumbnailUrl,
-      ]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase();
-      return text.includes(term);
-    });
-  }, [history, search, channelFilter, platformFilter, toneFilter, statusFilter, dateFrom, dateTo]);
-
-  const pageCount = Math.max(1, Math.ceil(filteredHistory.length / pageSize));
-  const currentPage = Math.min(page, pageCount);
-  const pagedHistory = useMemo(() => {
-    const start = (currentPage - 1) * pageSize;
-    return filteredHistory.slice(start, start + pageSize);
-  }, [filteredHistory, currentPage, pageSize]);
 
   const filteredLanguages = useMemo(() => {
     if (!showLanguageList) return [];
@@ -179,10 +101,6 @@ export default function AiReelsPage() {
     );
   }, [languageQuery, showLanguageList]);
 
-  useEffect(() => {
-    setPage(1);
-  }, [search, pageSize, history.length, channelFilter, platformFilter, toneFilter, statusFilter, dateFrom, dateTo]);
-
   const resetFormState = useCallback(() => {
     setStatus({ type: "idle" });
     setForm({ ...defaultForm });
@@ -194,16 +112,7 @@ export default function AiReelsPage() {
     setHistoryLoading(true);
     setHistoryError(null);
     try {
-      const params = new URLSearchParams();
-      if (channelFilter && channelFilter !== "none") params.set("channelId", channelFilter);
-      if (platformFilter) params.set("platform", platformFilter);
-      if (toneFilter) params.set("tone", toneFilter);
-      if (statusFilter) params.set("status", statusFilter);
-      if (dateFrom) params.set("from", dateFrom);
-      if (dateTo) params.set("to", dateTo);
-
-      const url = params.toString() ? `/api/reels/history?${params.toString()}` : "/api/reels/history";
-      const res = await fetch(url, { cache: "no-store" });
+      const res = await fetch("/api/reels/history", { cache: "no-store" });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {
         throw new Error(body?.error || "Failed to load reel history.");
@@ -216,7 +125,7 @@ export default function AiReelsPage() {
     } finally {
       setHistoryLoading(false);
     }
-  }, [channelFilter, dateFrom, dateTo, platformFilter, statusFilter, toneFilter]);
+  }, []);
 
   const loadChannels = useCallback(async () => {
     setChannelLoading(true);
@@ -227,7 +136,7 @@ export default function AiReelsPage() {
         setChannels(Array.isArray(body.channels) ? body.channels : []);
       }
     } catch {
-      // silent
+      // ignore
     } finally {
       setChannelLoading(false);
     }
@@ -246,9 +155,7 @@ export default function AiReelsPage() {
     if (!form.idea.trim() && !form.scriptText.trim()) {
       setStatus({
         type: "error",
-        message: selectedChannel?.topic
-          ? "Provide an idea or leave it blank to rely on channel topic."
-          : "Provide either an idea or a script.",
+        message: "Provide either an idea or a script.",
       });
       return;
     }
@@ -257,51 +164,22 @@ export default function AiReelsPage() {
       type: "loading",
       message: "Generating script and starting render...",
     });
-    const channelDefaults = selectedChannel
-      ? {
-          platform: selectedChannel.platform || form.platform,
-          tone: selectedChannel.tone || form.tone,
-          style: selectedChannel.style || form.style,
-          template: selectedChannel.template || form.template,
-          durationSec: selectedChannel.durationDefault ?? form.durationSec,
-          language: selectedChannel.language || form.language,
-          topic: selectedChannel.topic || form.idea,
-        }
-      : null;
-
-      const languageValue = (channelDefaults?.language || form.language || languageQuery || "").trim();
-      const normalizedLanguage = languageValue ? resolveLanguageCode(languageValue) : undefined;
-
-    const payloadDuration = Number(channelDefaults?.durationSec ?? form.durationSec) || 15;
-    const brand = selectedChannel
-      ? {
-          colors: (selectedChannel.brandColors || []).filter(Boolean),
-          fonts: (selectedChannel.brandFonts || []).filter(Boolean),
-          logoUrl: selectedChannel.logoUrl || null,
-          endScreenTemplate: selectedChannel.endScreenTemplate || null,
-        }
-      : null;
-    const hasBrand =
-      !!brand &&
-      ((brand.colors && brand.colors.length > 0) ||
-        (brand.fonts && brand.fonts.length > 0) ||
-        brand.logoUrl ||
-        brand.endScreenTemplate);
-
+    const languageValue = (form.language || languageQuery || "").trim();
+    const normalizedLanguage = languageValue ? resolveLanguageCode(languageValue) : undefined;
+    const payloadDuration = Number(form.durationSec) || 15;
     try {
       const res = await fetch("/api/reels/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...form,
-          ...(channelDefaults ? channelDefaults : {}),
-          idea: channelDefaults?.topic || form.idea,
+          idea: form.idea,
           language: normalizedLanguage,
-          tone: channelDefaults?.tone || form.tone,
-          style: channelDefaults?.style || form.style,
-          template: channelDefaults?.template || form.template,
+          tone: form.tone,
+          template: form.template,
+          style: form.style,
+          channelId: form.channelId || undefined,
           durationSec: payloadDuration,
-          ...(hasBrand ? { brand } : {}),
         }),
       });
       const body = await res.json().catch(() => ({}));
@@ -310,68 +188,17 @@ export default function AiReelsPage() {
       }
       setStatus({
         type: "success",
-        message:
-          body.message || "Reel created. If rendering, poll for updates.",
+        message: "Reel created.",
       });
       setShowModal(false);
       await loadHistory();
+      if (body?.reelId) {
+        router.push(`/ai-reels/${body.reelId}`);
+      }
     } catch (err) {
       setStatus({
         type: "error",
         message: (err as Error).message || "Unable to start reel render.",
-      });
-    }
-  };
-
-  const handlePoll = async (reelId: string) => {
-    if (!reelId || polling) return;
-    setPolling(true);
-    try {
-      const res = await fetch(
-        `/api/reels/status?reelId=${encodeURIComponent(reelId)}`
-      );
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(body?.error || "Failed to load status.");
-      }
-      setHistory((prev) =>
-        prev.map((item) =>
-          item.id === reelId ? { ...item, ...body.reel } : item
-        )
-      );
-      setStatus({
-        type: "success",
-        message: `Status: ${body.reel?.status || "unknown"}`,
-      });
-    } catch (err) {
-      setStatus({
-        type: "error",
-        message: (err as Error).message || "Unable to fetch status.",
-      });
-    } finally {
-      setPolling(false);
-    }
-  };
-
-  const confirmDelete = async () => {
-    if (!deleteRow) return;
-    setDeleteStatus({ type: "loading", message: "Deleting reel..." });
-    try {
-      const res = await fetch(
-        `/api/reels/delete?id=${encodeURIComponent(deleteRow.id)}`,
-        { method: "DELETE" }
-      );
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(body?.error || "Unable to delete reel.");
-      }
-      setHistory((prev) => prev.filter((item) => item.id !== deleteRow.id));
-      setDeleteStatus({ type: "success", message: "Reel deleted" });
-      setDeleteRow(null);
-    } catch (err) {
-      setDeleteStatus({
-        type: "error",
-        message: (err as Error).message || "Unable to delete reel.",
       });
     }
   };
@@ -402,91 +229,6 @@ export default function AiReelsPage() {
       </div>
 
       <div className="rounded-2xl border border-gray-3 bg-white p-4 shadow-card-2 dark:border-stroke-dark dark:bg-dark-2">
-        <div className="grid gap-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
-          <label className="flex flex-col gap-1 text-xs font-semibold text-gray-6 dark:text-dark-6">
-            Channel
-            <select
-              className="h-10 rounded-lg border border-gray-3 bg-white px-3 text-sm font-semibold text-dark focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
-              value={channelFilter}
-              onChange={(e) => setChannelFilter(e.target.value)}
-              disabled={channelLoading}
-            >
-              <option value="">All</option>
-              <option value="none">No channel</option>
-              {channels.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name} {c.platform ? `• ${c.platform}` : ""}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="flex flex-col gap-1 text-xs font-semibold text-gray-6 dark:text-dark-6">
-            Platform
-            <select
-              className="h-10 rounded-lg border border-gray-3 bg-white px-3 text-sm font-semibold text-dark focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
-              value={platformFilter}
-              onChange={(e) => setPlatformFilter(e.target.value)}
-            >
-              <option value="">All</option>
-              {platforms.map((p) => (
-                <option key={p} value={p}>
-                  {p}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="flex flex-col gap-1 text-xs font-semibold text-gray-6 dark:text-dark-6">
-            Tone
-            <select
-              className="h-10 rounded-lg border border-gray-3 bg-white px-3 text-sm font-semibold text-dark focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
-              value={toneFilter}
-              onChange={(e) => setToneFilter(e.target.value)}
-            >
-              <option value="">All</option>
-              {tones.map((t) => (
-                <option key={t} value={t}>
-                  {t}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="flex flex-col gap-1 text-xs font-semibold text-gray-6 dark:text-dark-6">
-            Status
-            <select
-              className="h-10 rounded-lg border border-gray-3 bg-white px-3 text-sm font-semibold text-dark focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-            >
-              <option value="">All</option>
-              {["READY", "RENDERING", "SCHEDULED", "PUBLISHED", "FAILED", "PENDING"].map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
-            </select>
-          </label>
-          <div className="flex flex-col gap-1 text-xs font-semibold text-gray-6 dark:text-dark-6">
-            Date range
-            <div className="flex items-center gap-2">
-              <input
-                type="date"
-                value={dateFrom}
-                onChange={(e) => setDateFrom(e.target.value)}
-                className="h-10 w-full rounded-lg border border-gray-3 bg-white px-3 text-sm text-dark outline-none focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
-              />
-              <span className="text-xs text-gray-6 dark:text-dark-6">to</span>
-              <input
-                type="date"
-                value={dateTo}
-                onChange={(e) => setDateTo(e.target.value)}
-                className="h-10 w-full rounded-lg border border-gray-3 bg-white px-3 text-sm text-dark outline-none focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
-              />
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="rounded-2xl border border-gray-3 bg-white p-4 shadow-card-2 dark:border-stroke-dark dark:bg-dark-2">
       {historyLoading ? (
         <div className="py-10 text-center text-gray-6 dark:text-dark-6">
           Loading reels...
@@ -495,83 +237,48 @@ export default function AiReelsPage() {
           <div className="py-10 text-center text-red-600">{historyError}</div>
         ) : (
           <div className="space-y-4 overflow-x-auto">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="flex items-center gap-2 text-sm text-gray-7 dark:text-dark-7">
-                <span className="text-gray-6 dark:text-dark-6">Show</span>
-                <select
-                  value={pageSize}
-                  onChange={(e) => setPageSize(Number(e.target.value) || 5)}
-                  className="h-10 rounded-lg border border-gray-3 bg-white px-3 text-sm font-semibold text-dark focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
-                >
-                  {[5, 10, 20, 50].map((size) => (
-                    <option key={size} value={size}>
-                      {size}
-                    </option>
-                  ))}
-                </select>
-                <span className="text-gray-6 dark:text-dark-6">entries</span>
-              </div>
-              <div className="flex flex-col gap-1 text-xs font-semibold text-gray-6 dark:text-dark-6">
-                Search <span className="font-normal">(script, id, status)</span>
-                <div className="relative">
-                  <input
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                    placeholder="Search reels"
-                    className="h-10 w-56 rounded-lg border border-gray-3 bg-white px-3 pl-9 text-sm text-dark outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
-                    aria-label="Search reels"
-                  />
-                  <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-5">
-                    🔍
-                  </span>
-                </div>
-              </div>
-            </div>
             <table className="min-w-full text-left text-sm text-dark dark:text-dark-8">
               <thead className="bg-gray-1 text-xs font-semibold uppercase text-gray-6 dark:bg-dark-3 dark:text-dark-7">
                 <tr>
-                  <th className="px-4 py-3">Script / ID</th>
+                  <th className="px-4 py-3">Title</th>
+                  <th className="px-4 py-3">Platform</th>
+                  <th className="px-4 py-3">Tone</th>
                   <th className="px-4 py-3">Status</th>
                   <th className="px-4 py-3">Created</th>
-                  <th className="px-4 py-3 text-right">Actions</th>
+                  <th className="px-4 py-3 text-right">View</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-3 dark:divide-stroke-dark">
-                {pagedHistory.length === 0 ? (
+                {sortedHistory.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={4}
+                      colSpan={6}
                       className="px-4 py-10 text-center text-gray-6 dark:text-dark-6"
                     >
                       No reels found.
                     </td>
                   </tr>
                 ) : (
-                  pagedHistory.map((item) => (
+                  sortedHistory.map((item) => (
                     <tr
                       key={item.id}
                       className="hover:bg-gray-1/60 align-top dark:hover:bg-dark-3/70"
                     >
                       <td className="px-4 py-3 text-sm text-gray-7 dark:text-dark-7">
                         <div className="line-clamp-2 font-medium text-dark dark:text-dark-8">
-                          {item.scriptText?.trim()
-                            ? item.scriptText.slice(0, 120) +
-                              (item.scriptText.length > 120 ? "..." : "")
-                            : "—"}
+                          {item.inputPrompt?.trim()
+                            ? item.inputPrompt
+                            : item.scriptText?.trim()
+                              ? item.scriptText.split("\n")[0]
+                              : "Untitled"}
                         </div>
-                        <div className="text-xs text-gray-6 dark:text-dark-6">
-                          ID: {item.id}
-                        </div>
-                        {(item.platform || item.tone) && (
-                          <div className="text-[11px] text-gray-5 dark:text-dark-6">
-                            {[item.platform, item.tone].filter(Boolean).join(" • ")}
-                          </div>
-                        )}
-                        {item.rendererJobId && (
-                          <div className="text-[11px] text-gray-5 dark:text-dark-6">
-                            Job: {item.rendererJobId}
-                          </div>
-                        )}
+                        <div className="text-xs text-gray-6 dark:text-dark-6">ID: {item.id}</div>
+                      </td>
+                      <td className="px-4 py-3 align-top text-sm text-gray-7 dark:text-dark-7">
+                        {item.platform || "—"}
+                      </td>
+                      <td className="px-4 py-3 align-top text-sm text-gray-7 dark:text-dark-7">
+                        {item.tone || "—"}
                       </td>
                       <td className="px-4 py-3 align-top">
                         <span
@@ -580,86 +287,31 @@ export default function AiReelsPage() {
                             item.status === "READY"
                               ? "bg-green-100 text-green-700"
                               : item.status === "FAILED"
-                              ? "bg-red-100 text-red-700"
-                              : item.status === "RENDERING" ||
-                                item.status === "PENDING"
-                              ? "bg-amber-100 text-amber-700"
-                              : "bg-gray-2 text-gray-7 dark:bg-dark-3 dark:text-dark-7"
+                                ? "bg-red-100 text-red-700"
+                                : item.status === "RENDERING"
+                                  ? "bg-amber-100 text-amber-700"
+                                  : "bg-gray-2 text-gray-7 dark:bg-dark-3 dark:text-dark-7",
                           )}
                         >
                           {item.status || "unknown"}
                         </span>
                       </td>
                       <td className="px-4 py-3 align-top text-sm text-gray-7 dark:text-dark-7">
-                        {item.createdAt
-                          ? new Date(item.createdAt).toLocaleString()
-                          : "—"}
+                        {item.createdAt ? new Date(item.createdAt).toLocaleString() : "—"}
                       </td>
-                      <td className="px-4 py-3 align-top">
-                        <div className="flex flex-wrap justify-end gap-2">
-                          <button
-                            className="rounded-md border border-gray-3 px-3 py-2 text-xs font-semibold text-gray-7 transition hover:bg-gray-1 dark:border-stroke-dark dark:text-dark-7 dark:hover:bg-dark-2"
-                            onClick={() => router.push(`/ai-reels/${item.id}`)}
-                          >
-                            View
-                          </button>
-                          <button
-                            className="rounded-md border border-gray-3 px-3 py-2 text-xs font-semibold text-gray-7 transition hover:bg-gray-1 dark:border-stroke-dark dark:text-dark-7 dark:hover:bg-dark-2"
-                            onClick={() => handlePoll(item.id)}
-                            disabled={polling}
-                          >
-                            {polling ? "Checking..." : "Refresh"}
-                          </button>
-                          <button
-                            className="rounded-md bg-red-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-red-700 disabled:opacity-60"
-                            onClick={() => setDeleteRow(item)}
-                            disabled={deleteStatus.type === "loading"}
-                          >
-                            Delete
-                          </button>
-                        </div>
+                      <td className="px-4 py-3 align-top text-right">
+                        <button
+                          className="rounded-md border border-gray-3 px-3 py-2 text-xs font-semibold text-gray-7 transition hover:bg-gray-1 dark:border-stroke-dark dark:text-dark-7 dark:hover:bg-dark-2"
+                          onClick={() => router.push(`/ai-reels/${item.id}`)}
+                        >
+                          View
+                        </button>
                       </td>
                     </tr>
                   ))
                 )}
               </tbody>
             </table>
-
-            <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-gray-7 dark:text-dark-7">
-              <div>
-                Showing{" "}
-                {pagedHistory.length === 0
-                  ? 0
-                  : (currentPage - 1) * pageSize + 1}{" "}
-                to{" "}
-                {pagedHistory.length === 0
-                  ? 0
-                  : Math.min(
-                      currentPage * pageSize,
-                      filteredHistory.length
-                    )}{" "}
-                of {filteredHistory.length} entries
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  className="rounded-md border border-gray-3 px-3 py-1 text-sm font-semibold text-gray-7 transition hover:bg-gray-1 disabled:opacity-60 dark:border-stroke-dark dark:text-dark-7 dark:hover:bg-dark-3"
-                  onClick={() => setPage((p) => Math.max(1, p - 1))}
-                  disabled={currentPage <= 1}
-                >
-                  Previous
-                </button>
-                <span className="text-xs text-gray-6 dark:text-dark-6">
-                  Page {currentPage} of {pageCount}
-                </span>
-                <button
-                  className="rounded-md border border-gray-3 px-3 py-1 text-sm font-semibold text-gray-7 transition hover:bg-gray-1 disabled:opacity-60 dark:border-stroke-dark dark:text-dark-7 dark:hover:bg-dark-3"
-                  onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
-                  disabled={currentPage >= pageCount}
-                >
-                  Next
-                </button>
-              </div>
-            </div>
           </div>
         )}
       </div>
@@ -697,9 +349,7 @@ export default function AiReelsPage() {
                 <label className="block text-sm font-semibold text-dark dark:text-dark-7">
                   <div className="flex items-center gap-2">
                     <span>Idea</span>
-                    <span className="text-xs font-normal text-gray-6 dark:text-dark-6">
-                      (what the reel should cover) {selectedChannel?.topic ? `Channel: ${selectedChannel.topic}` : ""}
-                    </span>
+                    <span className="text-xs font-normal text-gray-6 dark:text-dark-6">(what the reel should cover)</span>
                   </div>
                   <textarea
                     className="mt-2 h-28 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm text-dark outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
@@ -733,48 +383,22 @@ export default function AiReelsPage() {
                 <label className="block text-sm font-semibold text-dark dark:text-dark-7">
                   <div className="flex items-center gap-2">
                     <span>Channel (optional)</span>
-                    <span className="text-xs font-normal text-gray-6 dark:text-dark-6">(pick to auto-fill defaults)</span>
+                    <span className="text-xs font-normal text-gray-6 dark:text-dark-6">(pick if needed)</span>
                   </div>
                   <select
                     className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm text-dark outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
                     value={form.channelId}
-                    onChange={(e) => {
-                      const selected = channels.find(
-                        (c) => c.id === e.target.value
-                      );
-                      const nextLanguage = selected?.language || form.language || "";
-                      setLanguageQuery(labelForLanguage(nextLanguage));
-                      setForm((prev) => ({
-                        ...prev,
-                        channelId: e.target.value,
-                        platform: selected?.platform
-                          ? selected.platform.toUpperCase()
-                          : prev.platform,
-                        tone: selected?.tone || prev.tone,
-                        style: selected?.style || prev.style,
-                        template: selected?.template || prev.template,
-                        language: selected?.language || prev.language,
-                        durationSec:
-                          typeof selected?.durationDefault === "number" &&
-                          Number.isFinite(selected.durationDefault)
-                            ? selected.durationDefault
-                          : prev.durationSec,
-                        idea:
-                          prev.idea.trim() ||
-                          (selected?.topic ? `Topic: ${selected.topic}` : ""),
-                      }));
-                    }}
+                    onChange={(e) => setForm((prev) => ({ ...prev, channelId: e.target.value }))}
                     disabled={channelLoading}
                   >
-                    <option value="">No channel (one-off)</option>
+                    <option value="">No channel</option>
                     {channels.map((c) => (
                       <option key={c.id} value={c.id}>
                         {c.name} {c.platform ? `• ${c.platform}` : ""}
                       </option>
                     ))}
-                    </select>
+                  </select>
                 </label>
-
                 <label className="block text-sm font-semibold text-dark dark:text-dark-7">
                   <div className="flex items-center gap-2">
                     <span>Platform</span>
@@ -900,9 +524,7 @@ export default function AiReelsPage() {
                   <select
                     className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm text-dark outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
                     value={form.style}
-                    onChange={(e) =>
-                      setForm((prev) => ({ ...prev, style: e.target.value }))
-                    }
+                    onChange={(e) => setForm((prev) => ({ ...prev, style: e.target.value }))}
                   >
                     {styles.map((s) => (
                       <option key={s} value={s}>
@@ -910,23 +532,6 @@ export default function AiReelsPage() {
                       </option>
                     ))}
                   </select>
-                </label>
-                <label className="block text-sm font-semibold text-dark dark:text-dark-7">
-                  <div className="flex items-center gap-2">
-                    <span>Persona ID (optional)</span>
-                    <span className="text-xs font-normal text-gray-6 dark:text-dark-6">(persona UUID)</span>
-                  </div>
-                  <input
-                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm text-dark outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
-                    placeholder="persona UUID"
-                    value={form.personaId}
-                    onChange={(e) =>
-                      setForm((prev) => ({
-                        ...prev,
-                        personaId: e.target.value,
-                      }))
-                    }
-                  />
                 </label>
                 <label className="block text-sm font-semibold text-dark dark:text-dark-7">
                   <div className="flex items-center gap-2">
@@ -1008,46 +613,6 @@ export default function AiReelsPage() {
         </ModalPortal>
       )}
 
-      {deleteRow && (
-        <ModalPortal>
-          <div
-            className="fixed inset-0 z-[20000] flex items-center justify-center bg-black/60 px-4"
-            role="dialog"
-            aria-modal="true"
-          >
-            <div className="w-full max-w-md rounded-2xl border border-gray-3 bg-white p-5 shadow-card-2 dark:border-stroke-dark dark:bg-dark-2">
-              <h3 className="text-lg font-semibold text-dark dark:text-dark-8">
-                Delete reel?
-              </h3>
-              <p className="mt-2 text-sm text-gray-6 dark:text-dark-6">
-                This will remove the reel from your history. Reel ID:{" "}
-                {deleteRow.id}
-              </p>
-              {deleteStatus.type === "error" && (
-                <div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
-                  {deleteStatus.message}
-                </div>
-              )}
-              <div className="mt-4 flex justify-end gap-2">
-                <button
-                  className="rounded-md border border-gray-3 px-3 py-2 text-sm font-semibold text-gray-7 transition hover:bg-gray-1 dark:border-stroke-dark dark:text-dark-7 dark:hover:bg-dark-3 disabled:opacity-60"
-                  onClick={() => setDeleteRow(null)}
-                  disabled={deleteStatus.type === "loading"}
-                >
-                  Cancel
-                </button>
-                <button
-                  className="rounded-md bg-red-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-red-700 disabled:opacity-60"
-                  onClick={confirmDelete}
-                  disabled={deleteStatus.type === "loading"}
-                >
-                  {deleteStatus.type === "loading" ? "Deleting..." : "Delete"}
-                </button>
-              </div>
-            </div>
-          </div>
-        </ModalPortal>
-      )}
     </div>
   );
 }

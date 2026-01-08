@@ -63,6 +63,29 @@ function truncateText(input, max) {
   return `${input.slice(0, max - 1)}…`;
 }
 
+function wrapText(input, maxLen, maxLines) {
+  const words = String(input || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .split(" ")
+    .filter(Boolean);
+  const lines = [];
+  let current = "";
+
+  words.forEach((word) => {
+    const next = current ? `${current} ${word}` : word;
+    if (next.length > maxLen && current) {
+      lines.push(current);
+      current = word;
+      return;
+    }
+    current = next;
+  });
+
+  if (current) lines.push(current);
+  return lines.slice(0, maxLines).join("\n");
+}
+
 function hasFfmpeg() {
   const result = spawnSync("ffmpeg", ["-version"], { stdio: "ignore" });
   return result.status === 0;
@@ -98,6 +121,36 @@ function writeSvgThumbnail({ text, outputPath }) {
 function buildDrawtextFilter(textFilePath) {
   const escapedPath = textFilePath.replace(/:/g, "\\:").replace(/\\/g, "\\\\");
   return `drawtext=textfile='${escapedPath}':fontcolor=white:fontsize=48:line_spacing=16:x=(w-text_w)/2:y=(h-text_h)/2:box=1:boxcolor=black@0.45:boxborderw=24`;
+}
+
+async function buildSceneFilters(scenes, jobId) {
+  let cursor = 0;
+  const filters = [];
+  let index = 0;
+
+  for (const scene of scenes) {
+    const durationMs = Number(scene.durationMs);
+    if (!Number.isFinite(durationMs) || durationMs <= 0) continue;
+    const text = wrapText(scene.text || "", 24, 6);
+    if (!text) {
+      cursor += durationMs / 1000;
+      continue;
+    }
+    const startSec = cursor;
+    const endSec = cursor + durationMs / 1000;
+    cursor = endSec;
+    const textFile = path.join(PREVIEWS_DIR, `${jobId}-scene-${index}.txt`);
+    index += 1;
+    await fs.promises.writeFile(textFile, text);
+    const escapedPath = textFile.replace(/:/g, "\\:").replace(/\\/g, "\\\\");
+    filters.push(
+      `drawtext=textfile='${escapedPath}':fontcolor=white:fontsize=48:line_spacing=16:x=(w-text_w)/2:y=(h-text_h)/2:box=1:boxcolor=black@0.45:boxborderw=24:enable='between(t,${startSec.toFixed(
+        3,
+      )},${endSec.toFixed(3)})'`,
+    );
+  }
+
+  return filters.join(",");
 }
 
 function getAudioDurationSec(audioPath) {
@@ -139,6 +192,40 @@ function resolveAudioPath(input) {
   return null;
 }
 
+function normalizeScenes(payload, fallbackDurationSec) {
+  if (!Array.isArray(payload?.scenes) || payload.scenes.length === 0) return null;
+  const rawScenes = payload.scenes
+    .map((scene) => ({
+      text: sanitizeText(scene?.text || scene?.script || ""),
+      durationMs: Number(scene?.durationMs ?? scene?.duration_ms),
+    }))
+    .filter((scene) => scene.text);
+
+  if (rawScenes.length === 0) return null;
+
+  const totalMs = rawScenes.reduce(
+    (sum, scene) => sum + (Number.isFinite(scene.durationMs) ? scene.durationMs : 0),
+    0,
+  );
+  const targetMs = Math.max(4000, Math.round(Number(fallbackDurationSec) * 1000) || 15000);
+
+  const missingDuration = rawScenes.some((scene) => !Number.isFinite(scene.durationMs) || scene.durationMs <= 0);
+  if (missingDuration || totalMs <= 0) {
+    const perScene = Math.floor(targetMs / rawScenes.length);
+    let remainder = targetMs - perScene * rawScenes.length;
+    return rawScenes.map((scene) => {
+      const extra = remainder > 0 ? 1 : 0;
+      remainder = Math.max(0, remainder - 1);
+      return {
+        text: scene.text,
+        durationMs: perScene + extra,
+      };
+    });
+  }
+
+  return rawScenes;
+}
+
 async function handleRender(req, res, body) {
   if (!isAuthorized(req)) {
     return sendJson(res, 401, { error: "Unauthorized" });
@@ -158,10 +245,10 @@ async function handleRender(req, res, body) {
   const thumbPath = path.join(PREVIEWS_DIR, thumbName);
   const svgPath = path.join(PREVIEWS_DIR, svgThumbName);
 
-  const sceneText =
-    Array.isArray(payload.scenes) && payload.scenes.length
-      ? payload.scenes.map((scene) => scene && scene.script).filter(Boolean).join(" ")
-      : "";
+  const normalizedScenes = normalizeScenes(payload, payload.durationSec || payload.duration || 15);
+  const sceneText = normalizedScenes
+    ? normalizedScenes.map((scene) => scene.text).filter(Boolean).join(" ")
+    : "";
   const scriptText = sanitizeText(
     payload.script ||
       payload.scriptText ||
@@ -176,9 +263,23 @@ async function handleRender(req, res, body) {
   const requestedDuration = Math.max(4, Math.min(Number(payload.durationSec || payload.duration || 8), 60));
   const audioPath = resolveAudioPath(payload.audioUrl);
   const audioDuration = getAudioDurationSec(audioPath);
-  const durationSec = audioDuration
-    ? Math.max(requestedDuration, Math.min(Math.round(audioDuration), 60))
-    : requestedDuration;
+  const scenesDurationMs = normalizedScenes
+    ? normalizedScenes.reduce((sum, scene) => sum + scene.durationMs, 0)
+    : 0;
+  let durationSec = normalizedScenes && scenesDurationMs > 0 ? Math.round(scenesDurationMs / 1000) : requestedDuration;
+  if (audioDuration) {
+    durationSec = Math.max(durationSec, Math.min(Math.round(audioDuration), 60));
+  }
+  durationSec = Math.max(4, Math.min(durationSec, 60));
+
+  if (normalizedScenes && scenesDurationMs > 0) {
+    const targetMs = durationSec * 1000;
+    const diff = targetMs - scenesDurationMs;
+    if (diff > 0) {
+      const last = normalizedScenes[normalizedScenes.length - 1];
+      last.durationMs += diff;
+    }
+  }
   const canRenderVideo = hasFfmpeg();
   if (!canRenderVideo) {
     return sendJson(res, 422, {
@@ -188,9 +289,15 @@ async function handleRender(req, res, body) {
 
   try {
     if (canRenderVideo) {
-      const textFile = path.join(PREVIEWS_DIR, `${jobId}.txt`);
-      await fs.promises.writeFile(textFile, displayText);
-      const filter = buildDrawtextFilter(textFile);
+      let filter = "";
+      if (normalizedScenes && normalizedScenes.length > 0) {
+        filter = await buildSceneFilters(normalizedScenes, jobId);
+      }
+      if (!filter) {
+        const textFile = path.join(PREVIEWS_DIR, `${jobId}.txt`);
+        await fs.promises.writeFile(textFile, displayText);
+        filter = buildDrawtextFilter(textFile);
+      }
       const ffmpegArgs = [
         "-y",
         "-f",

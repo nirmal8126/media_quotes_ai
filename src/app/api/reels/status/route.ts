@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/api-auth";
-import { fetchReelStatus } from "@/lib/reels-pipeline";
+import { fetchReelStatus } from "@/lib/reel-service";
 import { supabaseAdmin } from "@/lib/supabase";
 
 export async function GET(request: Request) {
