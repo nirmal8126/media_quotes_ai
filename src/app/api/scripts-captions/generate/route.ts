@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/api-auth";
+import { DEFAULT_LANGUAGE } from "@/lib/languages";
 import {
   generateStructuredScript,
   type Goal,
@@ -193,13 +194,13 @@ export async function POST(request: Request) {
   const topicScope = [
     normalized.description.trim().toLowerCase(),
     normalized.platform,
-    normalized.language || "en",
+    normalized.language || DEFAULT_LANGUAGE,
     durationBucket,
     normalized.contentType,
     goal,
   ].join("|");
   const topic_hash = computeSha256(topicScope);
-  const language = normalized.language || "en";
+  const language = normalized.language || DEFAULT_LANGUAGE;
 
   console.log("[scripts-captions] generate", {
     mode,

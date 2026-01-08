@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/api-auth";
+import { DEFAULT_LANGUAGE } from "@/lib/languages";
 import { generateCompletion } from "@/lib/openai";
 import { pickProvider } from "@/lib/llm-provider";
 import {
@@ -35,7 +36,7 @@ async function generateScriptFromPrompt(options: {
   provider?: string;
 }) {
   const { prompt, topic, language, videoType, durationSeconds, provider } = options;
-  const targetLang = language || "en";
+  const targetLang = language || DEFAULT_LANGUAGE;
   const durationText =
     videoType === "longform"
       ? `${Math.max(3, Math.round((durationSeconds ?? 300) / 60))} minute`
@@ -81,7 +82,8 @@ export async function POST(request: Request) {
 
     await updateVideoProject(user.id, projectId, { status: "generating_script" });
 
-    const workingLanguage = (body.language as string | null | undefined) ?? project.language ?? "en";
+    const workingLanguage =
+      (body.language as string | null | undefined) ?? project.language ?? DEFAULT_LANGUAGE;
     const scriptText =
       typeof body.script === "string" && body.script.trim()
         ? body.script

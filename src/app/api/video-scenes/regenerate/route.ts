@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/api-auth";
+import { DEFAULT_LANGUAGE } from "@/lib/languages";
 import { generateCompletion } from "@/lib/openai";
 import { pickProvider } from "@/lib/llm-provider";
 import { getVideoProject, listScenes, upsertScene } from "@/lib/video-service";
@@ -38,7 +39,7 @@ export async function POST(request: Request) {
     const scenes = await listScenes(projectId);
     const target = scenes.find((s) => s.sceneIndex === sceneIndex);
     const sourceText = promptText || (body.script as string | undefined)?.trim() || target?.script || "";
-    const language = (body.language as string | undefined)?.trim() || project.language || "en";
+    const language = (body.language as string | undefined)?.trim() || project.language || DEFAULT_LANGUAGE;
     const tone = (body.tone as string | undefined)?.trim() || project.contentFormat || "default";
 
     const prompt = [

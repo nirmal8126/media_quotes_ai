@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
-import { labelForLanguage, languageOptions, resolveLanguageCode } from "@/lib/languages";
+import { DEFAULT_LANGUAGE, labelForLanguage, languageOptions, resolveLanguageCode } from "@/lib/languages";
 import { useRouter } from "next/navigation";
 
 type ReelHistoryItem = {
@@ -78,7 +78,7 @@ const defaultForm = {
   durationSec: 15,
   withVoiceover: true,
   channelId: "",
-  language: "",
+  language: DEFAULT_LANGUAGE,
 };
 
 function ModalPortal({ children }: { children: React.ReactNode }) {

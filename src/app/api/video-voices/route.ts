@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/api-auth";
+import { DEFAULT_LANGUAGE } from "@/lib/languages";
 import { listVoicesByLanguage } from "@/lib/video-service";
 
 export async function GET(request: Request) {
@@ -8,7 +9,8 @@ export async function GET(request: Request) {
   const { applyCookies } = session;
 
   const { searchParams } = new URL(request.url);
-  const language = (searchParams.get("language") ?? "en").trim().toLowerCase() || "en";
+  const language =
+    (searchParams.get("language") ?? DEFAULT_LANGUAGE).trim().toLowerCase() || DEFAULT_LANGUAGE;
 
   try {
     const voices = await listVoicesByLanguage(language);

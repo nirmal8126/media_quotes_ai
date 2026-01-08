@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/api-auth";
+import { DEFAULT_LANGUAGE } from "@/lib/languages";
 import { createRenderJob, getVideoProject, listRenderJobs, listScenes, updateRenderJob, updateVideoProject, upsertScene, listMedia, upsertMedia } from "@/lib/video-service";
 import { triggerRenderer } from "@/lib/renderer-client";
 import { synthesizeWithElevenLabs } from "@/lib/tts";
@@ -168,7 +169,7 @@ export async function POST(request: Request) {
     try {
       rendererJob = await triggerRenderer({
         projectId,
-        language: project.language ?? "en",
+        language: project.language ?? DEFAULT_LANGUAGE,
         voiceId: project.narratorVoiceId ?? undefined,
         captions: captions.map((c) => ({ startMs: c.startMs, endMs: c.endMs, text: c.text })),
         scenes: timeline.map((t) => ({

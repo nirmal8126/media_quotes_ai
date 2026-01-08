@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
-import { labelForLanguage, languageOptions, resolveLanguageCode } from "@/lib/languages";
+import { DEFAULT_LANGUAGE, labelForLanguage, languageOptions, resolveLanguageCode } from "@/lib/languages";
 
 type Channel = {
   id: string;
@@ -69,7 +69,7 @@ const defaultForm = {
   characterName: "",
   characterImages: "",
   logoUrl: "",
-  language: "",
+  language: DEFAULT_LANGUAGE,
 };
 
 export default function ChannelsPage() {

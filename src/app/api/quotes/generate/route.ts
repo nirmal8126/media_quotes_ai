@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { requireUser } from "@/lib/api-auth";
+import { DEFAULT_LANGUAGE } from "@/lib/languages";
 import { enforceQuoteLimits, generateQuotesList, storeQuotePack } from "@/lib/quote-service";
 import { pickProvider } from "@/lib/llm-provider";
 import { defaultProvider } from "@/lib/openai";
@@ -58,7 +59,7 @@ export async function POST(request: Request) {
       topic: safeTopic,
       persona: body.persona ?? null,
       tone: body.tone ?? null,
-      language: body.language ?? "en",
+      language: body.language ?? DEFAULT_LANGUAGE,
       style: body.style ?? null,
       quote_type: safeQuoteType,
       hook: safeHook ?? null,

@@ -65,7 +65,7 @@ const defaultForm = {
   topic: "",
   tone: "motivational",
   persona: "",
-  language: "",
+  language: "hi",
   style: "",
   count: 5,
   wordLimit: 40,
@@ -101,11 +101,11 @@ const languageOptions = [
 
 function resolveLanguageCode(input: string) {
   const normalized = input.trim().toLowerCase();
-  if (!normalized || normalized === "choose a language...") return "en";
+  if (!normalized || normalized === "choose a language...") return "hi";
   const direct = languageOptions.find((lang) => lang.code.toLowerCase() === normalized);
   if (direct) return direct.code;
   const byLabel = languageOptions.find((lang) => lang.label.toLowerCase() === normalized);
-  return byLabel?.code ?? "en";
+  return byLabel?.code ?? "hi";
 }
 
 function labelForLanguage(input?: string | null) {
@@ -819,7 +819,7 @@ export default function QuotesPage() {
           topic: trimmedTopic,
           tone: form.tone || null,
           persona: form.persona.trim() || null,
-          language: resolvedLanguage || "en",
+          language: resolvedLanguage || "hi",
           style: form.style.trim() || null,
           count: safeCount,
           wordLimit: safeWordLimit,
@@ -914,7 +914,7 @@ export default function QuotesPage() {
           topic: trimmedTopic,
           tone: form.tone || null,
           persona: form.persona || null,
-          language: resolvedLanguage || "en",
+          language: resolvedLanguage || "hi",
           style: form.style || null,
           count: shouldRegenerate ? requestedCount : undefined,
           wordLimit: typeof safeWordLimit === "number" ? safeWordLimit : undefined,

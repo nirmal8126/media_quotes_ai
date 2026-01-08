@@ -10,6 +10,7 @@ import type {
   ToneStyle,
 } from "@/types/generation";
 import {
+  DEFAULT_LANGUAGE,
   labelForLanguage,
   languageOptions,
   resolveLanguageCode,
@@ -100,7 +101,7 @@ const defaultForm = {
   cta: "follow",
   hookStyle: "",
   persona: "",
-  language: labelForLanguage("en") || "English",
+  language: labelForLanguage(DEFAULT_LANGUAGE) || "Hindi",
   hook: "",
   script: "",
   caption: "",

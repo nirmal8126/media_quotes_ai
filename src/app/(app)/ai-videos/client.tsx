@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { labelForLanguage, languageOptions, resolveLanguageCode } from "@/lib/languages";
+import { DEFAULT_LANGUAGE, labelForLanguage, languageOptions, resolveLanguageCode } from "@/lib/languages";
 import { cn } from "@/lib/utils";
 import { createPortal } from "react-dom";
 
@@ -104,12 +104,15 @@ export default function AiVideosClientPage() {
   const [topic, setTopic] = useState("");
   const [prompt, setPrompt] = useState("");
   const [script, setScript] = useState("");
-  const [languageQuery, setLanguageQuery] = useState(labelForLanguage("en"));
+  const [languageQuery, setLanguageQuery] = useState(labelForLanguage(DEFAULT_LANGUAGE));
   const [showLanguageList, setShowLanguageList] = useState(false);
   const [durationSeconds, setDurationSeconds] = useState<number>(30);
   const [selectedSources, setSelectedSources] = useState<string[]>(["ai_images"]);
 
-  const selectedLanguage = useMemo(() => resolveLanguageCode(languageQuery || "en"), [languageQuery]);
+  const selectedLanguage = useMemo(
+    () => resolveLanguageCode(languageQuery || DEFAULT_LANGUAGE),
+    [languageQuery],
+  );
   const filteredLanguages = useMemo(() => {
     if (!showLanguageList) return [];
     const term = (languageQuery || "").trim().toLowerCase();
@@ -395,7 +398,7 @@ export default function AiVideosClientPage() {
                             <div className="text-[11px] text-gray-5 dark:text-dark-6">
                               {(p.videoType === "shorts" ? "SHORTS" : "LONGFORM") +
                                 " • " +
-                                (labelForLanguage(p.language) || p.language || "en")}
+                                (labelForLanguage(p.language) || p.language || DEFAULT_LANGUAGE)}
                             </div>
                             {job?.id ? (
                               <div className="text-[11px] text-gray-5 dark:text-dark-6">Job: {job.id}</div>

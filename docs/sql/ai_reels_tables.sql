@@ -34,6 +34,9 @@ do $$ begin
   if not exists (select 1 from information_schema.columns where table_name='scripts' and column_name='persona_id') then
     alter table public.scripts add column persona_id uuid;
   end if;
+  if not exists (select 1 from information_schema.columns where table_name='scripts' and column_name='language') then
+    alter table public.scripts add column language text;
+  end if;
   if not exists (select 1 from information_schema.columns where table_name='scripts' and column_name='style') then
     alter table public.scripts add column style text;
   end if;
@@ -75,6 +78,9 @@ do $$ begin
   end if;
   if not exists (select 1 from information_schema.columns where table_name='reels' and column_name='persona_id') then
     alter table public.reels add column persona_id uuid;
+  end if;
+  if not exists (select 1 from information_schema.columns where table_name='reels' and column_name='language') then
+    alter table public.reels add column language text;
   end if;
   if not exists (select 1 from information_schema.columns where table_name='reels' and column_name='style') then
     alter table public.reels add column style text;

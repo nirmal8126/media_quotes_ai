@@ -1,4 +1,5 @@
 import { supabaseAdmin } from '@/lib/supabase';
+import { DEFAULT_LANGUAGE } from '@/lib/languages';
 import { generateCompletion, type LlmProvider } from '@/lib/openai';
 
 export type QuoteRecord = {
@@ -132,7 +133,7 @@ export async function generateQuotesList(options: {
     topic = 'general inspiration',
     tone = 'motivational',
     persona,
-    language = 'en',
+    language = DEFAULT_LANGUAGE,
     count = 10,
     hook,
     wordLimit,

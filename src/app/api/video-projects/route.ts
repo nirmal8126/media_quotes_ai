@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/api-auth";
+import { DEFAULT_LANGUAGE } from "@/lib/languages";
 import { createVideoProject, listVideoProjects, updateVideoProject, type VideoType } from "@/lib/video-service";
 
 export async function GET(request: Request) {
@@ -58,7 +59,7 @@ export async function POST(request: Request) {
       topic: body.topic ?? null,
       prompt: body.prompt ?? null,
       script: body.script ?? null,
-      language: body.language ?? "en",
+      language: body.language ?? DEFAULT_LANGUAGE,
       durationSeconds: body.durationSeconds ?? null,
       aspectRatio: body.aspectRatio ?? "9:16",
       narratorVoiceId: body.narratorVoiceId ?? null,

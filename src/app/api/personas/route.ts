@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { requireUser } from '@/lib/api-auth';
+import { DEFAULT_LANGUAGE } from '@/lib/languages';
 import { supabaseAdmin } from '@/lib/supabase';
 
 export async function GET(request: Request) {
@@ -36,7 +37,7 @@ export async function POST(request: Request) {
   const name = typeof body?.name === 'string' ? body.name.trim() : '';
   const description = typeof body?.description === 'string' ? body.description.trim() : '';
   const tone = typeof body?.tone === 'string' ? body.tone.trim() : null;
-  const language = typeof body?.language === 'string' ? body.language.trim() : 'en';
+  const language = typeof body?.language === 'string' ? body.language.trim() : DEFAULT_LANGUAGE;
   const tags = Array.isArray(body?.tags) ? body.tags.map((t: unknown) => String(t).trim()).filter(Boolean) : [];
 
   if (!name) {

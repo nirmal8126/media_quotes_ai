@@ -1,3 +1,4 @@
+import { DEFAULT_LANGUAGE } from "@/lib/languages";
 import { supabaseAdmin } from "@/lib/supabase";
 
 export type VideoType = "shorts" | "longform";
@@ -134,7 +135,7 @@ function mapVoice(row: Record<string, any>): VideoVoiceRecord {
   return {
     id: row.id,
     name: row.name,
-    language: row.language ?? "en",
+    language: row.language ?? DEFAULT_LANGUAGE,
     gender: row.gender ?? null,
     tone: row.tone ?? null,
     provider: row.provider ?? null,
@@ -187,7 +188,7 @@ export async function createVideoProject(userId: string, payload: {
       topic: payload.topic ?? null,
       prompt: payload.prompt ?? null,
       script: payload.script ?? null,
-      language: payload.language ?? "en",
+      language: payload.language ?? DEFAULT_LANGUAGE,
       duration_seconds: payload.durationSeconds ?? null,
       aspect_ratio: payload.aspectRatio ?? "9:16",
       narrator_voice_id: payload.narratorVoiceId ?? null,

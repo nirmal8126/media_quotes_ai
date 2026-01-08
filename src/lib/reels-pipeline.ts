@@ -15,6 +15,7 @@ export type ReelRecord = {
   channelId?: string | null;
   personaId?: string | null;
   platform?: string | null;
+  language?: string | null;
   tone?: string | null;
   style?: string | null;
   template?: string | null;
@@ -42,6 +43,7 @@ export type ScriptRecord = {
   channelId?: string | null;
   personaId?: string | null;
   platform?: string | null;
+  language?: string | null;
   tone?: string | null;
   style?: string | null;
   template?: string | null;
@@ -134,6 +136,7 @@ function mapScript(row: Record<string, any>): ScriptRecord {
     channelId: row.channel_id ?? null,
     personaId: row.persona_id ?? null,
     platform: row.platform ?? null,
+    language: row.language ?? null,
     tone: row.tone ?? null,
     style: row.style ?? null,
     template: row.template ?? null,
@@ -157,6 +160,7 @@ function mapReel(row: Record<string, any>): ReelRecord {
     channelId: row.channel_id ?? null,
     personaId: row.persona_id ?? null,
     platform: row.platform ?? null,
+    language: row.language ?? null,
     tone: row.tone ?? null,
     style: row.style ?? null,
     template: row.template ?? null,
@@ -223,6 +227,7 @@ async function insertScriptRecord(payload: {
   userId: string;
   personaId?: string | null;
   platform?: string | null;
+  language?: string | null;
   tone?: string | null;
   style?: string | null;
   template?: string | null;
@@ -244,6 +249,7 @@ async function insertScriptRecord(payload: {
     channel_id: payload.channelId || null,
     persona_id: payload.personaId || null,
     platform: payload.platform || null,
+    language: payload.language || null,
     tone: payload.tone || null,
     style: payload.style || null,
     template: payload.template || null,
@@ -271,7 +277,13 @@ async function insertScriptRecord(payload: {
       );
     }
     const msg = (error.message || '').toLowerCase();
-    if (msg.includes('brand_colors') || msg.includes('template') || msg.includes('logo_url') || msg.includes('audio')) {
+    if (
+      msg.includes('brand_colors') ||
+      msg.includes('template') ||
+      msg.includes('logo_url') ||
+      msg.includes('audio') ||
+      msg.includes('language')
+    ) {
       // Retry without optional columns to keep flow working even if migration not applied
       const trimmed = {
         user_id: payload.userId,
@@ -310,6 +322,7 @@ async function insertReelRecord(payload: {
   scriptId: string;
   personaId?: string | null;
   platform?: string | null;
+  language?: string | null;
   tone?: string | null;
   style?: string | null;
   template?: string | null;
@@ -335,6 +348,7 @@ async function insertReelRecord(payload: {
     channel_id: payload.channelId || null,
     persona_id: payload.personaId || null,
     platform: payload.platform || null,
+    language: payload.language || null,
     tone: payload.tone || null,
     style: payload.style || null,
     template: payload.template || null,
@@ -365,7 +379,13 @@ async function insertReelRecord(payload: {
       );
     }
     const msg = (error.message || '').toLowerCase();
-    if (msg.includes('brand_colors') || msg.includes('template') || msg.includes('logo_url') || msg.includes('audio')) {
+    if (
+      msg.includes('brand_colors') ||
+      msg.includes('template') ||
+      msg.includes('logo_url') ||
+      msg.includes('audio') ||
+      msg.includes('language')
+    ) {
       // Retry without optional columns if migration not applied
       const trimmed = {
         user_id: payload.userId,
@@ -646,6 +666,7 @@ export async function startReelGeneration(user: User, payload: GeneratePayload):
     channelId,
     personaId,
     platform,
+    language,
     tone,
     style,
     template,
@@ -683,6 +704,7 @@ export async function startReelGeneration(user: User, payload: GeneratePayload):
     scriptId: script.id,
     personaId,
     platform,
+    language,
     tone,
     style,
     template,

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/api-auth";
+import { DEFAULT_LANGUAGE } from "@/lib/languages";
 import { supabaseAdmin } from "@/lib/supabase";
 import { enforceQuoteLimits, generateQuotesList } from "@/lib/quote-service";
 import { pickProvider } from "@/lib/llm-provider";
@@ -76,7 +77,7 @@ export async function PATCH(request: Request) {
         topic: topicText,
         tone: (typeof body.tone === "string" && body.tone) || undefined,
         persona: (typeof body.persona === "string" && body.persona) || undefined,
-        language: (typeof body.language === "string" && body.language) || "en",
+        language: (typeof body.language === "string" && body.language) || DEFAULT_LANGUAGE,
         count: countToUse,
         wordLimit: safeWordLimit,
         hook: safeHook,

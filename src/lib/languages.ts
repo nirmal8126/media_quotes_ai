@@ -3,6 +3,8 @@ export type LanguageOption = {
   label: string;
 };
 
+export const DEFAULT_LANGUAGE = "hi";
+
 export const languageOptions: LanguageOption[] = [
   { code: "en", label: "English" },
   { code: "hi", label: "Hindi" },
@@ -31,13 +33,13 @@ export const languageOptions: LanguageOption[] = [
 
 export function resolveLanguageCode(input?: string | null) {
   const normalized = (input ?? "").trim().toLowerCase();
-  if (!normalized || normalized === "choose a language...") return "en";
+  if (!normalized || normalized === "choose a language...") return DEFAULT_LANGUAGE;
 
   const direct = languageOptions.find((lang) => lang.code.toLowerCase() === normalized);
   if (direct) return direct.code;
 
   const byLabel = languageOptions.find((lang) => lang.label.toLowerCase() === normalized);
-  return byLabel?.code ?? "en";
+  return byLabel?.code ?? DEFAULT_LANGUAGE;
 }
 
 export function labelForLanguage(input?: string | null) {

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import { labelForLanguage } from "@/lib/languages";
+import { DEFAULT_LANGUAGE, labelForLanguage } from "@/lib/languages";
 import { cn } from "@/lib/utils";
 import { createPortal } from "react-dom";
 
@@ -226,7 +226,7 @@ export default function AiVideoEditorClient() {
           sceneIndex: scene.sceneIndex,
           script: scene.script,
           prompt: sectionPrompt || scene.script,
-          language: project?.language ?? "en",
+          language: project?.language ?? DEFAULT_LANGUAGE,
         }),
       });
       const body = await res.json().catch(() => ({}));
@@ -293,7 +293,7 @@ export default function AiVideoEditorClient() {
           </div>
           <p className="text-sm text-gray-600 dark:text-gray-400">
             {project.videoType === "shorts" ? "Shorts/Reel" : "Long-form"} •{" "}
-            {labelForLanguage(project.language) || project.language || "en"}
+            {labelForLanguage(project.language) || project.language || DEFAULT_LANGUAGE}
           </p>
         </div>
           <div className="flex flex-wrap items-center gap-2">

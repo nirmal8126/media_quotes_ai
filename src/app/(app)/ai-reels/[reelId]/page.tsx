@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
-import { labelForLanguage } from "@/lib/languages";
+import { DEFAULT_LANGUAGE, labelForLanguage } from "@/lib/languages";
 
 type ReelDetail = {
   id: string;
@@ -172,7 +172,7 @@ export default function ReelDetailPage() {
                 </div>
                 <div>
                   <span className="font-semibold">Language:</span>{" "}
-                  {labelForLanguage(reel.language || "en")}
+                  {labelForLanguage(reel.language || DEFAULT_LANGUAGE)}
                 </div>
                 <div>
                   <span className="font-semibold">Duration:</span>{" "}
