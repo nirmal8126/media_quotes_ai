@@ -100,6 +100,45 @@ function buildDrawtextFilter(textFilePath) {
   return `drawtext=textfile='${escapedPath}':fontcolor=white:fontsize=48:line_spacing=16:x=(w-text_w)/2:y=(h-text_h)/2:box=1:boxcolor=black@0.45:boxborderw=24`;
 }
 
+function getAudioDurationSec(audioPath) {
+  if (!audioPath || !fs.existsSync(audioPath)) return null;
+  const probe = spawnSync(
+    "ffprobe",
+    ["-v", "error", "-show_entries", "format=duration", "-of", "default=nw=1:nk=1", audioPath],
+    { stdio: "pipe" },
+  );
+  if (probe.status !== 0 || !probe.stdout) return null;
+  const value = Number.parseFloat(probe.stdout.toString().trim());
+  return Number.isFinite(value) && value > 0 ? value : null;
+}
+
+function resolveAudioPath(input) {
+  if (!input) return null;
+  if (typeof input !== "string") return null;
+  const trimmed = input.trim();
+  if (!trimmed) return null;
+
+  if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+    try {
+      const parsed = new URL(trimmed);
+      if (parsed.pathname.startsWith("/media/")) {
+        const relative = decodeURIComponent(parsed.pathname.replace(/^\/media\//, ""));
+        return path.join(MEDIA_DIR, relative);
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  if (trimmed.startsWith("/media/")) {
+    return path.join(MEDIA_DIR, trimmed.replace(/^\/media\//, ""));
+  }
+
+  if (fs.existsSync(trimmed)) return trimmed;
+  return null;
+}
+
 async function handleRender(req, res, body) {
   if (!isAuthorized(req)) {
     return sendJson(res, 401, { error: "Unauthorized" });
@@ -134,7 +173,12 @@ async function handleRender(req, res, body) {
   const headline = truncateText(scriptText || "Your AI Reel", 160);
   const displayText = headline || "Your AI Reel";
 
-  const durationSec = Math.max(4, Math.min(Number(payload.durationSec || payload.duration || 8), 60));
+  const requestedDuration = Math.max(4, Math.min(Number(payload.durationSec || payload.duration || 8), 60));
+  const audioPath = resolveAudioPath(payload.audioUrl);
+  const audioDuration = getAudioDurationSec(audioPath);
+  const durationSec = audioDuration
+    ? Math.max(requestedDuration, Math.min(Math.round(audioDuration), 60))
+    : requestedDuration;
   const canRenderVideo = hasFfmpeg();
   if (!canRenderVideo) {
     return sendJson(res, 422, {
@@ -153,19 +197,49 @@ async function handleRender(req, res, body) {
         "lavfi",
         "-i",
         `color=c=0x111827:s=720x1280:d=${durationSec}`,
-        "-vf",
-        filter,
-        "-r",
-        "30",
-        "-c:v",
-        "libx264",
-        "-pix_fmt",
-        "yuv420p",
-        renderPath,
       ];
-      const ffmpegResult = spawnSync("ffmpeg", ffmpegArgs, { stdio: "ignore" });
+      if (audioPath && fs.existsSync(audioPath)) {
+        ffmpegArgs.push(
+          "-i",
+          audioPath,
+          "-vf",
+          filter,
+          "-r",
+          "30",
+          "-map",
+          "0:v:0",
+          "-map",
+          "1:a:0",
+          "-c:v",
+          "libx264",
+          "-c:a",
+          "aac",
+          "-b:a",
+          "128k",
+          "-pix_fmt",
+          "yuv420p",
+          "-shortest",
+          renderPath,
+        );
+      } else {
+        ffmpegArgs.push(
+          "-vf",
+          filter,
+          "-r",
+          "30",
+          "-c:v",
+          "libx264",
+          "-pix_fmt",
+          "yuv420p",
+          renderPath,
+        );
+      }
+      const ffmpegResult = spawnSync("ffmpeg", ffmpegArgs, { stdio: "pipe" });
       if (ffmpegResult.status !== 0) {
-        throw new Error("ffmpeg render failed");
+        const stderr = ffmpegResult.stderr ? ffmpegResult.stderr.toString() : "";
+        const stdout = ffmpegResult.stdout ? ffmpegResult.stdout.toString() : "";
+        console.error("[renderer] ffmpeg render failed", { audioPath, stderr, stdout });
+        throw new Error(`ffmpeg render failed${stderr ? `: ${stderr.trim()}` : ""}`);
       }
       await fs.promises.copyFile(renderPath, previewPath);
       const thumbResult = spawnSync(
