@@ -549,64 +549,32 @@ async function generateScriptFromIdea(options: {
     if (channel.ctaDefault) channelLines.push(`Preferred CTA: ${channel.ctaDefault}`);
   }
 
-  const languageLabel = language ? labelForLanguage(language) : null;
-  const targetMin = Math.round(durationSec * 2.5);
-  const targetMax = Math.round(durationSec * 3.5);
-  const normalizedLang = (languageLabel || language || '').toLowerCase();
-  const isHindi = normalizedLang.includes('hindi') || normalizedLang === 'hi';
-  const closingLine = isHindi
-    ? 'आज से यह छोटी आदत अपनाइए और फर्क खुद महसूस कीजिए।'
-    : 'Start today and notice the difference.';
   const basePrompt = [
-    `Write a ${durationSec}-second vertical video script for ${platform}.`,
-    `Tone: ${tone}.`,
-    languageLabel ? `Language: ${languageLabel}.` : null,
-    `Idea: ${idea}.`,
-    'Keep it on-topic for the channel and avoid going off-theme.',
-    `Approx word count: ${targetMin}-${targetMax} words.`,
-    'Write a single continuous script (no bullet points, no markdown, no emojis).',
-    'End with a clear closing sentence.',
-    'Return the script as plain text.',
+    'Generate a COMPLETE Hindi voiceover script.',
+    '',
+    `Topic: ${idea}`,
+    `Target duration: ${durationSec} seconds`,
+    '',
+    'Rules:',
+    '- Single continuous paragraph',
+    '- No bullet points',
+    '- No markdown',
+    '- No emojis',
+    '- No truncation',
+    '- Must end with a full sentence',
+    '- Approx length:',
+    '  15s ≈ 40–50 words',
+    '  30s ≈ 90–110 words',
+    '  45s ≈ 140–160 words',
+    '',
+    'Return ONLY the script text.',
     ...channelLines,
   ]
     .filter(Boolean)
-    .join(' ');
+    .join('\n');
 
-  const text = await generateCompletion(basePrompt, { temperature: 0.65, maxTokens: 650, provider });
-  let cleaned = normalizeText(text);
-  const wordCount = cleaned ? cleaned.split(/\s+/).filter(Boolean).length : 0;
-  const endsCleanly = cleaned ? /[.!?।]\s*$/.test(cleaned) : false;
-  if (!cleaned || wordCount < targetMin || !endsCleanly) {
-    const retryPrompt = [
-      basePrompt,
-      `Ensure the script is between ${targetMin} and ${targetMax} words.`,
-      'Do not truncate the ending.',
-    ]
-      .filter(Boolean)
-      .join(' ');
-    const retryText = await generateCompletion(retryPrompt, { temperature: 0.6, maxTokens: 800, provider });
-    cleaned = normalizeText(retryText);
-  }
-  const retryWordCount = cleaned ? cleaned.split(/\s+/).filter(Boolean).length : 0;
-  const retryEndsCleanly = cleaned ? /[.!?।]\s*$/.test(cleaned) : false;
-  if (cleaned && (!retryEndsCleanly || retryWordCount < targetMin)) {
-    const continuationPrompt = [
-      `Continue and complete this script in ${languageLabel || 'the same language'} without repeating.`,
-      `Keep total length around ${targetMin}-${targetMax} words and end with a clear closing sentence.`,
-      `Script so far: ${cleaned}`,
-      'Return only the continuation text.',
-    ].join(' ');
-    const continuation = normalizeText(
-      await generateCompletion(continuationPrompt, { temperature: 0.6, maxTokens: 500, provider }),
-    );
-    if (continuation) {
-      cleaned = `${cleaned} ${continuation}`.trim();
-    }
-  }
-  const finalEndsCleanly = cleaned ? /[.!?।]\s*$/.test(cleaned) : false;
-  if (cleaned && !finalEndsCleanly) {
-    cleaned = `${cleaned} ${closingLine}`.trim();
-  }
+  const text = await generateCompletion(basePrompt, { temperature: 0.6, maxTokens: 800, provider });
+  const cleaned = normalizeText(text);
   if (!cleaned) {
     throw new HttpError('AI did not return a script. Try again with a clearer idea.', 500);
   }

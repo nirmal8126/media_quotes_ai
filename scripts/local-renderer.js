@@ -310,6 +310,8 @@ async function handleRender(req, res, body) {
       ];
       if (audioPath && fs.existsSync(audioPath)) {
         ffmpegArgs.push(
+          "-stream_loop",
+          "-1",
           "-i",
           audioPath,
           "-vf",
@@ -319,7 +321,9 @@ async function handleRender(req, res, body) {
           "-map",
           "0:v:0",
           "-map",
-          "1:a:0",
+          "[a]",
+          "-filter_complex",
+          "[1:a]aresample=async=1,apad[a]",
           "-c:v",
           "libx264",
           "-c:a",
@@ -328,8 +332,6 @@ async function handleRender(req, res, body) {
           "128k",
           "-pix_fmt",
           "yuv420p",
-          "-af",
-          `apad=pad_dur=${durationSec}`,
           "-t",
           `${durationSec}`,
           renderPath,

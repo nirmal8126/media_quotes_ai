@@ -15,8 +15,17 @@ type TriggerInput = {
 
 export async function triggerRenderer(input: TriggerInput): Promise<VideoRenderJob> {
   try {
+    const scriptText = input.scriptText || "";
+    if (!scriptText || scriptText.trim().length < 200) {
+      throw new Error("QC_FAIL: Script too short or incomplete");
+    }
+    const lastChar = scriptText.trim().slice(-1);
+    if (!["।", ".", "!", "?"].includes(lastChar)) {
+      throw new Error("QC_FAIL: Script truncated (bad ending)");
+    }
     const withVoiceover = input.withVoiceover !== false;
     let audioUrl: string | null = null;
+    let ttsAudioPath: string | null = null;
     if (withVoiceover && process.env.TTS_PROVIDER_API_KEY) {
       const voiceId = process.env.TTS_VOICE_DEFAULT || "";
       try {
@@ -25,6 +34,7 @@ export async function triggerRenderer(input: TriggerInput): Promise<VideoRenderJ
           voiceId,
           apiKey: process.env.TTS_PROVIDER_API_KEY,
         });
+        ttsAudioPath = audioUrl;
         if (!audioUrl) {
           return {
             jobId: `tts_${Date.now()}`,
@@ -51,6 +61,9 @@ export async function triggerRenderer(input: TriggerInput): Promise<VideoRenderJ
           error: (error as Error).message || "Voiceover generation failed",
         };
       }
+    }
+    if (withVoiceover && !ttsAudioPath) {
+      throw new Error("TTS failed — aborting reel generation");
     }
     const result = await renderVideo({
       scriptText: input.scriptText,
