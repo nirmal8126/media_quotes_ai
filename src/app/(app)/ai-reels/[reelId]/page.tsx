@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
+import { labelForLanguage } from "@/lib/languages";
 
 type ReelDetail = {
   id: string;
@@ -68,24 +69,6 @@ export default function ReelDetailPage() {
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.35em] text-primary">AI Reels</p>
           <h1 className="text-2xl font-bold text-dark dark:text-white">Reel details</h1>
-          <div className="mt-1 flex items-center gap-2 text-sm text-gray-6 dark:text-dark-6">
-            <span>{reel?.platform || "Platform"}</span>
-            {reel?.tone ? <span>• {reel.tone}</span> : null}
-            {reel?.status ? (
-              <span
-                className={cn(
-                  "rounded-full px-2 py-0.5 text-xs font-semibold",
-                  reel.status === "READY"
-                    ? "bg-green-100 text-green-700"
-                    : reel.status === "FAILED"
-                      ? "bg-red-100 text-red-700"
-                      : "bg-amber-100 text-amber-700",
-                )}
-              >
-                {reel.status}
-              </span>
-            ) : null}
-          </div>
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -129,20 +112,7 @@ export default function ReelDetailPage() {
       ) : (
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)]">
           <div className="space-y-4 rounded-2xl border border-gray-200 bg-white p-4 shadow-card-2 dark:border-white/10 dark:bg-gray-900">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary">Video preview</p>
-                <div className="text-sm text-gray-6 dark:text-dark-6">Status: {reel.status || "PENDING"}</div>
-              </div>
-              {reel.status === "RENDERING" ? (
-                <button
-                  onClick={() => void loadDetail()}
-                  className="rounded-lg border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-700 transition hover:border-primary hover:text-primary dark:border-white/10 dark:text-gray-200"
-                >
-                  Refresh
-                </button>
-              ) : null}
-            </div>
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary">Video preview</p>
 
             {reel.status === "FAILED" ? (
               <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
@@ -151,7 +121,7 @@ export default function ReelDetailPage() {
             ) : null}
 
             <div className="aspect-[9/16] w-full overflow-hidden rounded-xl border border-gray-100 bg-gray-100 dark:border-white/10 dark:bg-gray-950">
-              {reel.status === "READY" && reel.videoUrl ? (
+              {reel.videoUrl ? (
                 <video
                   key={reel.videoUrl}
                   src={reel.videoUrl}
@@ -160,33 +130,73 @@ export default function ReelDetailPage() {
                   preload="metadata"
                   className="w-full rounded-lg bg-black"
                 />
-              ) : reel.thumbnailUrl ? (
-                <img src={reel.thumbnailUrl} alt="Reel thumbnail" className="h-full w-full object-cover" />
               ) : (
                 <div className="flex h-full items-center justify-center text-sm text-gray-500 dark:text-gray-400">
-                  {reel.status === "RENDERING" ? "Rendering..." : "No preview yet."}
+                  {reel.status === "RENDERING" ? "Rendering..." : "No video yet."}
                 </div>
               )}
             </div>
-
-            {reel.videoUrl ? (
-              <a
-                href={reel.videoUrl}
-                download
-                className="inline-flex items-center justify-center rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700 transition hover:border-primary hover:text-primary dark:border-white/10 dark:text-gray-200"
-              >
-                Download video
-              </a>
-            ) : null}
           </div>
 
           <div className="space-y-4">
+            <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-card-2 dark:border-white/10 dark:bg-gray-900">
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary">Summary</p>
+              <div className="mt-3 grid grid-cols-2 gap-3 text-sm text-gray-7 dark:text-dark-7">
+                <div>
+                  <div className="text-xs uppercase text-gray-5 dark:text-dark-6">Platform</div>
+                  <div className="font-semibold">{reel.platform || "—"}</div>
+                </div>
+                <div>
+                  <div className="text-xs uppercase text-gray-5 dark:text-dark-6">Tone</div>
+                  <div className="font-semibold">{reel.tone || "—"}</div>
+                </div>
+                <div>
+                  <div className="text-xs uppercase text-gray-5 dark:text-dark-6">Language</div>
+                  <div className="font-semibold">{reel.language ? labelForLanguage(reel.language) : "—"}</div>
+                </div>
+                <div>
+                  <div className="text-xs uppercase text-gray-5 dark:text-dark-6">Duration</div>
+                  <div className="font-semibold">{reel.durationSec ? `${reel.durationSec}s` : "—"}</div>
+                </div>
+                <div>
+                  <div className="text-xs uppercase text-gray-5 dark:text-dark-6">Status</div>
+                  <div className="font-semibold">{reel.status || "—"}</div>
+                </div>
+                <div>
+                  <div className="text-xs uppercase text-gray-5 dark:text-dark-6">Created</div>
+                  <div className="font-semibold">
+                    {reel.createdAt ? new Date(reel.createdAt).toLocaleString() : "—"}
+                  </div>
+                </div>
+              </div>
+            </div>
+
             <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-card-2 dark:border-white/10 dark:bg-gray-900">
               <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary">Script</p>
               <div className="mt-2 whitespace-pre-wrap text-sm text-gray-7 dark:text-dark-7">
                 {reel.scriptText || "No script stored yet."}
               </div>
             </div>
+
+            {reel.caption ? (
+              <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-card-2 dark:border-white/10 dark:bg-gray-900">
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary">Caption</p>
+                <div className="mt-2 whitespace-pre-wrap text-sm text-gray-7 dark:text-dark-7">
+                  {reel.caption}
+                </div>
+              </div>
+            ) : null}
+
+            {reel.thumbnailUrl ? (
+              <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-card-2 dark:border-white/10 dark:bg-gray-900">
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary">Thumbnail</p>
+                <img
+                  src={reel.thumbnailUrl}
+                  alt="Reel thumbnail"
+                  className="mt-3 w-full rounded-xl border border-gray-100 object-cover dark:border-white/10"
+                />
+              </div>
+            ) : null}
           </div>
         </div>
       )}

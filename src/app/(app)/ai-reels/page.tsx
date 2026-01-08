@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
-import { DEFAULT_LANGUAGE, labelForLanguage, languageOptions, resolveLanguageCode } from "@/lib/languages";
+import { DEFAULT_LANGUAGE, languageOptions, resolveLanguageCode } from "@/lib/languages";
 import { useRouter } from "next/navigation";
 
 type ReelHistoryItem = {
@@ -20,12 +20,19 @@ type ReelHistoryItem = {
   scriptText?: string | null;
   inputPrompt?: string | null;
   channelId?: string | null;
+  durationSec?: number | null;
 };
 
 type Channel = {
   id: string;
   name: string;
   platform?: string | null;
+  tone?: string | null;
+  style?: string | null;
+  language?: string | null;
+  durationDefault?: number | null;
+  personaId?: string | null;
+  defaults?: Record<string, unknown> | null;
 };
 
 type Status =
@@ -57,7 +64,16 @@ const defaultForm = {
   durationSec: 15,
   withVoiceover: true,
   language: DEFAULT_LANGUAGE,
+  personaId: "",
 };
+
+function isEmptyField(value?: string | null) {
+  if (value === undefined || value === null) return true;
+  const trimmed = String(value).trim();
+  if (!trimmed) return true;
+  const normalized = trimmed.toLowerCase();
+  return normalized === "select" || normalized === "choose" || normalized === "default";
+}
 
 function ModalPortal({ children }: { children: React.ReactNode }) {
   if (typeof document === "undefined") return null;
@@ -74,8 +90,6 @@ export default function AiReelsPage() {
   const [channels, setChannels] = useState<Channel[]>([]);
   const [channelLoading, setChannelLoading] = useState(false);
   const [showModal, setShowModal] = useState(false);
-  const [languageQuery, setLanguageQuery] = useState(labelForLanguage(defaultForm.language));
-  const [showLanguageList, setShowLanguageList] = useState(false);
   const sortedHistory = useMemo(
     () =>
       [...history].sort((a, b) => {
@@ -86,26 +100,9 @@ export default function AiReelsPage() {
     [history],
   );
 
-  const filteredLanguages = useMemo(() => {
-    if (!showLanguageList) return [];
-    const term = (languageQuery || "").trim().toLowerCase();
-    if (!term || term === "choose a language...") return languageOptions;
-
-    const exactMatch = languageOptions.some(
-      (lang) => lang.label.toLowerCase() === term || lang.code.toLowerCase() === term
-    );
-    if (exactMatch) return languageOptions;
-
-    return languageOptions.filter(
-      (lang) => lang.label.toLowerCase().includes(term) || lang.code.toLowerCase().includes(term)
-    );
-  }, [languageQuery, showLanguageList]);
-
   const resetFormState = useCallback(() => {
     setStatus({ type: "idle" });
     setForm({ ...defaultForm });
-    setLanguageQuery(labelForLanguage(defaultForm.language));
-    setShowLanguageList(false);
   }, []);
 
   const loadHistory = useCallback(async () => {
@@ -164,22 +161,24 @@ export default function AiReelsPage() {
       type: "loading",
       message: "Generating script and starting render...",
     });
-    const languageValue = (form.language || languageQuery || "").trim();
-    const normalizedLanguage = languageValue ? resolveLanguageCode(languageValue) : undefined;
+    const normalizedLanguage = resolveLanguageCode(form.language);
     const payloadDuration = Number(form.durationSec) || 15;
     try {
       const res = await fetch("/api/reels/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          ...form,
           idea: form.idea,
+          scriptText: form.scriptText,
+          channelId: form.channelId || null,
+          platform: form.platform,
           language: normalizedLanguage,
-          tone: form.tone,
           template: form.template,
+          tone: form.tone,
           style: form.style,
-          channelId: form.channelId || undefined,
+          personaId: form.personaId || null,
           durationSec: payloadDuration,
+          withVoiceover: form.withVoiceover,
         }),
       });
       const body = await res.json().catch(() => ({}));
@@ -240,9 +239,10 @@ export default function AiReelsPage() {
             <table className="min-w-full text-left text-sm text-dark dark:text-dark-8">
               <thead className="bg-gray-1 text-xs font-semibold uppercase text-gray-6 dark:bg-dark-3 dark:text-dark-7">
                 <tr>
-                  <th className="px-4 py-3">Title</th>
+                  <th className="px-4 py-3">Thumbnail</th>
                   <th className="px-4 py-3">Platform</th>
                   <th className="px-4 py-3">Tone</th>
+                  <th className="px-4 py-3">Duration</th>
                   <th className="px-4 py-3">Status</th>
                   <th className="px-4 py-3">Created</th>
                   <th className="px-4 py-3 text-right">View</th>
@@ -252,7 +252,7 @@ export default function AiReelsPage() {
                 {sortedHistory.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={6}
+                      colSpan={7}
                       className="px-4 py-10 text-center text-gray-6 dark:text-dark-6"
                     >
                       No reels found.
@@ -265,20 +265,26 @@ export default function AiReelsPage() {
                       className="hover:bg-gray-1/60 align-top dark:hover:bg-dark-3/70"
                     >
                       <td className="px-4 py-3 text-sm text-gray-7 dark:text-dark-7">
-                        <div className="line-clamp-2 font-medium text-dark dark:text-dark-8">
-                          {item.inputPrompt?.trim()
-                            ? item.inputPrompt
-                            : item.scriptText?.trim()
-                              ? item.scriptText.split("\n")[0]
-                              : "Untitled"}
-                        </div>
-                        <div className="text-xs text-gray-6 dark:text-dark-6">ID: {item.id}</div>
+                        {item.thumbnailUrl ? (
+                          <img
+                            src={item.thumbnailUrl}
+                            alt="Reel thumbnail"
+                            className="h-16 w-12 rounded-md object-cover"
+                          />
+                        ) : (
+                          <div className="flex h-16 w-12 items-center justify-center rounded-md bg-gray-2 text-xs text-gray-6 dark:bg-dark-3 dark:text-dark-6">
+                            —
+                          </div>
+                        )}
                       </td>
                       <td className="px-4 py-3 align-top text-sm text-gray-7 dark:text-dark-7">
                         {item.platform || "—"}
                       </td>
                       <td className="px-4 py-3 align-top text-sm text-gray-7 dark:text-dark-7">
                         {item.tone || "—"}
+                      </td>
+                      <td className="px-4 py-3 align-top text-sm text-gray-7 dark:text-dark-7">
+                        {item.durationSec ? `${item.durationSec}s` : "—"}
                       </td>
                       <td className="px-4 py-3 align-top">
                         <span
@@ -388,10 +394,32 @@ export default function AiReelsPage() {
                   <select
                     className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm text-dark outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
                     value={form.channelId}
-                    onChange={(e) => setForm((prev) => ({ ...prev, channelId: e.target.value }))}
+                    onChange={(e) => {
+                      const nextId = e.target.value;
+                      const selected = channels.find((c) => c.id === nextId);
+                      setForm((prev) => {
+                        const next = { ...prev, channelId: nextId };
+                        if (selected) {
+                          if (isEmptyField(next.platform) && selected.platform) next.platform = selected.platform;
+                          if (isEmptyField(next.tone) && selected.tone) next.tone = selected.tone;
+                          if (isEmptyField(next.style) && selected.style) next.style = selected.style;
+                          if (isEmptyField(next.language) && selected.language) next.language = selected.language;
+                          if (!next.durationSec && selected.durationDefault) {
+                            next.durationSec = selected.durationDefault;
+                          }
+                          if (isEmptyField(next.personaId) && selected.personaId) next.personaId = selected.personaId;
+                          const templateDefault =
+                            typeof selected.defaults?.template === "string"
+                              ? (selected.defaults.template as string)
+                              : null;
+                          if (isEmptyField(next.template) && templateDefault) next.template = templateDefault;
+                        }
+                        return next;
+                      });
+                    }}
                     disabled={channelLoading}
                   >
-                    <option value="">No channel</option>
+                    <option value="">No channel (one-off)</option>
                     {channels.map((c) => (
                       <option key={c.id} value={c.id}>
                         {c.name} {c.platform ? `• ${c.platform}` : ""}
@@ -418,65 +446,22 @@ export default function AiReelsPage() {
                     ))}
                   </select>
                 </label>
-                <label className="relative block text-sm font-semibold text-dark dark:text-dark-7">
+                <label className="block text-sm font-semibold text-dark dark:text-dark-7">
                   <div className="flex items-center gap-2">
                     <span>Language</span>
                     <span className="text-xs font-normal text-gray-6 dark:text-dark-6">(English, Hindi, etc.)</span>
                   </div>
-                  <div className="relative mt-2">
-                    <input
-                      className="w-full rounded-lg border border-gray-3 bg-white px-4 pr-10 py-3 text-sm text-dark outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
-                      name="language"
-                      value={languageQuery}
-                      onFocus={() => setShowLanguageList(true)}
-                      onClick={() => setShowLanguageList(true)}
-                      onChange={(e) => {
-                        const next = e.target.value;
-                        setLanguageQuery(next);
-                        setForm((prev) => ({ ...prev, language: next }));
-                        setShowLanguageList(true);
-                      }}
-                      placeholder="Choose a language..."
-                      autoComplete="off"
-                      onBlur={() => {
-                        setTimeout(() => setShowLanguageList(false), 120);
-                      }}
-                    />
-                    <button
-                      type="button"
-                      aria-label="Show languages"
-                      onMouseDown={(ev) => {
-                        ev.preventDefault();
-                        setShowLanguageList((prev) => !prev);
-                      }}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 flex h-8 w-8 items-center justify-center rounded-md text-gray-6 transition hover:bg-gray-2 dark:text-dark-6 dark:hover:bg-dark-4"
-                    >
-                      ▼
-                    </button>
-                  </div>
-                  {showLanguageList && (
-                    <div className="absolute z-20 mt-1 max-h-56 w-full overflow-auto rounded-lg border border-gray-3 bg-white shadow-card-2 dark:border-stroke-dark dark:bg-dark-3">
-                      {filteredLanguages.length === 0 && (
-                        <div className="px-3 py-2 text-sm text-gray-6 dark:text-dark-6">No matches</div>
-                      )}
-                      {filteredLanguages.map((lang) => (
-                        <button
-                          type="button"
-                          key={`${lang.code}-${lang.label}`}
-                          className="flex w-full items-center justify-between px-3 py-2 text-left text-sm text-dark hover:bg-gray-1 dark:text-dark-8 dark:hover:bg-dark-4"
-                          onMouseDown={(ev) => {
-                            ev.preventDefault();
-                            setLanguageQuery(lang.label);
-                            setForm((prev) => ({ ...prev, language: lang.label }));
-                            setShowLanguageList(false);
-                          }}
-                        >
-                          <span>{lang.label}</span>
-                          <span className="text-xs text-gray-5 dark:text-dark-6">{lang.code.toUpperCase()}</span>
-                        </button>
-                      ))}
-                    </div>
-                  )}
+                  <select
+                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm text-dark outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+                    value={form.language}
+                    onChange={(e) => setForm((prev) => ({ ...prev, language: e.target.value }))}
+                  >
+                    {languageOptions.map((lang) => (
+                      <option key={lang.code} value={lang.code}>
+                        {lang.label}
+                      </option>
+                    ))}
+                  </select>
                 </label>
                 <label className="block text-sm font-semibold text-dark dark:text-dark-7">
                   <div className="flex items-center gap-2">
@@ -532,6 +517,18 @@ export default function AiReelsPage() {
                       </option>
                     ))}
                   </select>
+                </label>
+                <label className="block text-sm font-semibold text-dark dark:text-dark-7">
+                  <div className="flex items-center gap-2">
+                    <span>Persona ID (optional)</span>
+                    <span className="text-xs font-normal text-gray-6 dark:text-dark-6">(if you have one)</span>
+                  </div>
+                  <input
+                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm text-dark outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+                    placeholder="persona_123"
+                    value={form.personaId}
+                    onChange={(e) => setForm((prev) => ({ ...prev, personaId: e.target.value }))}
+                  />
                 </label>
                 <label className="block text-sm font-semibold text-dark dark:text-dark-7">
                   <div className="flex items-center gap-2">
@@ -593,8 +590,6 @@ export default function AiReelsPage() {
                     setShowModal(false);
                     setStatus({ type: "idle" });
                     setForm({ ...defaultForm });
-                    setLanguageQuery(labelForLanguage(defaultForm.language));
-                    setShowLanguageList(false);
                   }}
                   disabled={status.type === "loading"}
                 >

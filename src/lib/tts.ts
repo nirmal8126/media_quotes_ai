@@ -21,9 +21,11 @@ export async function synthesizeWithElevenLabs(options: TtsOptions): Promise<str
   const { text, voiceId, apiKey } = options;
   if (!apiKey || !voiceId || !text.trim()) return null;
 
-  const mediaDir = options.mediaDir || path.join(process.cwd(), 'renderer-media');
-  const mediaBase = options.mediaBaseUrl || `${process.env.MEDIA_CDN_BASE_URL || ''}` || '';
-  ensureDir(mediaDir);
+  const baseDir = options.mediaDir || process.env.MEDIA_DIR || path.join(process.cwd(), 'renderer-media');
+  const audioDir = path.join(baseDir, 'audio');
+  const mediaBase =
+    options.mediaBaseUrl || process.env.MEDIA_CDN_BASE_URL || 'http://localhost:4001/media';
+  ensureDir(audioDir);
 
   const url = `${ELEVEN_BASE}/${voiceId}?optimize_streaming_latency=0`;
   const res = await fetch(url, {
@@ -50,12 +52,12 @@ export async function synthesizeWithElevenLabs(options: TtsOptions): Promise<str
 
   const audioBuffer = Buffer.from(await res.arrayBuffer());
   const fileName = `tts-${Date.now()}.mp3`;
-  const filePath = path.join(mediaDir, fileName);
+  const filePath = path.join(audioDir, fileName);
   await fs.promises.writeFile(filePath, audioBuffer);
 
   if (!mediaBase) {
     return filePath; // fallback to file path if no CDN base
   }
 
-  return `${mediaBase.replace(/\/$/, '')}/${fileName}`;
+  return `${mediaBase.replace(/\/$/, '')}/audio/${fileName}`;
 }

@@ -1,3 +1,6 @@
+import fs from "node:fs";
+import path from "node:path";
+import { synthesizeWithElevenLabs } from "@/lib/tts";
 import { getVideoStatus, renderVideo } from "@/lib/video-providers/index";
 import type { VideoRenderJob } from "@/lib/video-providers/types";
 
@@ -12,15 +15,52 @@ type TriggerInput = {
 
 export async function triggerRenderer(input: TriggerInput): Promise<VideoRenderJob> {
   try {
+    const withVoiceover = input.withVoiceover !== false;
+    let audioUrl: string | null = null;
+    if (withVoiceover && process.env.TTS_PROVIDER_API_KEY) {
+      const voiceId = process.env.TTS_VOICE_DEFAULT || "";
+      try {
+        audioUrl = await synthesizeWithElevenLabs({
+          text: input.scriptText,
+          voiceId,
+          apiKey: process.env.TTS_PROVIDER_API_KEY,
+        });
+        if (!audioUrl) {
+          return {
+            jobId: `tts_${Date.now()}`,
+            status: "failed",
+            error: "Voiceover generation failed: no audio returned",
+          };
+        }
+        console.log("[reels] voiceover voiceId", voiceId || "missing");
+        console.log("[reels] voiceover audioUrl", audioUrl);
+        const providerName = (process.env.VIDEO_PROVIDER || "local_stub").trim().toLowerCase();
+        if (providerName === "local_stub") {
+          const mediaDir = process.env.MEDIA_DIR || path.join(process.cwd(), "renderer-media");
+          const mediaBase = process.env.MEDIA_CDN_BASE_URL || "http://localhost:4001/media";
+          const audioPath = audioUrl.startsWith(mediaBase)
+            ? path.join(mediaDir, audioUrl.replace(mediaBase, "").replace(/^\/+/, ""))
+            : null;
+          const exists = audioPath ? fs.existsSync(audioPath) : false;
+          console.log("[reels] voiceover file exists", exists);
+        }
+      } catch (error) {
+        return {
+          jobId: `tts_${Date.now()}`,
+          status: "failed",
+          error: (error as Error).message || "Voiceover generation failed",
+        };
+      }
+    }
     const result = await renderVideo({
       scriptText: input.scriptText,
       style: input.style ?? null,
       template: input.template ?? null,
       durationSec: input.durationSec,
       language: input.language ?? null,
-      withVoiceover: input.withVoiceover !== false,
+      withVoiceover,
       aspectRatio: "9:16",
-      audioUrl: null,
+      audioUrl,
       brand: null,
     });
     return result;

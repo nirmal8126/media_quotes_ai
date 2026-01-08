@@ -23,6 +23,7 @@ const MEDIA_BASE = process.env.MEDIA_CDN_BASE_URL || `http://localhost:${PORT}/m
 const MEDIA_DIR = path.join(__dirname, "..", "renderer-media");
 const RENDERS_DIR = path.join(MEDIA_DIR, "renders");
 const PREVIEWS_DIR = path.join(MEDIA_DIR, "previews");
+const AUDIO_DIR = path.join(MEDIA_DIR, "audio");
 
 function ensureDir(dirPath) {
   if (!fs.existsSync(dirPath)) {
@@ -235,6 +236,7 @@ async function handleRender(req, res, body) {
   ensureDir(MEDIA_DIR);
   ensureDir(RENDERS_DIR);
   ensureDir(PREVIEWS_DIR);
+  ensureDir(AUDIO_DIR);
 
   const jobId = `job_${Date.now()}`;
   const videoName = `${jobId}.mp4`;
@@ -280,6 +282,7 @@ async function handleRender(req, res, body) {
       last.durationMs += diff;
     }
   }
+  console.log("[renderer] durations", { requestedDuration, audioDuration, durationSec });
   const canRenderVideo = hasFfmpeg();
   if (!canRenderVideo) {
     return sendJson(res, 422, {
@@ -325,7 +328,10 @@ async function handleRender(req, res, body) {
           "128k",
           "-pix_fmt",
           "yuv420p",
-          "-shortest",
+          "-af",
+          `apad=pad_dur=${durationSec}`,
+          "-t",
+          `${durationSec}`,
           renderPath,
         );
       } else {
@@ -388,6 +394,8 @@ function serveMedia(req, res, pathname) {
       const mime =
         ext === ".mp4"
           ? "video/mp4"
+          : ext === ".mp3"
+          ? "audio/mpeg"
           : ext === ".jpg" || ext === ".jpeg"
           ? "image/jpeg"
           : ext === ".svg"
@@ -420,6 +428,7 @@ function requestHandler(req, res) {
 
 function start() {
   ensureDir(MEDIA_DIR);
+  ensureDir(AUDIO_DIR);
   const server = http.createServer(requestHandler);
   server.listen(PORT, () => {
     // eslint-disable-next-line no-console

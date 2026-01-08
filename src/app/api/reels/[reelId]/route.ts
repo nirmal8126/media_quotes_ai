@@ -95,19 +95,22 @@ export async function GET(request: Request, context: { params: Params } | { para
 
     let scriptText: string | null = null;
     let inputPrompt: string | null = null;
+    let scriptLanguage: string | null = null;
     if (data?.script_id) {
       const { data: scriptRow } = await supabaseAdmin
         .from("scripts")
-        .select("text, input_prompt")
+        .select("text, input_prompt, language")
         .eq("id", data.script_id)
         .maybeSingle();
       scriptText = scriptRow?.text ?? null;
       inputPrompt = scriptRow?.input_prompt ?? null;
+      scriptLanguage = scriptRow?.language ?? null;
     }
 
     const response = NextResponse.json({
       reel: {
         ...mapReelRow(data),
+        language: data.language ?? scriptLanguage ?? null,
         scriptText,
         inputPrompt,
       },

@@ -3,6 +3,7 @@ import { evaluateQuota, normalizePlanTier } from '@/lib/plan';
 import { generateCompletion, type LlmProvider } from '@/lib/openai';
 import { pickProvider } from '@/lib/llm-provider';
 import { getChannel, type ChannelRecord } from '@/lib/channel-service';
+import { labelForLanguage } from '@/lib/languages';
 import { getRendererStatus, triggerRenderer } from '@/lib/reels-pipeline';
 import type { User } from '@supabase/supabase-js';
 import type { PostgrestError } from '@supabase/supabase-js';
@@ -548,21 +549,64 @@ async function generateScriptFromIdea(options: {
     if (channel.ctaDefault) channelLines.push(`Preferred CTA: ${channel.ctaDefault}`);
   }
 
-  const prompt = [
+  const languageLabel = language ? labelForLanguage(language) : null;
+  const targetMin = Math.round(durationSec * 2.5);
+  const targetMax = Math.round(durationSec * 3.5);
+  const normalizedLang = (languageLabel || language || '').toLowerCase();
+  const isHindi = normalizedLang.includes('hindi') || normalizedLang === 'hi';
+  const closingLine = isHindi
+    ? 'आज से यह छोटी आदत अपनाइए और फर्क खुद महसूस कीजिए।'
+    : 'Start today and notice the difference.';
+  const basePrompt = [
     `Write a ${durationSec}-second vertical video script for ${platform}.`,
     `Tone: ${tone}.`,
-    language ? `Language: ${language}.` : null,
+    languageLabel ? `Language: ${languageLabel}.` : null,
     `Idea: ${idea}.`,
     'Keep it on-topic for the channel and avoid going off-theme.',
-    'Return the script as plain text with clear voiceover lines.',
-    'Avoid scene numbers; keep it concise and punchy.',
+    `Approx word count: ${targetMin}-${targetMax} words.`,
+    'Write a single continuous script (no bullet points, no markdown, no emojis).',
+    'End with a clear closing sentence.',
+    'Return the script as plain text.',
     ...channelLines,
   ]
     .filter(Boolean)
     .join(' ');
 
-  const text = await generateCompletion(prompt, { temperature: 0.65, maxTokens: 500, provider });
-  const cleaned = normalizeText(text);
+  const text = await generateCompletion(basePrompt, { temperature: 0.65, maxTokens: 650, provider });
+  let cleaned = normalizeText(text);
+  const wordCount = cleaned ? cleaned.split(/\s+/).filter(Boolean).length : 0;
+  const endsCleanly = cleaned ? /[.!?।]\s*$/.test(cleaned) : false;
+  if (!cleaned || wordCount < targetMin || !endsCleanly) {
+    const retryPrompt = [
+      basePrompt,
+      `Ensure the script is between ${targetMin} and ${targetMax} words.`,
+      'Do not truncate the ending.',
+    ]
+      .filter(Boolean)
+      .join(' ');
+    const retryText = await generateCompletion(retryPrompt, { temperature: 0.6, maxTokens: 800, provider });
+    cleaned = normalizeText(retryText);
+  }
+  const retryWordCount = cleaned ? cleaned.split(/\s+/).filter(Boolean).length : 0;
+  const retryEndsCleanly = cleaned ? /[.!?।]\s*$/.test(cleaned) : false;
+  if (cleaned && (!retryEndsCleanly || retryWordCount < targetMin)) {
+    const continuationPrompt = [
+      `Continue and complete this script in ${languageLabel || 'the same language'} without repeating.`,
+      `Keep total length around ${targetMin}-${targetMax} words and end with a clear closing sentence.`,
+      `Script so far: ${cleaned}`,
+      'Return only the continuation text.',
+    ].join(' ');
+    const continuation = normalizeText(
+      await generateCompletion(continuationPrompt, { temperature: 0.6, maxTokens: 500, provider }),
+    );
+    if (continuation) {
+      cleaned = `${cleaned} ${continuation}`.trim();
+    }
+  }
+  const finalEndsCleanly = cleaned ? /[.!?।]\s*$/.test(cleaned) : false;
+  if (cleaned && !finalEndsCleanly) {
+    cleaned = `${cleaned} ${closingLine}`.trim();
+  }
   if (!cleaned) {
     throw new HttpError('AI did not return a script. Try again with a clearer idea.', 500);
   }
@@ -635,6 +679,7 @@ async function insertScriptRecord(payload: {
         channel_id: payload.channelId || null,
         persona_id: payload.personaId || null,
         platform: payload.platform || null,
+        language: payload.language || null,
         tone: payload.tone || null,
         style: payload.style || null,
         duration_sec: payload.durationSec ?? null,
@@ -643,7 +688,15 @@ async function insertScriptRecord(payload: {
         created_at: now,
         updated_at: now,
       };
-      const retry = await supabaseAdmin.from('scripts').insert(trimmed).select('*').maybeSingle();
+      let retry = await supabaseAdmin.from('scripts').insert(trimmed).select('*').maybeSingle();
+      if (retry.error && (retry.error.message || '').toLowerCase().includes('language')) {
+        const { language, ...trimmedWithoutLanguage } = trimmed;
+        retry = await supabaseAdmin
+          .from('scripts')
+          .insert(trimmedWithoutLanguage)
+          .select('*')
+          .maybeSingle();
+      }
       if (!retry.error && retry.data) {
         data = retry.data;
         error = null;
@@ -737,6 +790,7 @@ async function insertReelRecord(payload: {
         channel_id: payload.channelId || null,
         persona_id: payload.personaId || null,
         platform: payload.platform || null,
+        language: payload.language || null,
         tone: payload.tone || null,
         style: payload.style || null,
         duration_sec: payload.durationSec ?? null,
@@ -748,7 +802,15 @@ async function insertReelRecord(payload: {
         created_at: now,
         updated_at: now,
       };
-      const retry = await supabaseAdmin.from('reels').insert(trimmed).select('*').maybeSingle();
+      let retry = await supabaseAdmin.from('reels').insert(trimmed).select('*').maybeSingle();
+      if (retry.error && (retry.error.message || '').toLowerCase().includes('language')) {
+        const { language, ...trimmedWithoutLanguage } = trimmed;
+        retry = await supabaseAdmin
+          .from('reels')
+          .insert(trimmedWithoutLanguage)
+          .select('*')
+          .maybeSingle();
+      }
       if (!retry.error && retry.data) {
         data = retry.data;
         error = null;
