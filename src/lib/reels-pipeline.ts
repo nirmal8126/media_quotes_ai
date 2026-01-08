@@ -1,4 +1,4 @@
-import { getVideoStatus, renderVideo } from "@/lib/video-providers";
+import { getVideoStatus, renderVideo } from "@/lib/video-providers/index";
 import type { VideoRenderJob } from "@/lib/video-providers/types";
 
 type TriggerInput = {
