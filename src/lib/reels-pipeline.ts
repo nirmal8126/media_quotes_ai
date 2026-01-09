@@ -13,15 +13,33 @@ type TriggerInput = {
   withVoiceover?: boolean;
 };
 
+function minCharsForDuration(durationSec: number) {
+  if (durationSec <= 15) return 120;
+  if (durationSec <= 30) return 220;
+  if (durationSec <= 45) return 320;
+  return Math.round(durationSec * 7);
+}
+
 export async function triggerRenderer(input: TriggerInput): Promise<VideoRenderJob> {
   try {
     const scriptText = input.scriptText || "";
-    if (!scriptText || scriptText.trim().length < 200) {
-      throw new Error("QC_FAIL: Script too short or incomplete");
+    const qcText = scriptText
+      .split(/\r?\n/)
+      .filter((line) => !line.trim().toLowerCase().startsWith("cta:"))
+      .join("\n")
+      .trim();
+    const durationSec = input.durationSec || 15;
+    const minChars = minCharsForDuration(durationSec);
+
+    if (!qcText || qcText.length < minChars) {
+      throw new Error(
+        `QC_FAIL: Script too short or incomplete (len=${qcText.length}, min=${minChars})`,
+      );
     }
-    const lastChar = scriptText.trim().slice(-1);
+
+    const lastChar = qcText.slice(-1);
     if (!["।", ".", "!", "?"].includes(lastChar)) {
-      throw new Error("QC_FAIL: Script truncated (bad ending)");
+      throw new Error(`QC_FAIL: Script truncated (bad ending: "${lastChar}")`);
     }
     const withVoiceover = input.withVoiceover !== false;
     let audioUrl: string | null = null;

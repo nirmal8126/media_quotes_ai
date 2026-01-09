@@ -42,12 +42,12 @@ type Status =
   | { type: "success"; message: string };
 
 const platforms = [
-  "INSTAGRAM",
-  "TIKTOK",
-  "YOUTUBE",
-  "YOUTUBE_SHORTS",
-  "FACEBOOK",
-  "LINKEDIN",
+  { value: "YOUTUBE_SHORTS", label: "YouTube Shorts" },
+  { value: "YOUTUBE", label: "YouTube" },
+  { value: "INSTAGRAM", label: "Instagram" },
+  { value: "TIKTOK", label: "TikTok" },
+  { value: "FACEBOOK", label: "Facebook" },
+  { value: "LINKEDIN", label: "LinkedIn" },
 ];
 const tones = ["motivational", "educational", "funny", "dramatic", "emotional"];
 const styles = ["cinematic", "minimal", "aesthetic", "bold", "fast-cut", "cartoon"];
@@ -57,7 +57,7 @@ const defaultForm = {
   idea: "",
   scriptText: "",
   channelId: "",
-  platform: "INSTAGRAM",
+  platform: "YOUTUBE_SHORTS",
   tone: "motivational",
   template: "cinematic",
   style: "cinematic",
@@ -440,8 +440,8 @@ export default function AiReelsPage() {
                     }
                   >
                     {platforms.map((p) => (
-                      <option key={p} value={p}>
-                        {p}
+                      <option key={p.value} value={p.value}>
+                        {p.label}
                       </option>
                     ))}
                   </select>
