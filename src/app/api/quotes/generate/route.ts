@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { requireUser } from "@/lib/api-auth";
-import { DEFAULT_LANGUAGE } from "@/lib/languages";
+import { DEFAULT_LANGUAGE, resolveLanguageCode } from "@/lib/languages";
 import { enforceQuoteLimits, generateQuotesList, storeQuotePack } from "@/lib/quote-service";
 import { pickProvider } from "@/lib/llm-provider";
 import { defaultProvider } from "@/lib/openai";
@@ -17,6 +17,13 @@ type QuotePayload = {
   quoteType?: 'text' | 'image';
   provider?: 'openai' | 'gemini';
 };
+
+function resolveLanguage(input?: string | null) {
+  if (!input) return DEFAULT_LANGUAGE;
+  const normalized = input.trim();
+  if (!normalized) return DEFAULT_LANGUAGE;
+  return resolveLanguageCode(normalized) || DEFAULT_LANGUAGE;
+}
 
 export async function POST(request: Request) {
   const body = (await request.json().catch(() => ({}))) as QuotePayload;
@@ -35,22 +42,35 @@ export async function POST(request: Request) {
   const safeQuoteType = body.quoteType === 'image' ? 'image' : 'text';
   const provider = pickProvider({ bodyProvider: body.provider, user, fallback: defaultProvider });
 
-  const generated = await generateQuotesList({
-    topic: safeTopic,
-    tone: body.tone,
-    persona: body.persona,
-    language: body.language,
-    count: safeCount,
-    wordLimit: safeWordLimit,
-    hook: safeHook,
-    quoteType: safeQuoteType,
-    provider,
-  });
-  const quotes = enforceQuoteLimits(generated, {
-    count: safeCount,
-    quoteType: safeQuoteType,
-    wordLimit: safeWordLimit ?? null,
-  });
+  const resolvedLanguage = resolveLanguage(body.language);
+  let quotes: string[] = [];
+  try {
+    const generated = await generateQuotesList({
+      topic: safeTopic,
+      tone: body.tone,
+      persona: body.persona,
+      language: resolvedLanguage,
+      style: body.style,
+      count: safeCount,
+      wordLimit: safeWordLimit,
+      hook: safeHook,
+      quoteType: safeQuoteType,
+      provider,
+    });
+    quotes = enforceQuoteLimits(generated, {
+      count: safeCount,
+      quoteType: safeQuoteType,
+      wordLimit: safeWordLimit ?? null,
+    });
+  } catch (error) {
+    console.error("Quote generation failed", error);
+    const response = NextResponse.json(
+      { error: "Quote generation failed. Please try again." },
+      { status: 500 },
+    );
+    applyCookies(response);
+    return response;
+  }
   const imageQuotes = safeQuoteType === 'image' ? quotes.map((text: string) => ({ text })) : null;
 
   try {
@@ -59,7 +79,7 @@ export async function POST(request: Request) {
       topic: safeTopic,
       persona: body.persona ?? null,
       tone: body.tone ?? null,
-      language: body.language ?? DEFAULT_LANGUAGE,
+      language: resolvedLanguage,
       style: body.style ?? null,
       quote_type: safeQuoteType,
       hook: safeHook ?? null,

@@ -259,6 +259,50 @@ type BackgroundChoice =
   | { type: "solid"; value: string }
   | { type: "gradient"; value: [string, string] };
 
+function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number) {
+  const paragraphs = text
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const lines: string[] = [];
+
+  const pushWrappedLine = (line: string) => {
+    if (!line) return;
+    if (ctx.measureText(line).width <= maxWidth) {
+      lines.push(line);
+      return;
+    }
+    let current = "";
+    for (const char of line) {
+      const test = `${current}${char}`;
+      if (ctx.measureText(test).width <= maxWidth || !current) {
+        current = test;
+      } else {
+        lines.push(current);
+        current = char;
+      }
+    }
+    if (current) lines.push(current);
+  };
+
+  paragraphs.forEach((paragraph) => {
+    const words = paragraph.split(/\s+/).filter(Boolean);
+    let current = "";
+    words.forEach((word) => {
+      const test = current ? `${current} ${word}` : word;
+      if (ctx.measureText(test).width <= maxWidth) {
+        current = test;
+      } else {
+        if (current) pushWrappedLine(current);
+        current = word;
+      }
+    });
+    if (current) pushWrappedLine(current);
+  });
+
+  return lines.length ? lines : [text];
+}
+
 async function generateImageQuotePng(options: {
   text: string;
   background: BackgroundChoice;
@@ -313,15 +357,20 @@ async function generateImageQuotePng(options: {
   ctx.textAlign = options.style.textAlign;
   ctx.textBaseline = "middle";
 
-  const lines = text
-    .split(/\n+/)
-    .map((l) => l.trim())
-    .filter(Boolean);
+  const padding = canvas.width * 0.09;
+  const maxWidth = canvas.width - padding * 2;
+  const lines = wrapText(ctx, text, maxWidth);
 
   const lineHeight = options.style.fontSize * 1.4;
   const startY = canvas.height / 2 - ((lines.length - 1) * lineHeight) / 2;
+  const x =
+    options.style.textAlign === "left"
+      ? padding
+      : options.style.textAlign === "right"
+        ? canvas.width - padding
+        : canvas.width / 2;
   lines.forEach((line, index) => {
-    ctx.fillText(line, canvas.width / 2, startY + index * lineHeight);
+    ctx.fillText(line, x, startY + index * lineHeight);
   });
 
   const dataUrl = canvas.toDataURL("image/png");
@@ -355,6 +404,21 @@ function toHashtagTokens(value?: string | null) {
     .filter(Boolean);
 }
 
+function fallbackHashtags(row: QuoteRow) {
+  const tags = ["#quotes", "#motivation", "#mindset"];
+  const toneToken = toHashtagTokens(row.tone)[0];
+  if (toneToken) {
+    tags.push(`#${toneToken}`);
+  }
+  const language = (row.language || "").toLowerCase();
+  if (language.startsWith("hi")) {
+    tags.push("#hindi");
+  } else if (language.startsWith("en")) {
+    tags.push("#english");
+  }
+  return Array.from(new Set(tags));
+}
+
 function buildHashtags(row: QuoteRow) {
   const tokens = [
     ...toHashtagTokens(row.topic),
@@ -364,12 +428,12 @@ function buildHashtags(row: QuoteRow) {
     ...toHashtagTokens(row.language),
   ];
   const unique = Array.from(new Set(tokens)).filter(Boolean);
-  if (!unique.length) return [];
+  if (!unique.length) return fallbackHashtags(row);
   const base = unique.slice(0, 8).map((word) => {
     const clean = word.replace(/[^a-z0-9]/gi, "");
     return `#${clean || "quote"}`;
   });
-  return base;
+  return base.length ? base : fallbackHashtags(row);
 }
 
 export default function QuotesPage() {

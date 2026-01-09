@@ -42,6 +42,26 @@ function sanitizeQuoteText(input: unknown) {
   return text;
 }
 
+function insertLineBreaks(text: string) {
+  const words = text.split(/\s+/).filter(Boolean);
+  if (words.length < 3) return text;
+  const targetLines = Math.max(3, Math.min(6, Math.ceil(words.length / 4)));
+  const wordsPerLine = Math.max(3, Math.min(5, Math.ceil(words.length / targetLines)));
+  const lines: string[] = [];
+  let index = 0;
+
+  while (index < words.length) {
+    if (lines.length >= 5) {
+      lines.push(words.slice(index).join(' '));
+      break;
+    }
+    lines.push(words.slice(index, index + wordsPerLine).join(' '));
+    index += wordsPerLine;
+  }
+
+  return lines.join('\n');
+}
+
 function clipToWords(text: string, maxWords: number) {
   if (!maxWords || maxWords <= 0) return text;
   const parts = text.split(/(\s+)/);
@@ -72,7 +92,11 @@ function cleanQuotes(list: unknown[], limit: number, quoteType?: 'text' | 'image
         .replace(/\\"/g, '"') // decode escaped quotes
         .replace(/[",]+\s*$/g, '') // strip trailing quote/comma artifacts
         .trim();
-      return maxWords ? clipToWords(unescaped, maxWords) : unescaped;
+      const clipped = maxWords ? clipToWords(unescaped, maxWords) : unescaped;
+      if (!clipped.includes('\n')) {
+        return insertLineBreaks(clipped);
+      }
+      return clipped;
     });
   }
 
@@ -105,11 +129,28 @@ function ensureSentenceEnding(text: string) {
   return `${text.trim()}।`;
 }
 
+function stripEmojis(text: string) {
+  try {
+    return text.replace(/\p{Extended_Pictographic}/gu, '');
+  } catch {
+    return text;
+  }
+}
+
+function normalizeForDedupe(text: string) {
+  return stripEmojis(text)
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .replace(/[.!?।]+$/g, '')
+    .trim();
+}
+
 function dedupe(quotes: string[]) {
   const seen = new Set<string>();
   const out: string[] = [];
   quotes.forEach((q) => {
-    const key = q.toLowerCase();
+    const key = normalizeForDedupe(q);
+    if (!key) return;
     if (!seen.has(key)) {
       seen.add(key);
       out.push(q);
@@ -123,6 +164,7 @@ export async function generateQuotesList(options: {
   tone?: string;
   persona?: string;
   language?: string;
+  style?: string;
   count?: number;
   hook?: string;
   wordLimit?: number;
@@ -134,6 +176,7 @@ export async function generateQuotesList(options: {
     tone = 'motivational',
     persona,
     language = DEFAULT_LANGUAGE,
+    style,
     count = 10,
     hook,
     wordLimit,
@@ -145,6 +188,7 @@ export async function generateQuotesList(options: {
     maxWords && maxWords >= 8 ? Math.max(6, Math.min(maxWords - 10, Math.floor(maxWords * 0.85))) : maxWords ?? null;
 
   const personaLine = persona ? `Write in the persona/voice of: ${persona}.` : '';
+  const styleLine = style ? `Style: ${style}.` : '';
   const hookLine = hook ? `Anchor the ideas to this hook/angle: ${hook}.` : '';
   const wordLimitLine = maxWords
     ? `Each quote must be between ${minWords ?? maxWords} and ${maxWords} words (count words, not emojis). If you exceed ${maxWords} words, trim to ${maxWords}. Do not return fewer than ${minWords ?? maxWords} words.`
@@ -152,20 +196,19 @@ export async function generateQuotesList(options: {
 
   const formatLine =
     quoteType === 'image'
-      ? 'Format as overlay-friendly lines for quote images: use line breaks (\\n) to create 3-6 short lines, keep total words at the required count, use punchy visual language, and end with 1-2 fitting emojis.'
-      : 'Format as short text quotes at the required word count, and end with 1-2 fitting emojis.';
+      ? 'Format as overlay-friendly lines for quote images: use line breaks (\\n) to create 3-6 short lines, keep total words at the required count, and use punchy visual language.'
+      : 'Format as short text quotes at the required word count.';
 
-  const prompt = `Generate ${capped} short, shareable quotes about "${topic}" in a ${tone} tone. ${personaLine} ${hookLine} ${wordLimitLine} ${formatLine} Language: ${language}. Return JSON array of strings only.`;
+  const prompt = `Generate ${capped} short, shareable quotes about "${topic}" in a ${tone} tone. ${personaLine} ${styleLine} ${hookLine} ${wordLimitLine} ${formatLine} Language: ${language}. Do not use emojis. Return JSON array of strings only.`;
 
-  const strictPrompt = `Return exactly ${capped} distinct quotes as a pure JSON array of ${capped} strings (no keys). Each quote must be a complete sentence, end with punctuation, and be between ${minWords ?? maxWords ?? 8} and ${maxWords ?? 'concise'} words. Do not repeat quotes or rephrase the same idea. Cover different angles or sub-themes of the topic: "${topic}". Tone: ${tone}. Persona: ${persona ?? 'default'}. Language: ${language}. Do not include numbering or explanations.`;
-  const diversePrompt = `Generate ${capped} unique, non-repetitive quotes as a pure JSON array. Each quote must be a complete sentence, between ${minWords ?? maxWords ?? 8} and ${maxWords ?? 'concise'} words, and end with punctuation. Do NOT repeat wording. Vary angles (inspiration, challenge, empathy, action). Topic: "${topic}". Tone: ${tone}. Persona: ${persona ?? 'default'}. Language: ${language}.`;
+  const strictPrompt = `Return exactly ${capped} distinct quotes as a pure JSON array of ${capped} strings (no keys). Each quote must be a complete sentence, end with punctuation, and be between ${minWords ?? maxWords ?? 8} and ${maxWords ?? 'concise'} words. Do not repeat quotes or rephrase the same idea. Cover different angles or sub-themes of the topic: "${topic}". Tone: ${tone}. Style: ${style ?? 'default'}. Persona: ${persona ?? 'default'}. Language: ${language}. Do not include numbering or explanations. Do not use emojis.`;
+  const diversePrompt = `Generate ${capped} unique, non-repetitive quotes as a pure JSON array. Each quote must be a complete sentence, between ${minWords ?? maxWords ?? 8} and ${maxWords ?? 'concise'} words, and end with punctuation. Do NOT repeat wording. Vary angles (inspiration, challenge, empathy, action). Topic: "${topic}". Tone: ${tone}. Style: ${style ?? 'default'}. Persona: ${persona ?? 'default'}. Language: ${language}. Do not use emojis.`;
 
-  const generateAndClean = async (p: string) => {
-    const raw = await generateCompletion(p, { temperature: 0.8, maxTokens: 800, provider: options.provider });
+  const parseQuotes = (raw: string, limit: number) => {
     try {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) {
-        return cleanQuotes(parsed, capped, quoteType, maxWords).map(ensureSentenceEnding);
+        return cleanQuotes(parsed, limit, quoteType, maxWords).map(ensureSentenceEnding);
       }
     } catch {
       // fall through
@@ -174,13 +217,18 @@ export async function generateQuotesList(options: {
       .split(/\n+/)
       .map((line) => line.trim())
       .filter((line) => line.length > 0);
-    return cleanQuotes(split, capped, quoteType, maxWords).map(ensureSentenceEnding);
+    return cleanQuotes(split, limit, quoteType, maxWords).map(ensureSentenceEnding);
+  };
+
+  const generateAndClean = async (p: string, limit: number) => {
+    const raw = await generateCompletion(p, { temperature: 0.8, maxTokens: 800, provider: options.provider });
+    return parseQuotes(raw, limit);
   };
 
   let cleaned: string[] = [];
   const prompts = [prompt, strictPrompt, diversePrompt, strictPrompt];
   for (let attempt = 0; attempt < prompts.length; attempt += 1) {
-    cleaned = dedupe(await generateAndClean(prompts[attempt]));
+    cleaned = dedupe(await generateAndClean(prompts[attempt], capped));
 
     const hasTooFew = cleaned.length < capped;
     const tooShort =
@@ -188,7 +236,7 @@ export async function generateQuotesList(options: {
         ? cleaned.some((q) => countWords(q) < Math.max(6, Math.floor(maxWords * 0.8)))
         : false;
     const tooLong = maxWords != null ? cleaned.some((q) => countWords(q) > maxWords + 2) : false;
-    const hasDuplicates = cleaned.length !== new Set(cleaned.map((q) => q.toLowerCase())).size;
+    const hasDuplicates = cleaned.length !== new Set(cleaned.map(normalizeForDedupe)).size;
 
     if (!hasTooFew && !tooShort && !tooLong && !hasDuplicates) {
       break;
@@ -196,15 +244,41 @@ export async function generateQuotesList(options: {
   }
 
   if (cleaned.length < capped) {
-    const filler = cleaned.length ? cleaned : ['Quote'];
-    let counter = 1;
+    const missingCount = capped - cleaned.length;
+    const followupPrompt = `Generate ${missingCount} NEW quotes as a JSON array of strings only. Do not repeat any of these existing quotes: ${JSON.stringify(
+      cleaned,
+    )}. Topic: "${topic}". Tone: ${tone}. Style: ${style ?? 'default'}. Persona: ${persona ?? 'default'}. Language: ${language}. ${wordLimitLine} ${formatLine} Do not use emojis. Return JSON array of strings only.`;
+    const followup = await generateAndClean(followupPrompt, missingCount);
+    cleaned = dedupe([...cleaned, ...followup]);
+  }
+
+  if (cleaned.length < capped) {
+    const missingCount = capped - cleaned.length;
+    const followupPrompt = `Generate ${missingCount} NEW quotes as a JSON array of strings only. Do not repeat any of these existing quotes: ${JSON.stringify(
+      cleaned,
+    )}. Topic: "${topic}". Tone: ${tone}. Style: ${style ?? 'default'}. Persona: ${persona ?? 'default'}. Language: ${language}. ${wordLimitLine} ${formatLine} Do not use emojis. Return JSON array of strings only.`;
+    const followup = await generateAndClean(followupPrompt, missingCount);
+    cleaned = dedupe([...cleaned, ...followup]);
+  }
+
+  if (cleaned.length < capped) {
+    const base = cleaned[cleaned.length - 1] || (language.startsWith('hi') ? 'आज से बेहतर शुरू करो।' : 'Start better today.');
+    const prefixes = language.startsWith('hi') ? ['याद रखो:', 'आज से:', 'ध्यान रहे:'] : ['Remember:', 'Starting now:', 'Note this:'];
+    let index = 0;
     while (cleaned.length < capped) {
-      const base = filler[cleaned.length % filler.length] || filler[0];
-      const variant = `${base} (${counter}) — ${topic}`;
-      const padded = maxWords ? clipToWords(variant, maxWords) : variant;
-      cleaned.push(ensureSentenceEnding(padded));
-      counter += 1;
+      const prefix = prefixes[index % prefixes.length];
+      const combined = `${prefix} ${base}`.trim();
+      const clipped = maxWords ? clipToWords(combined, maxWords) : combined;
+      const padded = ensureSentenceEnding(clipped);
+      const deduped = dedupe([padded, ...cleaned]);
+      cleaned = deduped;
+      index += 1;
+      if (index > prefixes.length * 3) break;
     }
+  }
+
+  if (cleaned.length > capped) {
+    cleaned = cleaned.slice(0, capped);
   }
 
   return cleaned;

@@ -22,6 +22,26 @@ type UpdatePayload = {
   regenerate?: boolean;
 };
 
+function normalizeQuoteForDedupe(text: string) {
+  return text
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .replace(/[.!?।]+$/g, "")
+    .trim();
+}
+
+function dedupeQuotes(quotes: string[]) {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const quote of quotes) {
+    const key = normalizeQuoteForDedupe(quote);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(quote);
+  }
+  return out;
+}
+
 export async function PATCH(request: Request) {
   const session = await requireUser(request);
   if ("errorResponse" in session) {
@@ -35,6 +55,19 @@ export async function PATCH(request: Request) {
 
   if (!id) {
     const response = NextResponse.json({ error: "Quote id is required." }, { status: 400 });
+    applyCookies(response);
+    return response;
+  }
+
+  const { data: existing, error: existingError } = await supabaseAdmin
+    .from("quotes")
+    .select("id, quotes, quote_type, hook, word_limit, tone, persona, language, style")
+    .eq("id", id)
+    .eq("user_id", user.id)
+    .maybeSingle();
+
+  if (existingError || !existing) {
+    const response = NextResponse.json({ error: "Quote pack not found." }, { status: 404 });
     applyCookies(response);
     return response;
   }
@@ -61,11 +94,20 @@ export async function PATCH(request: Request) {
 
   const requestedCount =
     typeof body.count === "number" && Number.isFinite(body.count) ? Math.max(1, Math.min(Math.round(body.count), 5)) : null;
+  const existingCount = Array.isArray(existing.quotes) ? existing.quotes.length : 0;
   const shouldRegenerate =
-    Boolean(body.regenerate) || requestedCount !== null || Boolean(safeHook) || typeof safeWordLimit === "number";
+    Boolean(body.regenerate) ||
+    (requestedCount !== null && requestedCount !== existingCount) ||
+    (typeof safeHook === "string" && safeHook !== existing.hook) ||
+    (typeof safeWordLimit === "number" && safeWordLimit !== existing.word_limit) ||
+    safeQuoteType !== (existing.quote_type ?? "text") ||
+    (typeof body.style === "string" && body.style !== existing.style) ||
+    (typeof body.tone === "string" && body.tone !== existing.tone) ||
+    (typeof body.persona === "string" && body.persona !== existing.persona) ||
+    (typeof body.language === "string" && body.language !== existing.language);
 
   if (shouldRegenerate) {
-    const countToUse = requestedCount ?? 5;
+    const countToUse = requestedCount ?? (existingCount || 5);
     try {
       const topicText =
         typeof updates.topic === "string"
@@ -78,6 +120,7 @@ export async function PATCH(request: Request) {
         tone: (typeof body.tone === "string" && body.tone) || undefined,
         persona: (typeof body.persona === "string" && body.persona) || undefined,
         language: (typeof body.language === "string" && body.language) || DEFAULT_LANGUAGE,
+        style: (typeof body.style === "string" && body.style) || undefined,
         count: countToUse,
         wordLimit: safeWordLimit,
         hook: safeHook,
@@ -107,8 +150,9 @@ export async function PATCH(request: Request) {
       quoteType: safeQuoteType,
       wordLimit: safeWordLimit ?? null,
     });
-    updates.quotes = cleaned;
-    updates.image_quotes = safeQuoteType === "image" ? cleaned.map((text: string) => ({ text })) : null;
+    const deduped = dedupeQuotes(cleaned);
+    updates.quotes = deduped;
+    updates.image_quotes = safeQuoteType === "image" ? deduped.map((text: string) => ({ text })) : null;
   }
 
   if (Object.keys(updates).length === 0) {
