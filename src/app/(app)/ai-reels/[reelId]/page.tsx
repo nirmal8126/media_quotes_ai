@@ -78,6 +78,12 @@ export default function ReelDetailPage() {
             Refresh
           </button>
           <Link
+            href={`/ai-reels/${reelId}/publish`}
+            className="rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-white transition hover:bg-primary/90"
+          >
+            Publish
+          </Link>
+          <Link
             href="/ai-reels"
             className="rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700 transition hover:border-primary hover:text-primary dark:border-white/10 dark:text-gray-200"
           >
