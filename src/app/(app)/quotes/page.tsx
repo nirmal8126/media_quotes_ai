@@ -312,12 +312,22 @@ async function generateImageQuotePng(options: {
   returnFile?: boolean;
 }): Promise<void | File> {
   const { text, background, fileName = "quote.png", dimensions } = options;
+
+  // Ensure custom web fonts are loaded before measuring/wrapping
+  if (typeof document !== "undefined" && (document as any).fonts?.ready) {
+    try {
+      await (document as any).fonts.ready;
+    } catch {}
+  }
+
   const canvas = document.createElement("canvas");
   canvas.width = dimensions?.width ?? 1080;
   canvas.height = dimensions?.height ?? 1350;
+
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("Unable to create canvas context");
 
+  // ---------- Background ----------
   if (background.type === "texture") {
     const src = background.value || imageBackgrounds[0];
     const bg = await new Promise<HTMLImageElement>((resolve, reject) => {
@@ -344,35 +354,63 @@ async function generateImageQuotePng(options: {
     ctx.fillRect(0, 0, canvas.width, canvas.height);
   }
 
-  // Overlay gradient
-  const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
-  gradient.addColorStop(0, `rgba(0,0,0,${options.style.overlayOpacity})`);
-  gradient.addColorStop(1, `rgba(0,0,0,${options.style.overlayOpacity})`);
-  ctx.fillStyle = gradient;
+  // ---------- Overlay ----------
+  ctx.fillStyle = `rgba(0,0,0,${options.style.overlayOpacity})`;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  // Text styling
+  // ---------- Text ----------
   ctx.fillStyle = options.style.color;
-  ctx.font = `700 ${options.style.fontSize}px "${options.style.fontFamily}"`;
   ctx.textAlign = options.style.textAlign;
   ctx.textBaseline = "middle";
 
-  const padding = canvas.width * 0.09;
-  const maxWidth = canvas.width - padding * 2;
-  const lines = wrapText(ctx, text, maxWidth);
+  // Safe box (prevents top/bottom clipping)
+  const paddingX = canvas.width * 0.09;
+  const paddingY = canvas.height * 0.10;
+  const boxWidth = canvas.width - paddingX * 2;
+  const boxHeight = canvas.height - paddingY * 2;
 
-  const lineHeight = options.style.fontSize * 1.4;
-  const startY = canvas.height / 2 - ((lines.length - 1) * lineHeight) / 2;
-  const x =
-    options.style.textAlign === "left"
-      ? padding
-      : options.style.textAlign === "right"
-        ? canvas.width - padding
-        : canvas.width / 2;
-  lines.forEach((line, index) => {
-    ctx.fillText(line, x, startY + index * lineHeight);
+  const { fontSize, lines, lineHeight } = fitTextToBox({
+    ctx,
+    text,
+    boxWidth,
+    boxHeight,
+    fontFamily: options.style.fontFamily, // IMPORTANT: no quotes
+    fontWeight: 700,
+    startFontSize: options.style.fontSize,
+    minFontSize: 18,
+    lineHeightMult: 1.25,
   });
 
+  ctx.font = `700 ${fontSize}px ${options.style.fontFamily}`;
+
+  // Optional subtle shadow for readability
+  ctx.shadowColor = "rgba(0,0,0,0.45)";
+  ctx.shadowBlur = Math.max(6, Math.round(fontSize * 0.18));
+  ctx.shadowOffsetX = 0;
+  ctx.shadowOffsetY = 2;
+
+  const x =
+    options.style.textAlign === "left"
+      ? paddingX
+      : options.style.textAlign === "right"
+        ? canvas.width - paddingX
+        : canvas.width / 2;
+
+  const totalHeight = lines.length * lineHeight;
+  const startY = paddingY + (boxHeight - totalHeight) / 2 + lineHeight / 2;
+
+  lines.forEach((line, index) => {
+    const y = startY + index * lineHeight;
+    if (line) ctx.fillText(line, x, y); // keep blank lines as spacing
+  });
+
+  // Reset shadow (good practice)
+  ctx.shadowColor = "transparent";
+  ctx.shadowBlur = 0;
+  ctx.shadowOffsetX = 0;
+  ctx.shadowOffsetY = 0;
+
+  // ---------- Export ----------
   const dataUrl = canvas.toDataURL("image/png");
 
   if (options.returnFile) {
@@ -386,6 +424,7 @@ async function generateImageQuotePng(options: {
   link.click();
 }
 
+
 function fileToDataUrl(file: File) {
   return new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
@@ -394,6 +433,119 @@ function fileToDataUrl(file: File) {
     reader.readAsDataURL(file);
   });
 }
+
+function wrapTextLines(ctx: CanvasRenderingContext2D, text: string, maxWidth: number) {
+  const paragraphs = String(text)
+    .replace(/\r\n/g, "\n")
+    .split("\n")
+    .map((p) => p.trim());
+
+  const lines: string[] = [];
+
+  const pushLine = (line: string) => {
+    const trimmed = line.trim();
+    if (trimmed) lines.push(trimmed);
+  };
+
+  const breakLongWord = (word: string) => {
+    let current = "";
+    for (const ch of word) {
+      const test = current + ch;
+      if (ctx.measureText(test).width <= maxWidth || current.length === 0) {
+        current = test;
+      } else {
+        pushLine(current);
+        current = ch;
+      }
+    }
+    if (current) pushLine(current);
+  };
+
+  for (const paragraph of paragraphs) {
+    if (!paragraph) {
+      lines.push(""); // preserve blank line spacing
+      continue;
+    }
+
+    const words = paragraph.split(/\s+/).filter(Boolean);
+    let current = "";
+
+    for (const word of words) {
+      const test = current ? `${current} ${word}` : word;
+
+      if (ctx.measureText(test).width <= maxWidth) {
+        current = test;
+        continue;
+      }
+
+      if (current) pushLine(current);
+
+      if (ctx.measureText(word).width > maxWidth) {
+        breakLongWord(word);
+        current = "";
+      } else {
+        current = word;
+      }
+    }
+
+    if (current) pushLine(current);
+  }
+
+  return lines.length ? lines : [String(text)];
+}
+
+
+function fitTextToBox(options: {
+  ctx: CanvasRenderingContext2D;
+  text: string;
+  boxWidth: number;
+  boxHeight: number;
+  fontFamily: string;
+  fontWeight?: number | string;
+  startFontSize: number;
+  minFontSize: number;
+  lineHeightMult: number;
+}) {
+  const {
+    ctx,
+    text,
+    boxWidth,
+    boxHeight,
+    fontFamily,
+    fontWeight = 700,
+    startFontSize,
+    minFontSize,
+    lineHeightMult,
+  } = options;
+
+  let fontSize = startFontSize;
+  let lines: string[] = [];
+  let lineHeight = fontSize * lineHeightMult;
+
+  while (fontSize >= minFontSize) {
+    ctx.font = `${fontWeight} ${fontSize}px ${fontFamily}`;
+    lines = wrapTextLines(ctx, text, boxWidth);
+    lineHeight = fontSize * lineHeightMult;
+
+    const totalHeight = lines.length * lineHeight;
+
+    const tooWide = lines.some((l) => l && ctx.measureText(l).width > boxWidth);
+    if (totalHeight <= boxHeight && !tooWide) break;
+
+    fontSize -= 2;
+  }
+
+  if (fontSize < minFontSize) {
+    fontSize = minFontSize;
+    ctx.font = `${fontWeight} ${fontSize}px ${fontFamily}`;
+    lines = wrapTextLines(ctx, text, boxWidth);
+    lineHeight = fontSize * lineHeightMult;
+  }
+
+  return { fontSize, lines, lineHeight };
+}
+
+
 
 function toHashtagTokens(value?: string | null) {
   if (!value) return [];
@@ -1584,7 +1736,7 @@ export default function QuotesPage() {
             role="dialog"
             aria-modal="true"
           >
-            <div className="mt-4 max-h-[85vh] w-full max-w-5xl overflow-y-auto rounded-2xl bg-white p-6 shadow-card-2 dark:border dark:border-stroke-dark dark:bg-dark-2">
+            <div className="mt-4 max-h-[85vh] w-full max-w-5xl rounded-2xl bg-white p-6 shadow-card-2 dark:border dark:border-stroke-dark dark:bg-dark-2">
               <div className="mb-4 flex items-start justify-between gap-3">
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-[0.35em] text-primary">Quote pack</p>
@@ -1670,11 +1822,11 @@ export default function QuotesPage() {
               </button>
                 </div>
 
-                <div className="space-y-3 text-sm text-dark dark:text-dark-8">
+                <div className="max-h-[calc(85vh-120px)] space-y-3 overflow-y-auto text-sm text-dark dark:text-dark-8">
                   {detailRow.quotes && detailRow.quotes.length > 0 ? (
                     detailRow.quote_type === "image" ? (
-                      <div className="grid gap-4 md:grid-cols-[minmax(280px,320px)_1fr]">
-                        <div className="space-y-3 rounded-xl border border-gray-3 bg-gray-1 p-3 text-xs font-semibold text-dark shadow-sm dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8">
+                      <div className="grid gap-4 md:grid-cols-[1.4fr_1fr]">
+                        <div className="sticky top-3 h-fit space-y-3 rounded-xl border border-gray-3 bg-gray-1 p-3 text-xs font-semibold text-dark shadow-sm dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8">
                           <div className="space-y-1.5">
                             <p className="text-[11px] uppercase tracking-wide text-gray-6 dark:text-dark-6">Font</p>
                             <select
@@ -1972,17 +2124,20 @@ export default function QuotesPage() {
                             </div>
                           )}
 
-                          <div className="grid gap-3 md:grid-cols-2">
+                          <div className="flex flex-col gap-4">
                             {extractQuoteList(detailRow)
                               .filter(Boolean)
                               .map((q, idx) => (
                                 <div
                                   key={`${idx}-${q.slice(0, 12)}`}
-                                  className="relative overflow-hidden rounded-xl border border-gray-3 bg-gray-1 shadow-sm dark:border-stroke-dark dark:bg-dark-3"
+                                  className="relative w-full overflow-hidden rounded-xl border border-gray-3 bg-gray-1 shadow-sm dark:border-stroke-dark dark:bg-dark-3"
                                   style={{
                                     ...backgroundCss(imageStyle, detailRow.id),
                                     aspectRatio: `${previewDims.width}/${previewDims.height}`,
-                                    minHeight: "260px",
+                                    minHeight: `${Math.max(
+                                      160,
+                                      Math.round(320 * (previewDims.height / previewDims.width)),
+                                    )}px`,
                                   }}
                 >
                   <div className="absolute right-2 top-2 flex gap-1">
@@ -2069,7 +2224,7 @@ export default function QuotesPage() {
                                       )}
                                     </button>
                                   </div>
-                                  <div className="flex h-full items-center justify-center px-4 py-6 text-center">
+                                  <div className="flex h-full items-center px-4 py-6">
                                     <p
                                       className="whitespace-pre-line break-words text-base font-semibold leading-snug drop-shadow"
                                       style={{
@@ -2077,6 +2232,9 @@ export default function QuotesPage() {
                                         fontFamily: imageStyle.fontFamily,
                                         fontSize: imageStyle.fontSize,
                                         textAlign: imageStyle.textAlign,
+                                        width: "100%",
+                                        maxWidth: "82%",
+                                        margin: "0 auto",
                                       }}
                                     >
                                       {q}
