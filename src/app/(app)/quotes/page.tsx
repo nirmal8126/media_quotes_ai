@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 
@@ -589,6 +590,7 @@ function buildHashtags(row: QuoteRow) {
 }
 
 export default function QuotesPage() {
+  const searchParams = useSearchParams();
   const [quotes, setQuotes] = useState<QuoteRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -633,7 +635,9 @@ export default function QuotesPage() {
     gradientColors: ["#f97316", "#f43f5e"],
   });
   const topicInputRef = useRef<HTMLInputElement | null>(null);
+  const openedFromParam = useRef(false);
   const anyModalOpen = showModal || Boolean(detailRow) || Boolean(deleteRow);
+  const detailParam = searchParams.get("detail");
 
   useEffect(() => {
     if (anyModalOpen) {
@@ -681,6 +685,15 @@ export default function QuotesPage() {
     };
     fetchQuotes();
   }, []);
+
+  useEffect(() => {
+    if (!detailParam || detailRow || openedFromParam.current) return;
+    const match = quotes.find((row) => row.id === detailParam);
+    if (match) {
+      openedFromParam.current = true;
+      setDetailRow(match);
+    }
+  }, [detailParam, detailRow, quotes]);
 
   const previewDims = selectedDimensions();
 

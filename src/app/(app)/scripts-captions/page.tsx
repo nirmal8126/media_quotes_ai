@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 import type {
@@ -111,6 +112,7 @@ const defaultForm = {
 };
 
 export default function ScriptsCaptionsPage() {
+  const searchParams = useSearchParams();
   const [rows, setRows] = useState<ScriptRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -136,6 +138,8 @@ export default function ScriptsCaptionsPage() {
   const [page, setPage] = useState(1);
   
   const topicInputRef = useRef<HTMLInputElement | null>(null);
+  const openedFromParam = useRef(false);
+  const detailParam = searchParams.get("detail");
 
   const filteredLanguages = useMemo(() => {
     if (!showLanguageList) return [];
@@ -185,6 +189,15 @@ export default function ScriptsCaptionsPage() {
     };
     fetchRows();
   }, []);
+
+  useEffect(() => {
+    if (!detailParam || detailRow || openedFromParam.current) return;
+    const match = rows.find((row) => row.id === detailParam);
+    if (match) {
+      openedFromParam.current = true;
+      setDetailRow(match);
+    }
+  }, [detailParam, detailRow, rows]);
 
   useEffect(() => {
     if (showModal && topicInputRef.current) {

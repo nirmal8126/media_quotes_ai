@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 import { DEFAULT_LANGUAGE, labelForLanguage, languageOptions, resolveLanguageCode } from "@/lib/languages";
@@ -73,6 +74,7 @@ const defaultForm = {
 };
 
 export default function ChannelsPage() {
+  const searchParams = useSearchParams();
   const [channels, setChannels] = useState<Channel[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -88,6 +90,8 @@ export default function ChannelsPage() {
   const [page, setPage] = useState(1);
   const [languageQuery, setLanguageQuery] = useState(labelForLanguage(defaultForm.language));
   const [showLanguageList, setShowLanguageList] = useState(false);
+  const detailParam = searchParams.get("detail");
+  const openedFromParam = useRef(false);
 
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -169,6 +173,15 @@ export default function ChannelsPage() {
   useEffect(() => {
     void loadChannels();
   }, []);
+
+  useEffect(() => {
+    if (!detailParam || detailRow || openedFromParam.current) return;
+    const match = channels.find((row) => row.id === detailParam);
+    if (match) {
+      openedFromParam.current = true;
+      setDetailRow(match);
+    }
+  }, [channels, detailParam, detailRow]);
 
   const openCreate = () => {
     resetForm();
