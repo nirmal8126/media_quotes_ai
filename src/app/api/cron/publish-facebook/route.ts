@@ -30,15 +30,45 @@ type QuoteRecord = {
   id: string;
   topic: string | null;
   hook: string | null;
+  persona: string | null;
+  tone: string | null;
+  style: string | null;
+  language: string | null;
   quotes: string[] | null;
   image_quotes: Array<{ text?: string | null; image_url?: string | null }> | null;
 };
+
+function toHashtagTokens(value?: string | null) {
+  if (!value) return [];
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/gi, " ")
+    .split(/\s+/)
+    .filter(Boolean);
+}
+
+function buildHashtags(quote: QuoteRecord) {
+  const tokens = [
+    ...toHashtagTokens(quote.topic),
+    ...toHashtagTokens(quote.persona),
+    ...toHashtagTokens(quote.tone),
+    ...toHashtagTokens(quote.style),
+    ...toHashtagTokens(quote.language),
+  ];
+  const unique = Array.from(new Set(tokens)).filter(Boolean).slice(0, 8);
+  if (unique.length === 0) return [];
+  return unique.map((word) => `#${word.replace(/[^a-z0-9]/gi, "") || "quote"}`);
+}
 
 function resolveMessage(quote: QuoteRecord) {
   const imageQuote = quote.image_quotes?.find((item) => typeof item?.text === "string" && item.text.trim());
   const listQuote = quote.quotes?.find((item) => typeof item === "string" && item.trim());
   const raw = imageQuote?.text || listQuote || quote.hook || quote.topic || "";
-  return raw.trim();
+  const message = raw.trim();
+  if (!message) return message;
+  if (/#\w+/.test(message)) return message;
+  const tags = buildHashtags(quote);
+  return tags.length ? `${message}\n\n${tags.join(" ")}` : message;
 }
 
 function resolveImageUrl(quote: QuoteRecord) {
@@ -117,7 +147,7 @@ export async function POST(request: Request) {
 
       const { data: quote, error: quoteError } = await supabaseAdmin
         .from("quotes")
-        .select("id, topic, hook, quotes, image_quotes")
+        .select("id, topic, hook, persona, tone, style, language, quotes, image_quotes")
         .eq("id", job.quote_id)
         .eq("user_id", job.user_id)
         .maybeSingle();

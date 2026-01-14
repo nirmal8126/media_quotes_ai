@@ -55,7 +55,11 @@ export async function POST(request: Request) {
     .maybeSingle();
 
   if (jobError) {
-    const response = NextResponse.json({ error: "Unable to queue publish job." }, { status: 500 });
+    console.error("Failed to queue publish job", { message: jobError.message, details: jobError.details });
+    const response = NextResponse.json(
+      { error: jobError.message || "Unable to queue publish job." },
+      { status: 500 },
+    );
     session.applyCookies(response);
     return response;
   }

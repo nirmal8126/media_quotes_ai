@@ -70,7 +70,24 @@ export async function POST(request: Request) {
   const cookieStore = await cookies();
   const cookieValue = cookieStore.get(PAGES_COOKIE)?.value;
   if (!cookieValue) {
-    const response = NextResponse.json({ error: "No Facebook pages session found." }, { status: 400 });
+    const { data: existing, error } = await supabaseAdmin
+      .from("social_accounts")
+      .update({ updated_at: new Date().toISOString() })
+      .eq("user_id", session.user.id)
+      .eq("platform", "facebook")
+      .in("page_id", targets)
+      .select("page_id, page_name");
+
+    if (error || !existing || existing.length === 0) {
+      const response = NextResponse.json({ error: "Reconnect Facebook to select a page." }, { status: 400 });
+      session.applyCookies(response);
+      return response;
+    }
+
+    const response = NextResponse.json({
+      connected: true,
+      pages: existing.map((row) => ({ page_id: row.page_id, page_name: row.page_name })),
+    });
     session.applyCookies(response);
     return response;
   }

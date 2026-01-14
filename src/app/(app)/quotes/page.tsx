@@ -630,6 +630,10 @@ export default function QuotesPage() {
     null,
   );
   const [enabledPlatforms, setEnabledPlatforms] = useState<Record<string, boolean>>({});
+  const [fbSharePages, setFbSharePages] = useState<Array<{ id: string; name: string }>>([]);
+  const [fbSharePickerOpen, setFbSharePickerOpen] = useState(false);
+  const [fbShareQuoteId, setFbShareQuoteId] = useState<string | null>(null);
+  const [fbShareLoading, setFbShareLoading] = useState(false);
   const [search, setSearch] = useState("");
   const [pageSize, setPageSize] = useState(5);
   const [page, setPage] = useState(1);
@@ -990,6 +994,68 @@ export default function QuotesPage() {
       pushToast(message, "error");
     } finally {
       setPublishQueueingId((prev) => (prev === quoteId ? null : prev));
+    }
+  };
+
+  const markFacebookPageActive = async (pageId: string) => {
+    const res = await fetch("/api/social/facebook/select-page", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ page_id: pageId }),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(body?.error || "Unable to set Facebook page.");
+    }
+    return body;
+  };
+
+  const handleFacebookShareRequest = async (quoteId: string) => {
+    if (!facebookEnabled) {
+      pushToast("Facebook sharing is disabled.", "error");
+      return;
+    }
+    setFbShareLoading(true);
+    try {
+      const res = await fetch("/api/social/facebook/connected-pages", { cache: "no-store" });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(body?.error || "Connect Facebook first.");
+      }
+      const pages: Array<{ id: string; name: string }> = Array.isArray(body.pages)
+        ? body.pages
+            .map((page: { page_id?: string; page_name?: string | null }) => ({
+              id: String(page.page_id ?? ""),
+              name: page.page_name ?? "Untitled Page",
+            }))
+            .filter((page) => page.id)
+        : [];
+      if (pages.length === 0) {
+        window.location.href = "/settings/social";
+        return;
+      }
+      if (pages.length === 1) {
+        await markFacebookPageActive(pages[0].id);
+        await queuePublishToFacebook(quoteId);
+        const runRes = await fetch("/api/publish/run-now", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ quote_id: quoteId }),
+        });
+        const runBody = await runRes.json().catch(() => ({}));
+        if (!runRes.ok) {
+          throw new Error(runBody?.error || "Unable to publish now.");
+        }
+        pushToast(`Published to ${pages[0].name}`);
+        return;
+      }
+      setFbSharePages(pages);
+      setFbShareQuoteId(quoteId);
+      setFbSharePickerOpen(true);
+    } catch (err) {
+      pushToast((err as Error).message || "Connect Facebook first", "error");
+    } finally {
+      setFbShareLoading(false);
     }
   };
 
@@ -1913,15 +1979,15 @@ export default function QuotesPage() {
                   </div>
                 )}
               </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setDetailRow(null)}
-                  className="rounded-full bg-gray-1 px-3 py-1 text-sm font-semibold text-gray-7 hover:bg-gray-2 dark:bg-dark-3 dark:text-dark-7 dark:hover:bg-dark-4"
-                >
-                  Close
-                </button>
-              </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setDetailRow(null)}
+                    className="rounded-full bg-gray-1 px-3 py-1 text-sm font-semibold text-gray-7 hover:bg-gray-2 dark:bg-dark-3 dark:text-dark-7 dark:hover:bg-dark-4"
+                  >
+                    Close
+                  </button>
+                </div>
                 </div>
 
                 <div className="min-h-0 flex-1 space-y-3 overflow-y-auto text-sm text-dark dark:text-dark-8">
@@ -2268,17 +2334,17 @@ export default function QuotesPage() {
                                             >
                                               Device share
                                             </button>
-                                            {facebookEnabled && (
-                                              <button
-                                                type="button"
-                                                onClick={() => {
-                                                  setShareMenuId(null);
-                                                  postImageToFacebook(q, idx, detailRow.id);
-                                                }}
-                                                className="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left transition hover:bg-gray-1 dark:hover:bg-dark-3"
-                                              >
-                                                Facebook
-                                              </button>
+                                        {facebookEnabled && (
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              setShareMenuId(null);
+                                              handleFacebookShareRequest(detailRow.id);
+                                            }}
+                                            className="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left transition hover:bg-gray-1 dark:hover:bg-dark-3"
+                                          >
+                                            Facebook
+                                          </button>
                                             )}
                                             {instagramEnabled && (
                                               <button
@@ -2405,7 +2471,7 @@ export default function QuotesPage() {
                                             type="button"
                                             onClick={() => {
                                               setShareMenuId(null);
-                                              postTextToFacebook(q, idx);
+                                              handleFacebookShareRequest(detailRow.id);
                                             }}
                                             className="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left transition hover:bg-gray-1 dark:hover:bg-dark-3"
                                           >
@@ -2464,6 +2530,71 @@ export default function QuotesPage() {
                   ) : (
                     <p className="text-gray-6 dark:text-dark-6">No quotes available.</p>
                   )}
+              </div>
+            </div>
+          </div>
+        </ModalPortal>
+      )}
+
+      {fbSharePickerOpen && (
+        <ModalPortal>
+          <div
+            className="fixed inset-0 z-[20000] flex items-center justify-center bg-black/60 px-4 py-12"
+            role="dialog"
+            aria-modal="true"
+          >
+            <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-card-2 dark:border dark:border-stroke-dark dark:bg-dark-2">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.35em] text-primary">Facebook</p>
+                  <h2 className="text-lg font-bold text-dark dark:text-dark-8">Choose a Page</h2>
+                  <p className="text-sm text-gray-6 dark:text-dark-6">Select the page to publish this quote.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFbSharePickerOpen(false);
+                    setFbSharePages([]);
+                    setFbShareQuoteId(null);
+                  }}
+                  className="rounded-full bg-gray-1 px-3 py-1 text-sm font-semibold text-gray-7 hover:bg-gray-2 dark:bg-dark-3 dark:text-dark-7 dark:hover:bg-dark-4"
+                >
+                  Close
+                </button>
+              </div>
+              <div className="mt-4 space-y-2">
+                {fbSharePages.map((page) => (
+                  <button
+                    key={page.id}
+                    type="button"
+                    onClick={async () => {
+                      if (!fbShareQuoteId) return;
+                      try {
+                        await markFacebookPageActive(page.id);
+                        await queuePublishToFacebook(fbShareQuoteId);
+                        const runRes = await fetch("/api/publish/run-now", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ quote_id: fbShareQuoteId }),
+                        });
+                        const runBody = await runRes.json().catch(() => ({}));
+                        if (!runRes.ok) {
+                          throw new Error(runBody?.error || "Unable to publish now.");
+                        }
+                        pushToast(`Published to ${page.name}`);
+                        setFbSharePickerOpen(false);
+                        setFbSharePages([]);
+                        setFbShareQuoteId(null);
+                      } catch (err) {
+                        pushToast((err as Error).message || "Unable to publish", "error");
+                      }
+                    }}
+                    className="flex w-full items-center justify-between rounded-lg border border-gray-3 px-3 py-2 text-left text-sm font-semibold text-gray-7 transition hover:bg-gray-1 dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-7 dark:hover:bg-dark-4"
+                  >
+                    <span>{page.name}</span>
+                    <span className="text-xs text-gray-5">{page.id}</span>
+                  </button>
+                ))}
               </div>
             </div>
           </div>
