@@ -29,6 +29,17 @@ The project relies on several secrets (Supabase keys, OpenAI key, and payment pr
 
 The samples list all required variables: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `OPENAI_API_KEY`, `RAZORPAY_*`, `STRIPE_*`, and `NEXT_PUBLIC_SITE_URL`.
 
+### Social publish automation (Facebook)
+
+Add the following server-side variables to support Facebook publishing and the worker cron:
+
+- `FACEBOOK_APP_ID`, `FACEBOOK_APP_SECRET`, `FACEBOOK_REDIRECT_URI`
+- `FACEBOOK_GRAPH_VERSION` (defaults to `v19.0` if omitted)
+- `SUPABASE_SERVICE_ROLE_KEY` (worker uses admin access)
+- `CRON_SECRET` (required header for `/api/publish/worker`)
+
+The Vercel cron is configured in `web/vercel.json` to call `/api/publish/worker` every minute.
+
 ### Prisma
 
 This project now ships with Prisma configured against your Supabase database. After copying either example env file, set `DATABASE_URL` to the Supabase Postgres connection string (service role credentials are generally required).

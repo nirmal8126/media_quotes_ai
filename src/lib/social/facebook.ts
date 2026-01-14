@@ -96,6 +96,7 @@ export async function upsertSocialToken(token: SocialToken) {
   if (error) {
     throw new Error(error.message);
   }
+  await upsertSocialAccount(token);
   return data;
 }
 
@@ -254,4 +255,27 @@ export function missingFacebookConfigResponse() {
     { status: 500 },
   );
   return response;
+}
+
+async function upsertSocialAccount(token: SocialToken) {
+  const { error } = await supabaseAdmin
+    .from("social_accounts")
+    .upsert(
+      {
+        user_id: token.user_id,
+        platform: token.provider,
+        access_token: token.access_token,
+        refresh_token: token.refresh_token ?? null,
+        expires_at: token.expires_at ?? null,
+        page_id: token.page_id ?? null,
+        page_access_token: token.page_access_token ?? null,
+        metadata: token.metadata ?? null,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "user_id,platform" },
+    );
+
+  if (error) {
+    throw new Error(error.message);
+  }
 }

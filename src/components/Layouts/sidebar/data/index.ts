@@ -58,6 +58,12 @@ export const NAV_DATA = [
         icon: Icons.PieChart,
         items: [],
       },
+      {
+        title: "Social Integrations",
+        url: "/settings/social",
+        icon: Icons.Table,
+        items: [],
+      },
     ],
   },
 ];
@@ -106,6 +112,12 @@ export const ADMIN_NAV_DATA = [
         title: "Pricing / Plans",
         url: "/admin/plans",
         icon: Icons.PieChart,
+        items: [],
+      },
+      {
+        title: "Social Platforms",
+        url: "/admin/social-platforms",
+        icon: Icons.Table,
         items: [],
       },
     ],

@@ -30,7 +30,39 @@ export async function GET(request: Request) {
     return response;
   }
 
-  const response = NextResponse.json({ quotes: data ?? [] });
+  const quotes = data ?? [];
+  const quoteIds = quotes.map((row) => row.id).filter(Boolean);
+  let publishJobs: Record<
+    string,
+    { status: string; scheduled_at: string | null; updated_at: string | null; attempts: number | null; last_error: string | null }
+  > = {};
+
+  if (quoteIds.length > 0) {
+    const { data: jobs } = await supabaseAdmin
+      .from('publish_jobs')
+      .select('entity_id, status, scheduled_at, updated_at, attempts, last_error, created_at')
+      .eq('user_id', user.id)
+      .eq('entity_type', 'quote')
+      .in('entity_id', quoteIds)
+      .order('created_at', { ascending: false });
+
+    if (jobs) {
+      for (const job of jobs) {
+        const entityId = job.entity_id as string;
+        if (!publishJobs[entityId]) {
+          publishJobs[entityId] = {
+            status: job.status as string,
+            scheduled_at: job.scheduled_at ?? null,
+            updated_at: job.updated_at ?? job.created_at ?? null,
+            attempts: job.attempts ?? null,
+            last_error: job.last_error ?? null,
+          };
+        }
+      }
+    }
+  }
+
+  const response = NextResponse.json({ quotes, publishJobs });
   applyCookies(response);
   return response;
 }

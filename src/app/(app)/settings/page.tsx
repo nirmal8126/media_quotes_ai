@@ -2,6 +2,7 @@ import Breadcrumb from "@/components/Breadcrumbs/Breadcrumb";
 import type { Metadata } from "next";
 import { PersonalInfoForm } from "../pages/settings/_components/personal-info";
 import { UploadPhotoForm } from "../pages/settings/_components/upload-photo";
+import { SocialIntegrations } from "./_components/social-integrations";
 
 export const metadata: Metadata = {
   title: "Settings",
@@ -15,6 +16,9 @@ export default function SettingsPage() {
       <div className="grid grid-cols-5 gap-8">
         <div className="col-span-5 xl:col-span-3">
           <PersonalInfoForm />
+          <div className="mt-8">
+            <SocialIntegrations />
+          </div>
         </div>
         <div className="col-span-5 xl:col-span-2">
           <UploadPhotoForm />

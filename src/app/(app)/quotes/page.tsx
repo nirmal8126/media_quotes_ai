@@ -56,6 +56,14 @@ type QuoteRow = {
   created_at: string;
 };
 
+type PublishJobStatus = {
+  status: "queued" | "publishing" | "published" | "failed";
+  scheduled_at?: string | null;
+  updated_at?: string | null;
+  attempts?: number | null;
+  last_error?: string | null;
+};
+
 type Status =
   | { type: "idle"; message?: string }
   | { type: "loading"; message?: string }
@@ -192,7 +200,6 @@ type ImageSizeKey =
   | "mobile_portrait"
   | "custom";
 
-const FACEBOOK_ENABLED = false;
 
 const imageSizePresets: Record<
   ImageSizeKey,
@@ -616,6 +623,13 @@ export default function QuotesPage() {
   const [fbPostingIdx, setFbPostingIdx] = useState<number | null>(null);
   const [fbConnecting, setFbConnecting] = useState(false);
   const [fbStatusError, setFbStatusError] = useState<string | null>(null);
+  const [publishJobs, setPublishJobs] = useState<Record<string, PublishJobStatus>>({});
+  const [publishQueueingId, setPublishQueueingId] = useState<string | null>(null);
+  const [shareMenuId, setShareMenuId] = useState<string | null>(null);
+  const [shareMenuPos, setShareMenuPos] = useState<{ top: number; left: number; placement: "top" | "bottom" } | null>(
+    null,
+  );
+  const [enabledPlatforms, setEnabledPlatforms] = useState<Record<string, boolean>>({});
   const [search, setSearch] = useState("");
   const [pageSize, setPageSize] = useState(5);
   const [page, setPage] = useState(1);
@@ -638,6 +652,9 @@ export default function QuotesPage() {
   const openedFromParam = useRef(false);
   const anyModalOpen = showModal || Boolean(detailRow) || Boolean(deleteRow);
   const detailParam = searchParams.get("detail");
+  const facebookEnabled = Boolean(enabledPlatforms.facebook);
+  const instagramEnabled = Boolean(enabledPlatforms.instagram);
+  const linkedinEnabled = Boolean(enabledPlatforms.linkedin);
 
   useEffect(() => {
     if (anyModalOpen) {
@@ -648,6 +665,51 @@ export default function QuotesPage() {
       };
     }
   }, [anyModalOpen]);
+
+  useEffect(() => {
+    const loadPlatforms = async () => {
+      try {
+        const res = await fetch("/api/social/platforms", { cache: "no-store" });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok || !Array.isArray(body?.platforms)) {
+          return;
+        }
+        const map: Record<string, boolean> = {};
+        for (const platform of body.platforms) {
+          if (platform?.platform) {
+            map[String(platform.platform)] = Boolean(platform.enabled);
+          }
+        }
+        setEnabledPlatforms(map);
+      } catch {
+        // ignore, keep defaults
+      }
+    };
+    void loadPlatforms();
+  }, []);
+
+  useEffect(() => {
+    if (!shareMenuId) return;
+    const handleClick = () => setShareMenuId(null);
+    document.addEventListener("click", handleClick);
+    return () => document.removeEventListener("click", handleClick);
+  }, [shareMenuId]);
+
+  const setShareMenuPosition = (target: HTMLElement) => {
+    const rect = target.getBoundingClientRect();
+    const menuWidth = 180;
+    const menuHeight = 150;
+    const padding = 12;
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    const placeAbove = rect.bottom + menuHeight + padding > viewportHeight && rect.top - menuHeight - padding > 0;
+    const top = placeAbove ? Math.max(padding, rect.top - menuHeight - 8) : rect.bottom + 8;
+    const left = Math.min(
+      Math.max(padding, rect.right - menuWidth),
+      Math.max(padding, viewportWidth - menuWidth - padding),
+    );
+    setShareMenuPos({ top, left, placement: placeAbove ? "top" : "bottom" });
+  };
 
   useEffect(() => {
     if (showModal && topicInputRef.current) {
@@ -677,6 +739,7 @@ export default function QuotesPage() {
           throw new Error(body?.error || "Unable to load quotes.");
         }
         setQuotes(body.quotes || []);
+        setPublishJobs(body.publishJobs || {});
       } catch (err) {
         setError((err as Error).message || "Unable to load quotes.");
       } finally {
@@ -698,7 +761,7 @@ export default function QuotesPage() {
   const previewDims = selectedDimensions();
 
   const fetchFacebookPages = useCallback(async () => {
-    if (!FACEBOOK_ENABLED) return;
+    if (!facebookEnabled) return;
     setFbStatusError(null);
     setFbPageLoading(true);
     try {
@@ -731,7 +794,7 @@ export default function QuotesPage() {
 
   const refreshFacebookStatus = useCallback(
     async (withPages = false): Promise<{ connected: boolean; error?: string }> => {
-      if (!FACEBOOK_ENABLED) return { connected: false };
+      if (!facebookEnabled) return { connected: false };
       setFbStatusError(null);
       try {
         const res = await fetch("/api/social/facebook/status");
@@ -767,7 +830,7 @@ export default function QuotesPage() {
   );
 
   useEffect(() => {
-    if (!detailRow || !FACEBOOK_ENABLED) return;
+    if (!detailRow || !facebookEnabled) return;
     void refreshFacebookStatus(true);
   }, [detailRow, refreshFacebookStatus]);
 
@@ -781,13 +844,17 @@ export default function QuotesPage() {
       await navigator.clipboard.writeText(text);
       pushToast("Copied for sharing");
     } catch (err) {
+      const error = err as Error;
+      if (error?.name === "AbortError" || /share canceled/i.test(error?.message || "")) {
+        return;
+      }
       console.error("Failed to share text", err);
       pushToast("Share failed", "error");
     }
   };
 
   const startFacebookConnect = async () => {
-    if (!FACEBOOK_ENABLED) {
+    if (!facebookEnabled) {
       pushToast("Facebook sharing is disabled.", "error");
       return;
     }
@@ -808,7 +875,7 @@ export default function QuotesPage() {
   };
 
   const postTextToFacebook = async (text: string, idx: number) => {
-    if (!FACEBOOK_ENABLED) {
+    if (!facebookEnabled) {
       pushToast("Facebook sharing is disabled.", "error");
       return;
     }
@@ -844,7 +911,7 @@ export default function QuotesPage() {
   };
 
   const postImageToFacebook = async (text: string, idx: number, rowId: string | number) => {
-    if (!FACEBOOK_ENABLED) {
+    if (!facebookEnabled) {
       pushToast("Facebook sharing is disabled.", "error");
       return;
     }
@@ -894,6 +961,38 @@ export default function QuotesPage() {
     }
   };
 
+  const queuePublishToFacebook = async (quoteId: string) => {
+    setPublishQueueingId(quoteId);
+    try {
+      const res = await fetch("/api/publish/enqueue", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ quote_id: quoteId }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(body?.error || "Unable to queue publish job.");
+      }
+      const job = body?.job;
+      setPublishJobs((prev) => ({
+        ...prev,
+        [quoteId]: {
+          status: job?.status ?? "queued",
+          scheduled_at: job?.scheduled_at ?? null,
+          updated_at: job?.updated_at ?? job?.created_at ?? new Date().toISOString(),
+          attempts: job?.attempts ?? 0,
+          last_error: null,
+        },
+      }));
+      pushToast("Queued for publishing");
+    } catch (err) {
+      const message = (err as Error).message || "Unable to queue publish job.";
+      pushToast(message, "error");
+    } finally {
+      setPublishQueueingId((prev) => (prev === quoteId ? null : prev));
+    }
+  };
+
   const handleShareImage = async (text: string, idx: number, rowId: string | number) => {
     setShareIdx(idx);
     try {
@@ -927,6 +1026,10 @@ export default function QuotesPage() {
       });
       pushToast("Downloaded image (share not supported)");
     } catch (err) {
+      const error = err as Error;
+      if (error?.name === "AbortError" || /share canceled/i.test(error?.message || "")) {
+        return;
+      }
       console.error("Failed to share image", err);
       pushToast("Share failed", "error");
     } finally {
@@ -987,7 +1090,7 @@ export default function QuotesPage() {
   };
 
   const saveFacebookPageSelection = async () => {
-    if (!FACEBOOK_ENABLED) {
+    if (!facebookEnabled) {
       pushToast("Facebook sharing is disabled.", "error");
       return;
     }
@@ -1276,13 +1379,14 @@ export default function QuotesPage() {
                   <th className="px-4 py-3">Tone</th>
                   <th className="px-4 py-3">Count</th>
                   <th className="px-4 py-3">Created</th>
+                  <th className="px-4 py-3">Status</th>
                   <th className="px-4 py-3">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-3 dark:divide-stroke-dark">
                 {pagedRows.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="px-4 py-10 text-center text-gray-6 dark:text-dark-6">
+                    <td colSpan={7} className="px-4 py-10 text-center text-gray-6 dark:text-dark-6">
                       No quotes found for your search.
                     </td>
                   </tr>
@@ -1318,6 +1422,28 @@ export default function QuotesPage() {
                           hour: "2-digit",
                           minute: "2-digit",
                         })}
+                      </td>
+                      <td className="px-4 py-3 text-xs">
+                        {publishJobs[row.id]?.status ? (
+                          <span
+                            title={publishJobs[row.id]?.last_error || undefined}
+                            className={cn(
+                              "rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase",
+                              publishJobs[row.id]?.status === "published" &&
+                                "bg-green-100 text-green-700 dark:bg-green-500/20 dark:text-green-200",
+                              publishJobs[row.id]?.status === "publishing" &&
+                                "bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-200",
+                              publishJobs[row.id]?.status === "queued" &&
+                                "bg-yellow-100 text-yellow-800 dark:bg-yellow-500/20 dark:text-yellow-200",
+                              publishJobs[row.id]?.status === "failed" &&
+                                "bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-200",
+                            )}
+                          >
+                            {publishJobs[row.id]?.status}
+                          </span>
+                        ) : (
+                          <span className="text-gray-5 dark:text-dark-6">—</span>
+                        )}
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex flex-wrap gap-2 text-xs font-semibold">
@@ -1749,7 +1875,7 @@ export default function QuotesPage() {
             role="dialog"
             aria-modal="true"
           >
-            <div className="mt-4 max-h-[85vh] w-full max-w-5xl rounded-2xl bg-white p-6 shadow-card-2 dark:border dark:border-stroke-dark dark:bg-dark-2">
+            <div className="mt-4 flex max-h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-white p-6 shadow-card-2 dark:border dark:border-stroke-dark dark:bg-dark-2">
               <div className="mb-4 flex items-start justify-between gap-3">
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-[0.35em] text-primary">Quote pack</p>
@@ -1758,84 +1884,47 @@ export default function QuotesPage() {
                   Tone: {detailRow.tone || "—"} · Persona: {detailRow.persona || "—"} · Language:{" "}
                   {detailRow.language || "—"}
                 </p>
-                <div className={`mt-2 flex flex-wrap items-center gap-2 ${FACEBOOK_ENABLED ? "" : "hidden"}`}>
-                  <span
-                    className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                      fbStatus.connected
-                        ? "bg-green-100 text-green-700 dark:bg-green-500/20 dark:text-green-100"
-                        : "bg-gray-2 text-gray-7 dark:bg-dark-3 dark:text-dark-7"
-                    }`}
-                  >
-                    Facebook: {fbStatus.connected ? "Connected" : "Not connected"}
-                  </span>
-                  {!fbStatus.connected && (
+                {buildHashtags(detailRow).length > 0 && (
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    {buildHashtags(detailRow).map((tag) => (
+                      <span
+                        key={tag}
+                        className="rounded-full border border-gray-3 bg-gray-1 px-3 py-1 text-[11px] font-semibold text-gray-7 dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-7"
+                      >
+                        {tag}
+                      </span>
+                    ))}
                     <button
                       type="button"
-                      className="inline-flex items-center gap-2 rounded-md border border-primary/40 bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary transition hover:bg-primary/20"
-                      onClick={startFacebookConnect}
-                      disabled={fbConnecting}
+                      onClick={async () => {
+                        try {
+                          const tags = buildHashtags(detailRow).join(" ");
+                          await navigator.clipboard.writeText(tags);
+                          pushToast("Hashtags copied");
+                        } catch (err) {
+                          console.error("Failed to copy hashtags", err);
+                          pushToast("Failed to copy hashtags", "error");
+                        }
+                      }}
+                      className="rounded-md border border-gray-3 px-3 py-1 text-xs font-semibold text-gray-7 transition hover:bg-gray-1 dark:border-stroke-dark dark:text-dark-7 dark:hover:bg-dark-3"
                     >
-                      {fbConnecting ? "Starting..." : "Connect Facebook"}
+                      Copy hashtags
                     </button>
-                  )}
-                  {fbStatus.connected && (
-                    <div className="flex flex-wrap items-center gap-2">
-                      <select
-                        className="rounded-md border border-gray-3 bg-white px-3 py-2 text-xs font-semibold text-gray-7 dark:border-stroke-dark dark:bg-dark-2 dark:text-dark-7"
-                        value={fbSelectedPageId ?? ""}
-                        onChange={(e) => setFbSelectedPageId(e.target.value || null)}
-                        disabled={fbPageLoading}
-                      >
-                        <option value="">{fbPageLoading ? "Loading Pages..." : "Choose a Page"}</option>
-                        {fbPages.map((page) => (
-                          <option key={page.id} value={page.id}>
-                            {page.name}
-                          </option>
-                        ))}
-                      </select>
-                      <button
-                        type="button"
-                        onClick={() => fetchFacebookPages()}
-                        className="inline-flex items-center rounded-md border border-gray-3 px-3 py-2 text-xs font-semibold text-gray-7 transition hover:bg-gray-1 dark:border-stroke-dark dark:bg-dark-2 dark:text-dark-7 dark:hover:bg-dark-4"
-                        disabled={fbPageLoading}
-                      >
-                        {fbPageLoading ? "Refreshing..." : "Refresh Pages"}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={saveFacebookPageSelection}
-                        className="inline-flex items-center rounded-md bg-primary px-3 py-2 text-xs font-semibold text-white transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-70"
-                        disabled={fbPageSaving || !fbSelectedPageId}
-                      >
-                        {fbPageSaving ? "Saving..." : "Save Page"}
-                      </button>
-                      {fbStatus.pageName && (
-                        <span className="text-xs font-semibold text-gray-6 dark:text-dark-6">
-                          Saved: {fbStatus.pageName}
-                        </span>
-                      )}
-                      {fbStatusError && (
-                        <span className="text-xs font-semibold text-red-600 dark:text-red-300">
-                          {fbStatusError}
-                        </span>
-                      )}
-                    </div>
-                  )}
-                  {!fbStatus.connected && fbStatusError && (
-                    <p className="text-xs font-semibold text-red-600 dark:text-red-300">{fbStatusError}</p>
-                  )}
-                </div>
+                  </div>
+                )}
               </div>
-              <button
-                type="button"
-                onClick={() => setDetailRow(null)}
-                className="rounded-full bg-gray-1 px-3 py-1 text-sm font-semibold text-gray-7 hover:bg-gray-2 dark:bg-dark-3 dark:text-dark-7 dark:hover:bg-dark-4"
-              >
-                Close
-              </button>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setDetailRow(null)}
+                  className="rounded-full bg-gray-1 px-3 py-1 text-sm font-semibold text-gray-7 hover:bg-gray-2 dark:bg-dark-3 dark:text-dark-7 dark:hover:bg-dark-4"
+                >
+                  Close
+                </button>
+              </div>
                 </div>
 
-                <div className="max-h-[calc(85vh-120px)] space-y-3 overflow-y-auto text-sm text-dark dark:text-dark-8">
+                <div className="min-h-0 flex-1 space-y-3 overflow-y-auto text-sm text-dark dark:text-dark-8">
                   {detailRow.quotes && detailRow.quotes.length > 0 ? (
                     detailRow.quote_type === "image" ? (
                       <div className="grid gap-4 md:grid-cols-[1.4fr_1fr]">
@@ -2106,37 +2195,6 @@ export default function QuotesPage() {
                         </div>
 
                         <div className="space-y-3">
-                          {buildHashtags(detailRow).length > 0 && (
-                            <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-gray-3 bg-white px-3 py-2 text-xs font-semibold text-gray-7 dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-7">
-                              <div className="flex flex-wrap gap-2">
-                                {buildHashtags(detailRow).map((tag) => (
-                                  <span
-                                    key={tag}
-                                    className="rounded-full bg-primary/10 px-3 py-1 text-[11px] font-semibold uppercase text-primary dark:bg-primary/20"
-                                  >
-                                    {tag}
-                                  </span>
-                                ))}
-                              </div>
-                              <button
-                                type="button"
-                                className="inline-flex items-center gap-2 rounded-md border border-gray-3 px-3 py-2 text-xs font-semibold text-gray-7 transition hover:bg-gray-1 dark:border-stroke-dark dark:bg-dark-2 dark:text-dark-7 dark:hover:bg-dark-4"
-                                onClick={async () => {
-                                  const tags = buildHashtags(detailRow).join(" ");
-                                  try {
-                                    await navigator.clipboard.writeText(tags);
-                                    pushToast("Hashtags copied");
-                                  } catch (err) {
-                                    console.error("Failed to copy hashtags", err);
-                                    pushToast("Failed to copy hashtags", "error");
-                                  }
-                                }}
-                              >
-                                Copy hashtags
-                              </button>
-                            </div>
-                          )}
-
                           <div className="flex flex-col gap-4">
                             {extractQuoteList(detailRow)
                               .filter(Boolean)
@@ -2176,34 +2234,74 @@ export default function QuotesPage() {
                                         <CopyIcon className="h-4 w-4" />
                                       )}
                                     </button>
-                                    <button
-                                      type="button"
-                                      aria-label="Share quote image"
-                                      onClick={() => handleShareImage(q, idx, detailRow.id)}
-                                      className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-white/60 bg-white/20 text-white transition hover:bg-white/30"
-                                    >
-                                      {shareIdx === idx ? (
-                                        <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                                      ) : (
-                                        "⇪"
+                                    <div className="relative">
+                                      <button
+                                        type="button"
+                                        aria-label="Share quote image"
+                                        onClick={(event) => {
+                                          event.stopPropagation();
+                                          setShareMenuPosition(event.currentTarget);
+                                          setShareMenuId((prev) => (prev === `image-${idx}` ? null : `image-${idx}`));
+                                        }}
+                                        className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-white/60 bg-white/20 text-white transition hover:bg-white/30"
+                                      >
+                                        {shareIdx === idx ? (
+                                          <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                                        ) : (
+                                          "⇪"
+                                        )}
+                                      </button>
+                                      {shareMenuId === `image-${idx}` && shareMenuPos && (
+                                        <ModalPortal>
+                                          <div
+                                            onClick={(event) => event.stopPropagation()}
+                                            className="fixed z-[20001] w-44 rounded-lg border border-white/40 bg-white/95 p-2 text-xs font-semibold text-gray-7 shadow-lg backdrop-blur dark:border-stroke-dark dark:bg-dark-2"
+                                            style={{ top: shareMenuPos.top, left: shareMenuPos.left }}
+                                          >
+                                            <button
+                                              type="button"
+                                              onClick={() => {
+                                                setShareMenuId(null);
+                                                handleShareImage(q, idx, detailRow.id);
+                                              }}
+                                              className="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left transition hover:bg-gray-1 dark:hover:bg-dark-3"
+                                            >
+                                              Device share
+                                            </button>
+                                            {facebookEnabled && (
+                                              <button
+                                                type="button"
+                                                onClick={() => {
+                                                  setShareMenuId(null);
+                                                  postImageToFacebook(q, idx, detailRow.id);
+                                                }}
+                                                className="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left transition hover:bg-gray-1 dark:hover:bg-dark-3"
+                                              >
+                                                Facebook
+                                              </button>
+                                            )}
+                                            {instagramEnabled && (
+                                              <button
+                                                type="button"
+                                                disabled
+                                                className="flex w-full cursor-not-allowed items-center justify-between rounded-md px-2 py-1.5 text-left opacity-60"
+                                              >
+                                                Instagram
+                                              </button>
+                                            )}
+                                            {linkedinEnabled && (
+                                              <button
+                                                type="button"
+                                                disabled
+                                                className="flex w-full cursor-not-allowed items-center justify-between rounded-md px-2 py-1.5 text-left opacity-60"
+                                              >
+                                                LinkedIn
+                                              </button>
+                                            )}
+                                          </div>
+                                        </ModalPortal>
                                       )}
-                                    </button>
-                                    <button
-                                      type="button"
-                                      aria-label="Post to Facebook"
-                                      className={
-                                        FACEBOOK_ENABLED
-                                          ? "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-white/60 bg-white/20 text-white transition hover:bg-white/30"
-                                          : "hidden"
-                                      }
-                                      onClick={() => postImageToFacebook(q, idx, detailRow.id)}
-                                    >
-                                      {fbPostingIdx === idx ? (
-                                        <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                                      ) : (
-                                        "f"
-                                      )}
-                                    </button>
+                                    </div>
                                     <button
                                       type="button"
                                       aria-label="Download quote image"
@@ -2272,30 +2370,70 @@ export default function QuotesPage() {
                                 <p className="whitespace-pre-wrap break-words text-dark dark:text-dark-8">{q}</p>
                               </div>
                               <div className="flex gap-2">
-                                <button
-                                  type="button"
-                                  aria-label="Share quote"
-                                  onClick={() => handleShareText(q)}
-                                  className="mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-gray-3 bg-white text-gray-6 transition hover:bg-gray-2 dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-7 dark:hover:bg-dark-4"
-                                >
-                                  ⇪
-                                </button>
-                                <button
-                                  type="button"
-                                  aria-label="Post to Facebook"
-                                  className={
-                                    FACEBOOK_ENABLED
-                                      ? "mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-gray-3 bg-white text-gray-6 transition hover:bg-gray-2 dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-7 dark:hover:bg-dark-4"
-                                      : "hidden"
-                                  }
-                                  onClick={() => postTextToFacebook(q, idx)}
-                                >
-                                  {fbPostingIdx === idx ? (
-                                    <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
-                                  ) : (
-                                    "f"
+                                <div className="relative">
+                                  <button
+                                    type="button"
+                                    aria-label="Share quote"
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      setShareMenuPosition(event.currentTarget);
+                                      setShareMenuId((prev) => (prev === `text-${idx}` ? null : `text-${idx}`));
+                                    }}
+                                    className="mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-gray-3 bg-white text-gray-6 transition hover:bg-gray-2 dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-7 dark:hover:bg-dark-4"
+                                  >
+                                    ⇪
+                                  </button>
+                                  {shareMenuId === `text-${idx}` && shareMenuPos && (
+                                    <ModalPortal>
+                                      <div
+                                        onClick={(event) => event.stopPropagation()}
+                                        className="fixed z-[20001] w-44 rounded-lg border border-gray-3 bg-white p-2 text-xs font-semibold text-gray-7 shadow-lg dark:border-stroke-dark dark:bg-dark-2 dark:text-dark-7"
+                                        style={{ top: shareMenuPos.top, left: shareMenuPos.left }}
+                                      >
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setShareMenuId(null);
+                                            handleShareText(q);
+                                          }}
+                                          className="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left transition hover:bg-gray-1 dark:hover:bg-dark-3"
+                                        >
+                                          Device share
+                                        </button>
+                                        {facebookEnabled && (
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              setShareMenuId(null);
+                                              postTextToFacebook(q, idx);
+                                            }}
+                                            className="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left transition hover:bg-gray-1 dark:hover:bg-dark-3"
+                                          >
+                                            Facebook
+                                          </button>
+                                        )}
+                                        {instagramEnabled && (
+                                          <button
+                                            type="button"
+                                            disabled
+                                            className="flex w-full cursor-not-allowed items-center justify-between rounded-md px-2 py-1.5 text-left opacity-60"
+                                          >
+                                            Instagram
+                                          </button>
+                                        )}
+                                        {linkedinEnabled && (
+                                          <button
+                                            type="button"
+                                            disabled
+                                            className="flex w-full cursor-not-allowed items-center justify-between rounded-md px-2 py-1.5 text-left opacity-60"
+                                          >
+                                            LinkedIn
+                                          </button>
+                                        )}
+                                      </div>
+                                    </ModalPortal>
                                   )}
-                                </button>
+                                </div>
                                 <button
                                   type="button"
                                   aria-label="Copy quote"
@@ -2325,36 +2463,6 @@ export default function QuotesPage() {
                     )
                   ) : (
                     <p className="text-gray-6 dark:text-dark-6">No quotes available.</p>
-                  )}
-                  {detailRow.quote_type !== "image" && buildHashtags(detailRow).length > 0 && (
-                    <div className="mt-3 space-y-2">
-                      <div className="flex flex-wrap gap-2">
-                        {buildHashtags(detailRow).map((tag) => (
-                          <span
-                            key={tag}
-                            className="rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold uppercase text-primary dark:bg-primary/20"
-                          >
-                            {tag}
-                          </span>
-                        ))}
-                      </div>
-                              <button
-                                type="button"
-                                className="inline-flex items-center gap-2 rounded-md border border-gray-3 px-3 py-2 text-xs font-semibold text-gray-7 transition hover:bg-gray-1 dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-7 dark:hover:bg-dark-4"
-                                onClick={async () => {
-                                  const tags = buildHashtags(detailRow).join(" ");
-                                  try {
-                                    await navigator.clipboard.writeText(tags);
-                                    pushToast("Hashtags copied");
-                                  } catch (err) {
-                                    console.error("Failed to copy hashtags", err);
-                                    pushToast("Failed to copy hashtags", "error");
-                                  }
-                                }}
-                              >
-                                Copy hashtags
-                              </button>
-                    </div>
                   )}
               </div>
             </div>

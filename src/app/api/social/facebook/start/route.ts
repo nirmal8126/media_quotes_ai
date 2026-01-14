@@ -1,11 +1,19 @@
 import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/api-auth";
 import { buildFacebookAuthUrl, missingFacebookConfigResponse } from "@/lib/social/facebook";
+import { isPlatformEnabled } from "@/lib/social/platforms";
 
 export async function GET(request: Request) {
   const session = await requireUser(request);
   if ("errorResponse" in session) {
     return session.errorResponse;
+  }
+
+  const enabled = await isPlatformEnabled("facebook");
+  if (!enabled) {
+    const response = NextResponse.json({ error: "Facebook is currently disabled." }, { status: 403 });
+    session.applyCookies(response);
+    return response;
   }
 
   try {
