@@ -173,6 +173,7 @@ const imageBackgrounds = [
 
 const fontOptions = [
   { label: "Arial", value: "Arial" },
+  { label: "Noto Sans Devanagari", value: "Noto Sans Devanagari, Noto Sans, Arial, sans-serif" },
   { label: "Georgia", value: "Georgia" },
   { label: "Times", value: "Times New Roman" },
   { label: "Poppins", value: "Poppins, Arial, sans-serif" },
@@ -188,7 +189,23 @@ const gradientOptions: Array<{ label: string; colors: [string, string] }> = [
   { label: "Sunset", colors: ["#f97316", "#f43f5e"] },
   { label: "Ocean", colors: ["#0ea5e9", "#6366f1"] },
   { label: "Forest", colors: ["#22c55e", "#14532d"] },
+  { label: "Violet", colors: ["#ec4899", "#4f46e5"] },
   { label: "Rose", colors: ["#ec4899", "#f59e0b"] },
+];
+
+const emojiPresets = [
+  "🔥",
+  "✨",
+  "💡",
+  "🚀",
+  "💪",
+  "🧠",
+  "🎯",
+  "🏆",
+  "🙏",
+  "🌿",
+  "🌞",
+  "❤️",
 ];
 
 type ImageSizeKey =
@@ -596,6 +613,34 @@ function buildHashtags(row: QuoteRow) {
   return base.length ? base : fallbackHashtags(row);
 }
 
+const emojiRules: Array<{ tokens: string[]; emojis: string[] }> = [
+  { tokens: ["motivation", "motivational", "inspire", "inspiration"], emojis: ["🔥", "✨", "💪"] },
+  { tokens: ["mindset", "focus", "discipline"], emojis: ["🧠", "🎯"] },
+  { tokens: ["startup", "business", "entrepreneur", "founder"], emojis: ["🚀", "💡"] },
+  { tokens: ["success", "achievement", "win", "victory"], emojis: ["🏆", "🎉"] },
+  { tokens: ["calm", "peace", "relax"], emojis: ["🌿", "🕊️"] },
+  { tokens: ["gratitude", "thankful"], emojis: ["🙏", "💛"] },
+  { tokens: ["happy", "joy", "smile"], emojis: ["😊", "🌞"] },
+  { tokens: ["love", "kind", "care"], emojis: ["❤️", "✨"] },
+  { tokens: ["growth", "learn", "progress"], emojis: ["🌱", "📈"] },
+];
+
+function buildEmojiSuggestions(row: QuoteRow) {
+  const tokens = new Set([
+    ...toHashtagTokens(row.topic),
+    ...toHashtagTokens(row.tone),
+    ...toHashtagTokens(row.persona),
+    ...toHashtagTokens(row.style),
+  ]);
+  const picks: string[] = [];
+  emojiRules.forEach((rule) => {
+    if (rule.tokens.some((token) => tokens.has(token))) {
+      picks.push(...rule.emojis);
+    }
+  });
+  return Array.from(new Set(picks)).slice(0, 4);
+}
+
 export default function QuotesPage() {
   const searchParams = useSearchParams();
   const [quotes, setQuotes] = useState<QuoteRow[]>([]);
@@ -634,6 +679,10 @@ export default function QuotesPage() {
   const [fbSharePickerOpen, setFbSharePickerOpen] = useState(false);
   const [fbShareQuoteId, setFbShareQuoteId] = useState<string | null>(null);
   const [fbShareLoading, setFbShareLoading] = useState(false);
+  const [fbShareCaption, setFbShareCaption] = useState<string | null>(null);
+  const [fbShareImageDataUrl, setFbShareImageDataUrl] = useState<string | null>(null);
+  const [selectedEmojis, setSelectedEmojis] = useState<string[]>([]);
+  const [autoEmojis, setAutoEmojis] = useState(true);
   const [search, setSearch] = useState("");
   const [pageSize, setPageSize] = useState(5);
   const [page, setPage] = useState(1);
@@ -762,7 +811,21 @@ export default function QuotesPage() {
     }
   }, [detailParam, detailRow, quotes]);
 
+  useEffect(() => {
+    if (detailRow) {
+      setSelectedEmojis([]);
+    }
+  }, [detailRow?.id]);
+
   const previewDims = selectedDimensions();
+  const autoEmojiList = useMemo(
+    () => (detailRow && autoEmojis ? buildEmojiSuggestions(detailRow) : []),
+    [detailRow, autoEmojis],
+  );
+  const combinedEmojis = useMemo(
+    () => Array.from(new Set([...(autoEmojis && detailRow ? buildEmojiSuggestions(detailRow) : []), ...selectedEmojis])),
+    [autoEmojis, detailRow, selectedEmojis],
+  );
 
   const fetchFacebookPages = useCallback(async () => {
     if (!facebookEnabled) return;
@@ -838,14 +901,69 @@ export default function QuotesPage() {
     void refreshFacebookStatus(true);
   }, [detailRow, refreshFacebookStatus]);
 
-  const handleShareText = async (text: string) => {
+  const resolveEmojisForRow = useCallback(
+    (row: QuoteRow) => {
+      const autoList = autoEmojis ? buildEmojiSuggestions(row) : [];
+      return Array.from(new Set([...autoList, ...selectedEmojis]));
+    },
+    [autoEmojis, selectedEmojis],
+  );
+
+  const buildCaptionForShare = useCallback(
+    (row: QuoteRow, text: string) => {
+      const message = text.trim();
+      const emojis = resolveEmojisForRow(row);
+      const tags = buildHashtags(row);
+      const parts = [message, emojis.length ? emojis.join(" ") : "", tags.length ? tags.join(" ") : ""].filter(Boolean);
+      return parts.join("\n\n");
+    },
+    [resolveEmojisForRow],
+  );
+
+  const buildFacebookCaption = useCallback(
+    (row: QuoteRow) => {
+      const emojis = resolveEmojisForRow(row);
+      const base =
+        row.topic?.trim() ||
+        row.tone?.trim() ||
+        row.persona?.trim() ||
+        "Motivation";
+      const normalized = base.toLowerCase();
+      const captionTitle = normalized.includes("quote") ? base : `${base} quotes`;
+      const tags = buildHashtags(row);
+      const titleLine = [captionTitle, emojis.length ? emojis.join(" ") : ""].filter(Boolean).join(" ");
+      const parts = [titleLine, tags.length ? tags.join(" ") : ""].filter(Boolean);
+      return parts.join("\n\n");
+    },
+    [resolveEmojisForRow],
+  );
+
+  const resolveShareStyle = useCallback(
+    (row: QuoteRow, dimensions: { width: number; height: number }) => {
+      const hasDevanagari = /[\u0900-\u097F]/.test(extractQuoteList(row).join(" "));
+      const baseSize = Math.round(dimensions.height * 0.06);
+      const useGradient = row.quote_type !== "image";
+      return {
+        ...imageStyle,
+        fontFamily: hasDevanagari ? "Noto Sans Devanagari, Noto Sans, Arial, sans-serif" : imageStyle.fontFamily,
+        fontSize: Math.max(imageStyle.fontSize, baseSize),
+        backgroundType: useGradient ? "gradient" : imageStyle.backgroundType,
+        gradientColors: useGradient ? ["#ec4899", "#4f46e5"] : imageStyle.gradientColors,
+        overlayOpacity: useGradient ? 0.15 : imageStyle.overlayOpacity,
+      };
+    },
+    [imageStyle],
+  );
+
+  const handleShareText = async (row: QuoteRow, text: string) => {
     try {
+      const caption = buildCaptionForShare(row, text);
       if (typeof navigator !== "undefined" && navigator.share) {
-        await navigator.share({ text });
+        await navigator.share({ text: caption });
         pushToast("Share sheet opened");
         return;
       }
-      await navigator.clipboard.writeText(text);
+      await navigator.clipboard.writeText(caption);
       pushToast("Copied for sharing");
     } catch (err) {
       const error = err as Error;
@@ -1010,13 +1128,35 @@ export default function QuotesPage() {
     return body;
   };
 
-  const handleFacebookShareRequest = async (quoteId: string) => {
+  const handleFacebookShareRequest = async (
+    quoteId: string,
+    quoteText: string,
+    row: QuoteRow,
+    rowId: string | number,
+  ) => {
     if (!facebookEnabled) {
       pushToast("Facebook sharing is disabled.", "error");
       return;
     }
     setFbShareLoading(true);
     try {
+      const dims = selectedDimensions();
+      const renderStyle = resolveShareStyle(row, dims);
+      const fileOrVoid = await generateImageQuotePng({
+        text: quoteText,
+        background: resolveBackground(renderStyle, rowId),
+        style: renderStyle,
+        dimensions: dims,
+        fileName: `quote-${quoteId}.png`,
+        returnFile: true,
+      });
+      const file = fileOrVoid instanceof File ? fileOrVoid : null;
+      if (!file) {
+        throw new Error("Unable to render quote image.");
+      }
+      const imageDataUrl = await fileToDataUrl(file);
+      const caption = buildFacebookCaption(row);
+
       const res = await fetch("/api/social/facebook/connected-pages", { cache: "no-store" });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -1040,7 +1180,7 @@ export default function QuotesPage() {
         const runRes = await fetch("/api/publish/run-now", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ quote_id: quoteId }),
+          body: JSON.stringify({ quote_id: quoteId, caption, imageDataUrl }),
         });
         const runBody = await runRes.json().catch(() => ({}));
         if (!runRes.ok) {
@@ -1049,6 +1189,8 @@ export default function QuotesPage() {
         pushToast(`Published to ${pages[0].name}`);
         return;
       }
+      setFbShareCaption(caption);
+      setFbShareImageDataUrl(imageDataUrl);
       setFbSharePages(pages);
       setFbShareQuoteId(quoteId);
       setFbSharePickerOpen(true);
@@ -1059,14 +1201,16 @@ export default function QuotesPage() {
     }
   };
 
-  const handleShareImage = async (text: string, idx: number, rowId: string | number) => {
+  const handleShareImage = async (row: QuoteRow, text: string, idx: number, rowId: string | number) => {
     setShareIdx(idx);
     try {
+      const caption = buildCaptionForShare(row, text);
       const dims = selectedDimensions();
+      const renderStyle = resolveShareStyle(row, dims);
       const fileOrVoid = await generateImageQuotePng({
         text,
-        background: resolveBackground(imageStyle, rowId),
-        style: imageStyle,
+        background: resolveBackground(renderStyle, rowId),
+        style: renderStyle,
         dimensions: dims,
         fileName: `quote-${idx + 1}.png`,
         returnFile: true,
@@ -1077,7 +1221,7 @@ export default function QuotesPage() {
         await navigator.share({
           files: [file],
           title: detailRow?.topic || "Quote",
-          text,
+          text: caption,
         });
         pushToast("Share sheet opened");
         return;
@@ -1188,6 +1332,10 @@ export default function QuotesPage() {
     } finally {
       setFbPageSaving(false);
     }
+  };
+
+  const toggleEmojiSelection = (emoji: string) => {
+    setSelectedEmojis((prev) => (prev.includes(emoji) ? prev.filter((item) => item !== emoji) : [...prev, emoji]));
   };
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -1978,6 +2126,71 @@ export default function QuotesPage() {
                     </button>
                   </div>
                 )}
+                <div className="mt-3 rounded-xl border border-gray-3 bg-gray-1 p-3 text-xs font-semibold text-gray-7 dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-7">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-[11px] uppercase tracking-wide text-gray-6 dark:text-dark-6">Emojis</span>
+                    <label className="flex items-center gap-2 text-[11px] font-semibold text-gray-6 dark:text-dark-6">
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 accent-primary"
+                        checked={autoEmojis}
+                        onChange={(e) => setAutoEmojis(e.target.checked)}
+                      />
+                      Auto by topic/tone
+                    </label>
+                  </div>
+                  {autoEmojiList.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {autoEmojiList.map((emoji) => (
+                        <span
+                          key={`auto-${emoji}`}
+                          className="rounded-full border border-gray-3 bg-white px-2.5 py-1 text-sm dark:border-stroke-dark dark:bg-dark-2"
+                          title="Auto suggestion"
+                        >
+                          {emoji}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    {combinedEmojis.length === 0 && (
+                      <span className="text-[11px] text-gray-5 dark:text-dark-6">No emojis selected yet.</span>
+                    )}
+                    {selectedEmojis.map((emoji) => (
+                      <button
+                        key={`selected-${emoji}`}
+                        type="button"
+                        onClick={() => toggleEmojiSelection(emoji)}
+                        className="flex items-center gap-1 rounded-full border border-gray-3 bg-white px-2.5 py-1 text-sm transition hover:bg-gray-2 dark:border-stroke-dark dark:bg-dark-2 dark:hover:bg-dark-4"
+                        aria-label={`Remove ${emoji}`}
+                      >
+                        <span>{emoji}</span>
+                        <span className="text-[11px] text-gray-5">×</span>
+                      </button>
+                    ))}
+                    {selectedEmojis.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setSelectedEmojis([])}
+                        className="rounded-full border border-gray-3 px-3 py-1 text-[11px] font-semibold text-gray-6 transition hover:bg-gray-2 dark:border-stroke-dark dark:text-dark-7 dark:hover:bg-dark-4"
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {emojiPresets.map((emoji) => (
+                      <button
+                        key={`preset-${emoji}`}
+                        type="button"
+                        onClick={() => toggleEmojiSelection(emoji)}
+                        className="rounded-full border border-gray-3 bg-white px-2.5 py-1 text-sm transition hover:bg-gray-2 dark:border-stroke-dark dark:bg-dark-2 dark:hover:bg-dark-4"
+                      >
+                        {emoji}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
                 <div className="flex flex-wrap items-center gap-2">
                   <button
@@ -2328,18 +2541,18 @@ export default function QuotesPage() {
                                               type="button"
                                               onClick={() => {
                                                 setShareMenuId(null);
-                                                handleShareImage(q, idx, detailRow.id);
-                                              }}
-                                              className="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left transition hover:bg-gray-1 dark:hover:bg-dark-3"
-                                            >
-                                              Device share
-                                            </button>
+                                              handleShareImage(detailRow, q, idx, detailRow.id);
+                                            }}
+                                            className="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left transition hover:bg-gray-1 dark:hover:bg-dark-3"
+                                          >
+                                            Device share
+                                          </button>
                                         {facebookEnabled && (
                                           <button
                                             type="button"
                                             onClick={() => {
                                               setShareMenuId(null);
-                                              handleFacebookShareRequest(detailRow.id);
+                                              handleFacebookShareRequest(detailRow.id, q, detailRow, detailRow.id);
                                             }}
                                             className="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left transition hover:bg-gray-1 dark:hover:bg-dark-3"
                                           >
@@ -2460,7 +2673,7 @@ export default function QuotesPage() {
                                           type="button"
                                           onClick={() => {
                                             setShareMenuId(null);
-                                            handleShareText(q);
+                                            handleShareText(detailRow, q);
                                           }}
                                           className="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left transition hover:bg-gray-1 dark:hover:bg-dark-3"
                                         >
@@ -2471,7 +2684,7 @@ export default function QuotesPage() {
                                             type="button"
                                             onClick={() => {
                                               setShareMenuId(null);
-                                              handleFacebookShareRequest(detailRow.id);
+                                              handleFacebookShareRequest(detailRow.id, q, detailRow, detailRow.id);
                                             }}
                                             className="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left transition hover:bg-gray-1 dark:hover:bg-dark-3"
                                           >
@@ -2552,14 +2765,16 @@ export default function QuotesPage() {
                 </div>
                 <button
                   type="button"
-                  onClick={() => {
-                    setFbSharePickerOpen(false);
-                    setFbSharePages([]);
-                    setFbShareQuoteId(null);
-                  }}
-                  className="rounded-full bg-gray-1 px-3 py-1 text-sm font-semibold text-gray-7 hover:bg-gray-2 dark:bg-dark-3 dark:text-dark-7 dark:hover:bg-dark-4"
-                >
-                  Close
+                    onClick={() => {
+                      setFbSharePickerOpen(false);
+                      setFbSharePages([]);
+                      setFbShareQuoteId(null);
+                      setFbShareCaption(null);
+                      setFbShareImageDataUrl(null);
+                    }}
+                    className="rounded-full bg-gray-1 px-3 py-1 text-sm font-semibold text-gray-7 hover:bg-gray-2 dark:bg-dark-3 dark:text-dark-7 dark:hover:bg-dark-4"
+                  >
+                    Close
                 </button>
               </div>
               <div className="mt-4 space-y-2">
@@ -2569,13 +2784,21 @@ export default function QuotesPage() {
                     type="button"
                     onClick={async () => {
                       if (!fbShareQuoteId) return;
+                      if (!fbShareCaption || !fbShareImageDataUrl) {
+                        pushToast("Unable to render share image.", "error");
+                        return;
+                      }
                       try {
                         await markFacebookPageActive(page.id);
                         await queuePublishToFacebook(fbShareQuoteId);
                         const runRes = await fetch("/api/publish/run-now", {
                           method: "POST",
                           headers: { "Content-Type": "application/json" },
-                          body: JSON.stringify({ quote_id: fbShareQuoteId }),
+                          body: JSON.stringify({
+                            quote_id: fbShareQuoteId,
+                            caption: fbShareCaption,
+                            imageDataUrl: fbShareImageDataUrl,
+                          }),
                         });
                         const runBody = await runRes.json().catch(() => ({}));
                         if (!runRes.ok) {
@@ -2585,6 +2808,8 @@ export default function QuotesPage() {
                         setFbSharePickerOpen(false);
                         setFbSharePages([]);
                         setFbShareQuoteId(null);
+                        setFbShareCaption(null);
+                        setFbShareImageDataUrl(null);
                       } catch (err) {
                         pushToast((err as Error).message || "Unable to publish", "error");
                       }

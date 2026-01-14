@@ -3,6 +3,7 @@ type FacebookPublishInput = {
   pageAccessToken: string;
   message: string;
   imageUrl?: string | null;
+  imageDataUrl?: string | null;
 };
 
 type FacebookPublishResult = {
@@ -31,6 +32,24 @@ async function publishTextPost(input: FacebookPublishInput): Promise<FacebookPub
 }
 
 async function publishImagePost(input: FacebookPublishInput): Promise<FacebookPublishResult> {
+  if (input.imageDataUrl) {
+    const form = new FormData();
+    const blob = await fetch(input.imageDataUrl).then((res) => res.blob());
+    form.set("source", blob, "quote.png");
+    form.set("caption", input.message || "");
+    form.set("access_token", input.pageAccessToken);
+
+    const res = await fetch(`${GRAPH_BASE}/${input.pageId}/photos`, {
+      method: "POST",
+      body: form,
+    });
+    const json = (await res.json().catch(() => ({}))) as FacebookPublishResult & { error?: { message?: string } };
+    if (!res.ok) {
+      throw new Error(json.error?.message || "Failed to publish Facebook image");
+    }
+    return json;
+  }
+
   if (!input.imageUrl) {
     return publishTextPost(input);
   }
@@ -53,11 +72,11 @@ async function publishImagePost(input: FacebookPublishInput): Promise<FacebookPu
 }
 
 export async function publishToFacebook(input: FacebookPublishInput): Promise<FacebookPublishResult> {
-  if (!input.message && !input.imageUrl) {
-    throw new Error("Facebook publish requires a message or image URL.");
+  if (!input.message && !input.imageUrl && !input.imageDataUrl) {
+    throw new Error("Facebook publish requires a message or image.");
   }
 
-  if (input.imageUrl) {
+  if (input.imageDataUrl || input.imageUrl) {
     return publishImagePost(input);
   }
 

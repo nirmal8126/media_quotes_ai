@@ -7,6 +7,8 @@ import { isPlatformEnabled } from "@/lib/social/platforms";
 
 type RunNowBody = {
   quote_id?: string;
+  caption?: string;
+  imageDataUrl?: string;
 };
 
 type QuoteRecord = {
@@ -43,15 +45,40 @@ function buildHashtags(quote: QuoteRecord) {
   return unique.map((word) => `#${word.replace(/[^a-z0-9]/gi, "") || "quote"}`);
 }
 
+const emojiRules: Array<{ tokens: string[]; emojis: string[] }> = [
+  { tokens: ["motivation", "motivational", "inspire", "inspiration"], emojis: ["🔥", "✨", "💪"] },
+  { tokens: ["mindset", "focus", "discipline"], emojis: ["🧠", "🎯"] },
+  { tokens: ["startup", "business", "entrepreneur", "founder"], emojis: ["🚀", "💡"] },
+  { tokens: ["success", "achievement", "win", "victory"], emojis: ["🏆", "🎉"] },
+  { tokens: ["calm", "peace", "relax"], emojis: ["🌿", "🕊️"] },
+];
+
+function buildAutoEmojis(quote: QuoteRecord) {
+  const tokens = new Set([
+    ...toHashtagTokens(quote.topic),
+    ...toHashtagTokens(quote.tone),
+    ...toHashtagTokens(quote.persona),
+    ...toHashtagTokens(quote.style),
+  ]);
+  const picks: string[] = [];
+  emojiRules.forEach((rule) => {
+    if (rule.tokens.some((token) => tokens.has(token))) {
+      picks.push(...rule.emojis);
+    }
+  });
+  return Array.from(new Set(picks)).slice(0, 4);
+}
+
 function resolveMessage(quote: QuoteRecord) {
   const imageQuote = quote.image_quotes?.find((item) => typeof item?.text === "string" && item.text.trim());
   const listQuote = quote.quotes?.find((item) => typeof item === "string" && item.trim());
   const raw = imageQuote?.text || listQuote || quote.hook || quote.topic || "";
   const message = raw.trim();
   if (!message) return message;
-  if (/#\w+/.test(message)) return message;
-  const tags = buildHashtags(quote);
-  return tags.length ? `${message}\n\n${tags.join(" ")}` : message;
+  const emojis = buildAutoEmojis(quote);
+  const tags = /#\w+/.test(message) ? [] : buildHashtags(quote);
+  const parts = [message, emojis.length ? emojis.join(" ") : "", tags.length ? tags.join(" ") : ""].filter(Boolean);
+  return parts.join("\n\n");
 }
 
 function resolveImageUrl(quote: QuoteRecord) {
@@ -74,6 +101,11 @@ export async function POST(request: Request) {
 
   const body = (await request.json().catch(() => ({}))) as RunNowBody;
   const quoteId = typeof body.quote_id === "string" ? body.quote_id.trim() : "";
+  const caption = typeof body.caption === "string" ? body.caption.trim() : "";
+  const imageDataUrl =
+    typeof body.imageDataUrl === "string" && body.imageDataUrl.trim().startsWith("data:image/")
+      ? body.imageDataUrl.trim()
+      : "";
 
   const jobsQuery = supabaseAdmin
     .from("publish_jobs")
@@ -144,10 +176,10 @@ export async function POST(request: Request) {
       throw new Error("Quote not found.");
     }
 
-    const message = resolveMessage(quote as QuoteRecord);
+    const message = caption || resolveMessage(quote as QuoteRecord);
     const imageUrl = resolveImageUrl(quote as QuoteRecord);
 
-    if (!message && !imageUrl) {
+    if (!message && !imageUrl && !imageDataUrl) {
       throw new Error("Quote message is empty.");
     }
 
@@ -156,6 +188,7 @@ export async function POST(request: Request) {
       pageAccessToken,
       message,
       imageUrl,
+      imageDataUrl: imageDataUrl || undefined,
     });
 
     const resultId = result.post_id || result.id || null;
