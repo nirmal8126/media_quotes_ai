@@ -7,8 +7,10 @@ import { isPlatformEnabled } from "@/lib/social/platforms";
 
 type RunNowBody = {
   quote_id?: string;
+  reel_id?: string;
   caption?: string;
   imageDataUrl?: string;
+  videoUrl?: string;
 };
 
 type QuoteRecord = {
@@ -21,6 +23,15 @@ type QuoteRecord = {
   language: string | null;
   quotes: string[] | null;
   image_quotes: Array<{ text?: string | null; image_url?: string | null }> | null;
+};
+
+type ReelRecord = {
+  id: string;
+  caption: string | null;
+  hashtags: string[] | string | null;
+  video_url: string | null;
+  custom_settings?: { caption?: { text?: string | null } | null; hashtags?: string[] | string | null } | null;
+  script_id?: string | null;
 };
 
 function toHashtagTokens(value?: string | null) {
@@ -86,6 +97,32 @@ function resolveImageUrl(quote: QuoteRecord) {
   return imageQuote?.image_url ?? null;
 }
 
+function normalizeHashtags(raw: unknown): string[] {
+  if (Array.isArray(raw)) {
+    return raw.map((tag) => String(tag || "").trim()).filter(Boolean);
+  }
+  if (typeof raw === "string") {
+    return raw
+      .split(/[,\n]/)
+      .map((tag) => tag.trim())
+      .filter(Boolean);
+  }
+  return [];
+}
+
+function withHashes(list: string[]) {
+  return list.map((tag) => (tag.startsWith("#") ? tag : `#${tag}`));
+}
+
+function resolveReelCaption(reel: ReelRecord, scriptText: string | null) {
+  const storedCaption = reel.caption ?? reel.custom_settings?.caption?.text ?? "";
+  const base = (storedCaption || scriptText || "").replace(/\s+/g, " ").trim();
+  const caption = base || "New reel ready to share.";
+  const tags = normalizeHashtags(reel.hashtags ?? reel.custom_settings?.hashtags);
+  const formattedTags = withHashes(tags).slice(0, 8);
+  return formattedTags.length ? `${caption}\n\n${formattedTags.join(" ")}` : caption;
+}
+
 export async function POST(request: Request) {
   const session = await requireUser(request);
   if ("errorResponse" in session) {
@@ -101,22 +138,40 @@ export async function POST(request: Request) {
 
   const body = (await request.json().catch(() => ({}))) as RunNowBody;
   const quoteId = typeof body.quote_id === "string" ? body.quote_id.trim() : "";
+  const reelId = typeof body.reel_id === "string" ? body.reel_id.trim() : "";
   const caption = typeof body.caption === "string" ? body.caption.trim() : "";
   const imageDataUrl =
     typeof body.imageDataUrl === "string" && body.imageDataUrl.trim().startsWith("data:image/")
       ? body.imageDataUrl.trim()
       : "";
+  const videoUrl = typeof body.videoUrl === "string" && body.videoUrl.trim().startsWith("http")
+    ? body.videoUrl.trim()
+    : "";
+
+  if (!quoteId && !reelId) {
+    const response = NextResponse.json({ error: "quote_id or reel_id is required." }, { status: 400 });
+    session.applyCookies(response);
+    return response;
+  }
+
+  if (quoteId && reelId) {
+    const response = NextResponse.json({ error: "Provide only one of quote_id or reel_id." }, { status: 400 });
+    session.applyCookies(response);
+    return response;
+  }
 
   const jobsQuery = supabaseAdmin
     .from("publish_jobs")
-    .select("id, user_id, platform, quote_id, status, scheduled_at")
+    .select("id, user_id, platform, quote_id, reel_id, status, scheduled_at")
     .eq("user_id", session.user.id)
     .eq("platform", "facebook")
     .eq("status", "queued")
     .order("created_at", { ascending: true })
     .limit(1);
 
-  const { data: jobs, error: jobsError } = quoteId ? await jobsQuery.eq("quote_id", quoteId) : await jobsQuery;
+  const { data: jobs, error: jobsError } = quoteId
+    ? await jobsQuery.eq("quote_id", quoteId)
+    : await jobsQuery.eq("reel_id", reelId);
 
   if (jobsError) {
     const response = NextResponse.json({ error: "Unable to load publish jobs." }, { status: 500 });
@@ -165,30 +220,83 @@ export async function POST(request: Request) {
 
     const pageAccessToken = decryptToken(account.page_access_token_encrypted);
 
-    const { data: quote, error: quoteError } = await supabaseAdmin
-      .from("quotes")
-      .select("id, topic, hook, persona, tone, style, language, quotes, image_quotes")
-      .eq("id", job.quote_id)
+    if (quoteId) {
+      const { data: quote, error: quoteError } = await supabaseAdmin
+        .from("quotes")
+        .select("id, topic, hook, persona, tone, style, language, quotes, image_quotes")
+        .eq("id", job.quote_id)
+        .eq("user_id", session.user.id)
+        .maybeSingle();
+
+      if (quoteError || !quote) {
+        throw new Error("Quote not found.");
+      }
+
+      const message = caption || resolveMessage(quote as QuoteRecord);
+      const imageUrl = resolveImageUrl(quote as QuoteRecord);
+
+      if (!message && !imageUrl && !imageDataUrl) {
+        throw new Error("Quote message is empty.");
+      }
+
+      const result = await publishToFacebook({
+        pageId: account.page_id,
+        pageAccessToken,
+        message,
+        imageUrl,
+        imageDataUrl: imageDataUrl || undefined,
+      });
+
+      const resultId = result.post_id || result.id || null;
+
+      const { error: updateError } = await supabaseAdmin
+        .from("publish_jobs")
+        .update({
+          status: "published",
+          result_post_id: resultId,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", job.id);
+
+      if (updateError) {
+        throw new Error(updateError.message);
+      }
+
+      const response = NextResponse.json({ success: true, result_post_id: resultId });
+      session.applyCookies(response);
+      return response;
+    }
+
+    const { data: reel, error: reelError } = await supabaseAdmin
+      .from("reels")
+      .select("id, caption, hashtags, video_url, custom_settings, script_id")
+      .eq("id", job.reel_id)
       .eq("user_id", session.user.id)
       .maybeSingle();
 
-    if (quoteError || !quote) {
-      throw new Error("Quote not found.");
+    let scriptText: string | null = null;
+    if (reel && (reel as ReelRecord).script_id) {
+      const { data: scriptRow } = await supabaseAdmin
+        .from("scripts")
+        .select("text")
+        .eq("id", (reel as ReelRecord).script_id as string)
+        .maybeSingle();
+      scriptText = scriptRow?.text ?? null;
     }
 
-    const message = caption || resolveMessage(quote as QuoteRecord);
-    const imageUrl = resolveImageUrl(quote as QuoteRecord);
+    const message =
+      caption || (reel ? resolveReelCaption(reel as ReelRecord, scriptText) : "New reel ready to share.");
+    const resolvedVideoUrl = videoUrl || (reel as ReelRecord | null)?.video_url || "";
 
-    if (!message && !imageUrl && !imageDataUrl) {
-      throw new Error("Quote message is empty.");
+    if (!resolvedVideoUrl) {
+      throw new Error(reelError ? "Reel not found." : "Reel video is missing.");
     }
 
     const result = await publishToFacebook({
       pageId: account.page_id,
       pageAccessToken,
       message,
-      imageUrl,
-      imageDataUrl: imageDataUrl || undefined,
+      videoUrl: resolvedVideoUrl,
     });
 
     const resultId = result.post_id || result.id || null;

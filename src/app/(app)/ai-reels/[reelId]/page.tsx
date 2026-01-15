@@ -240,15 +240,15 @@ export default function ReelDetailPage() {
     return body;
   };
 
-  const publishReelToFacebook = async (videoUrl: string, caption: string, pageId?: string) => {
-    const res = await fetch("/api/social/facebook/publish", {
+  const queuePublishToFacebook = async (queueReelId: string) => {
+    const res = await fetch("/api/publish/enqueue", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: caption, videoUrl, pageId }),
+      body: JSON.stringify({ reel_id: queueReelId }),
     });
     const body = await res.json().catch(() => ({}));
     if (!res.ok) {
-      throw new Error(body?.error || "Unable to publish to Facebook.");
+      throw new Error(body?.error || "Unable to queue publish job.");
     }
     return body;
   };
@@ -284,7 +284,20 @@ export default function ReelDetailPage() {
       }
       if (pages.length === 1) {
         await markFacebookPageActive(pages[0].id);
-        await publishReelToFacebook(shareUrl, shareCaption, pages[0].id);
+        await queuePublishToFacebook(reelId);
+        const runRes = await fetch("/api/publish/run-now", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            reel_id: reelId,
+            caption: shareCaption,
+            videoUrl: shareUrl,
+          }),
+        });
+        const runBody = await runRes.json().catch(() => ({}));
+        if (!runRes.ok) {
+          throw new Error(runBody?.error || "Unable to publish now.");
+        }
         setStatus({ type: "success", message: `Published to ${pages[0].name}.` });
         return;
       }
@@ -677,7 +690,20 @@ export default function ReelDetailPage() {
                       setShareLoading(true);
                       try {
                         await markFacebookPageActive(page.id);
-                        await publishReelToFacebook(fbShareVideoUrl, fbShareCaption, page.id);
+                        await queuePublishToFacebook(reelId);
+                        const runRes = await fetch("/api/publish/run-now", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({
+                            reel_id: reelId,
+                            caption: fbShareCaption,
+                            videoUrl: fbShareVideoUrl,
+                          }),
+                        });
+                        const runBody = await runRes.json().catch(() => ({}));
+                        if (!runRes.ok) {
+                          throw new Error(runBody?.error || "Unable to publish now.");
+                        }
                         setStatus({ type: "success", message: `Published to ${page.name}.` });
                         setFbSharePickerOpen(false);
                         setFbSharePages([]);

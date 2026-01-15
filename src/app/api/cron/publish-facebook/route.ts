@@ -11,6 +11,7 @@ type PublishJob = {
   user_id: string;
   platform: string;
   quote_id: string;
+  reel_id?: string | null;
   status: string;
   scheduled_at: string | null;
 };
@@ -36,6 +37,15 @@ type QuoteRecord = {
   language: string | null;
   quotes: string[] | null;
   image_quotes: Array<{ text?: string | null; image_url?: string | null }> | null;
+};
+
+type ReelRecord = {
+  id: string;
+  caption: string | null;
+  hashtags: string[] | string | null;
+  video_url: string | null;
+  custom_settings?: { caption?: { text?: string | null } | null; hashtags?: string[] | string | null } | null;
+  script_id?: string | null;
 };
 
 function toHashtagTokens(value?: string | null) {
@@ -101,6 +111,32 @@ function resolveImageUrl(quote: QuoteRecord) {
   return imageQuote?.image_url ?? null;
 }
 
+function normalizeHashtags(raw: unknown): string[] {
+  if (Array.isArray(raw)) {
+    return raw.map((tag) => String(tag || "").trim()).filter(Boolean);
+  }
+  if (typeof raw === "string") {
+    return raw
+      .split(/[,\n]/)
+      .map((tag) => tag.trim())
+      .filter(Boolean);
+  }
+  return [];
+}
+
+function withHashes(list: string[]) {
+  return list.map((tag) => (tag.startsWith("#") ? tag : `#${tag}`));
+}
+
+function resolveReelCaption(reel: ReelRecord, scriptText: string | null) {
+  const storedCaption = reel.caption ?? reel.custom_settings?.caption?.text ?? "";
+  const base = (storedCaption || scriptText || "").replace(/\s+/g, " ").trim();
+  const caption = base || "New reel ready to share.";
+  const tags = normalizeHashtags(reel.hashtags ?? reel.custom_settings?.hashtags);
+  const formattedTags = withHashes(tags).slice(0, 8);
+  return formattedTags.length ? `${caption}\n\n${formattedTags.join(" ")}` : caption;
+}
+
 export async function POST(request: Request) {
   const secret = process.env.CRON_SECRET;
   if (!secret) {
@@ -120,7 +156,7 @@ export async function POST(request: Request) {
   const nowIso = new Date().toISOString();
   const { data: jobs, error: jobsError } = await supabaseAdmin
     .from("publish_jobs")
-    .select("id, user_id, platform, quote_id, status, scheduled_at")
+    .select("id, user_id, platform, quote_id, reel_id, status, scheduled_at")
     .eq("status", "queued")
     .eq("platform", "facebook")
     .or(`scheduled_at.is.null,scheduled_at.lte.${nowIso}`)
@@ -169,6 +205,61 @@ export async function POST(request: Request) {
       }
 
       const pageAccessToken = decryptToken(account.page_access_token_encrypted);
+
+      if (job.reel_id) {
+        const { data: reel, error: reelError } = await supabaseAdmin
+          .from("reels")
+          .select("id, caption, hashtags, video_url, custom_settings, script_id")
+          .eq("id", job.reel_id)
+          .eq("user_id", job.user_id)
+          .maybeSingle();
+
+        if (reelError || !reel) {
+          throw new Error("Reel not found.");
+        }
+
+        let scriptText: string | null = null;
+        if ((reel as ReelRecord).script_id) {
+          const { data: scriptRow } = await supabaseAdmin
+            .from("scripts")
+            .select("text")
+            .eq("id", (reel as ReelRecord).script_id as string)
+            .maybeSingle();
+          scriptText = scriptRow?.text ?? null;
+        }
+
+        const message = resolveReelCaption(reel as ReelRecord, scriptText);
+        const videoUrl = (reel as ReelRecord).video_url;
+
+        if (!videoUrl) {
+          throw new Error("Reel video is missing.");
+        }
+
+        const result = await publishToFacebook({
+          pageId: account.page_id,
+          pageAccessToken,
+          message,
+          videoUrl,
+        });
+
+        const resultId = result.post_id || result.id || null;
+
+        const { error: updateError } = await supabaseAdmin
+          .from("publish_jobs")
+          .update({
+            status: "published",
+            result_post_id: resultId,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", job.id);
+
+        if (updateError) {
+          throw new Error(updateError.message);
+        }
+
+        processed += 1;
+        continue;
+      }
 
       const { data: quote, error: quoteError } = await supabaseAdmin
         .from("quotes")
