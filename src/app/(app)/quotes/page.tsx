@@ -1551,11 +1551,11 @@ export default function QuotesPage() {
           <div className="py-10 text-center text-red-600">{error}</div>
         ) : (
           <div className="space-y-4 overflow-x-auto">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-2 text-sm text-gray-7 dark:text-dark-7">
-              <span className="text-gray-6 dark:text-dark-6">Show</span>
-              <select
-                value={pageSize}
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2 text-sm text-gray-7 dark:text-dark-7">
+                <span className="text-gray-6 dark:text-dark-6">Show</span>
+                <select
+                  value={pageSize}
                   onChange={(e) => setPageSize(Number(e.target.value) || 5)}
                   className="h-10 rounded-lg border border-gray-3 bg-white px-3 text-sm font-semibold text-dark focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
                 >
@@ -1564,26 +1564,26 @@ export default function QuotesPage() {
                       {size}
                     </option>
                   ))}
-              </select>
-              <span className="text-gray-6 dark:text-dark-6">entries</span>
-            </div>
+                </select>
+                <span className="text-gray-6 dark:text-dark-6">entries</span>
+              </div>
 
-            <div className="flex flex-col gap-1">
-              <div className="text-xs font-semibold text-gray-6 dark:text-dark-6">
-                Search <span className="font-normal">(topic, tone, persona)</span>
-              </div>
-              <div className="relative">
-                <input
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search (topic, tone, persona)"
-                  className="h-10 w-56 rounded-lg border border-gray-3 bg-white px-3 pl-9 text-sm text-dark outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
-                  aria-label="Search quotes by topic, tone, or persona"
-                />
-                <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-5">🔍</span>
+              <div className="flex flex-col gap-1">
+                <div className="text-xs font-semibold text-gray-6 dark:text-dark-6">
+                  Search <span className="font-normal">(topic, tone, persona)</span>
+                </div>
+                <div className="relative">
+                  <input
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    placeholder="Search (topic, tone, persona)"
+                    className="h-10 w-56 rounded-lg border border-gray-3 bg-white px-3 pl-9 text-sm text-dark outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+                    aria-label="Search quotes by topic, tone, or persona"
+                  />
+                  <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-5">🔍</span>
+                </div>
               </div>
             </div>
-          </div>
 
             <table className="min-w-full text-left text-sm text-dark dark:text-dark-8">
               <thead className="bg-gray-1 text-xs font-semibold uppercase text-gray-6 dark:bg-dark-3 dark:text-dark-7">
@@ -1671,13 +1671,13 @@ export default function QuotesPage() {
                           </button>
                           <button
                             className="rounded-md border border-gray-3 px-3 py-1 text-gray-7 transition hover:bg-gray-1 dark:border-stroke-dark dark:text-dark-7 dark:hover:bg-dark-3"
-                              onClick={() => {
-                                setEditRow(row);
-                                setForm({
-                                  topic: row.topic ?? "",
-                                  tone: row.tone ?? "",
-                                  persona: row.persona ?? "",
-                                  language: labelForLanguage(row.language) || "English",
+                            onClick={() => {
+                              setEditRow(row);
+                              setForm({
+                                topic: row.topic ?? "",
+                                tone: row.tone ?? "",
+                                persona: row.persona ?? "",
+                                language: labelForLanguage(row.language) || "English",
                                 style: row.style ?? "",
                                 count: extractQuoteList(row).length || row.quotes?.length || 5,
                                 wordLimit: row.word_limit ?? defaultForm.wordLimit,
@@ -1713,54 +1713,54 @@ export default function QuotesPage() {
                 <span className="font-semibold text-dark dark:text-dark-8">
                   {filteredRows.length === 0 ? 0 : (currentPage - 1) * pageSize + 1}
                 </span>{" "}
-                  to{" "}
-                  <span className="font-semibold text-dark dark:text-dark-8">
-                    {filteredRows.length === 0 ? 0 : Math.min(currentPage * pageSize, filteredRows.length)}
-                  </span>{" "}
-                  of <span className="font-semibold text-dark dark:text-dark-8">{filteredRows.length}</span> entries
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setPage((p) => Math.max(1, p - 1))}
-                    disabled={currentPage === 1 || filteredRows.length === 0}
-                    className="min-w-[88px] rounded-lg border border-gray-3 px-3 py-2 text-sm font-semibold text-gray-7 transition hover:bg-gray-1 disabled:cursor-not-allowed disabled:opacity-60 dark:border-stroke-dark dark:text-dark-7 dark:hover:bg-dark-3"
-                  >
-                    Previous
-                  </button>
-                  <div className="flex items-center gap-2">
-                    {Array.from({ length: pageCount }).map((_, idx) => {
-                      const p = idx + 1;
-                      const isActive = p === currentPage;
-                      return (
-                        <button
-                          key={p}
-                          type="button"
-                          onClick={() => setPage(p)}
-                          disabled={filteredRows.length === 0}
-                          className={cn(
-                            "h-10 w-10 rounded-lg border text-sm font-semibold transition",
-                            isActive
-                              ? "border-primary bg-primary text-white"
-                              : "border-gray-3 bg-white text-gray-7 hover:bg-gray-1 dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-7 dark:hover:bg-dark-2",
-                            filteredRows.length === 0 && "cursor-not-allowed opacity-60",
-                          )}
-                        >
-                          {p}
-                        </button>
-                      );
-                    })}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
-                    disabled={currentPage === pageCount || filteredRows.length === 0}
-                    className="min-w-[88px] rounded-lg border border-gray-3 px-3 py-2 text-sm font-semibold text-gray-7 transition hover:bg-gray-1 disabled:cursor-not-allowed disabled:opacity-60 dark:border-stroke-dark dark:text-dark-7 dark:hover:bg-dark-3"
-                  >
-                    Next
-                  </button>
-                </div>
+                to{" "}
+                <span className="font-semibold text-dark dark:text-dark-8">
+                  {filteredRows.length === 0 ? 0 : Math.min(currentPage * pageSize, filteredRows.length)}
+                </span>{" "}
+                of <span className="font-semibold text-dark dark:text-dark-8">{filteredRows.length}</span> entries
               </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  disabled={currentPage === 1 || filteredRows.length === 0}
+                  className="min-w-[88px] rounded-lg border border-gray-3 px-3 py-2 text-sm font-semibold text-gray-7 transition hover:bg-gray-1 disabled:cursor-not-allowed disabled:opacity-60 dark:border-stroke-dark dark:text-dark-7 dark:hover:bg-dark-3"
+                >
+                  Previous
+                </button>
+                <div className="flex items-center gap-2">
+                  {Array.from({ length: pageCount }).map((_, idx) => {
+                    const p = idx + 1;
+                    const isActive = p === currentPage;
+                    return (
+                      <button
+                        key={p}
+                        type="button"
+                        onClick={() => setPage(p)}
+                        disabled={filteredRows.length === 0}
+                        className={cn(
+                          "h-10 w-10 rounded-lg border text-sm font-semibold transition",
+                          isActive
+                            ? "border-primary bg-primary text-white"
+                            : "border-gray-3 bg-white text-gray-7 hover:bg-gray-1 dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-7 dark:hover:bg-dark-2",
+                          filteredRows.length === 0 && "cursor-not-allowed opacity-60",
+                        )}
+                      >
+                        {p}
+                      </button>
+                    );
+                  })}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
+                  disabled={currentPage === pageCount || filteredRows.length === 0}
+                  className="min-w-[88px] rounded-lg border border-gray-3 px-3 py-2 text-sm font-semibold text-gray-7 transition hover:bg-gray-1 disabled:cursor-not-allowed disabled:opacity-60 dark:border-stroke-dark dark:text-dark-7 dark:hover:bg-dark-3"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
           </div>
         )}
       </div>
@@ -1796,16 +1796,16 @@ export default function QuotesPage() {
               </div>
 
               <form
-              className="space-y-4"
-              onSubmit={(e) => {
-                if (editRow) {
-                  e.preventDefault();
-                  handleUpdate();
-                } else {
-                  handleSubmit(e);
-                }
-              }}
-            >
+                className="space-y-4"
+                onSubmit={(e) => {
+                  if (editRow) {
+                    e.preventDefault();
+                    handleUpdate();
+                  } else {
+                    handleSubmit(e);
+                  }
+                }}
+              >
               <label className="block text-sm font-semibold text-dark dark:text-dark-7">
                 <div className="flex items-center gap-2">
                   <span>Topic *</span>
@@ -2036,7 +2036,7 @@ export default function QuotesPage() {
                 </div>
               )}
 
-            <hr className="mt-6 mb-4 border-t border-gray-3 dark:border-stroke-dark" />
+              <hr className="mt-6 mb-4 border-t border-gray-3 dark:border-stroke-dark" />
 
               <div className="flex flex-col gap-3 sm:flex-row">
                 <button

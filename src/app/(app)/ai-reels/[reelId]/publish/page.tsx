@@ -57,6 +57,8 @@ export default function ReelPublishPage() {
   const [payload, setPayload] = useState<PublishPayload | null>(null);
   const [status, setStatus] = useState<Status>({ type: "idle" });
   const [platform, setPlatform] = useState<PlatformId>("instagram");
+  const [reelStatus, setReelStatus] = useState<string | null>(null);
+  const [publishUpdating, setPublishUpdating] = useState(false);
 
   const loadPayload = async () => {
     if (!reelId) return;
@@ -74,8 +76,22 @@ export default function ReelPublishPage() {
     }
   };
 
+  const loadStatus = async () => {
+    if (!reelId) return;
+    try {
+      const res = await fetch(`/api/reels/status?reelId=${encodeURIComponent(reelId)}`, { cache: "no-store" });
+      const body = await res.json().catch(() => ({}));
+      if (res.ok) {
+        setReelStatus(body?.reel?.status ?? null);
+      }
+    } catch {
+      // ignore
+    }
+  };
+
   useEffect(() => {
     void loadPayload();
+    void loadStatus();
   }, [reelId]);
 
   const platformCaption = payload?.platformCaptions?.[platform] || payload?.caption || "";
@@ -146,6 +162,28 @@ export default function ReelPublishPage() {
     }
   };
 
+  const handleMarkPublished = async () => {
+    if (!reelId || publishUpdating) return;
+    setPublishUpdating(true);
+    try {
+      const res = await fetch("/api/reels/status", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reelId, status: "PUBLISHED", action: "published" }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(body?.error || "Unable to mark reel as published.");
+      }
+      setReelStatus("PUBLISHED");
+      setStatus({ type: "success", message: "Reel marked as published." });
+    } catch (err) {
+      setStatus({ type: "error", message: (err as Error).message || "Unable to update reel status." });
+    } finally {
+      setPublishUpdating(false);
+    }
+  };
+
   return (
     <div className="min-h-screen space-y-6 bg-gray-50 px-4 pb-12 pt-6 text-dark dark:bg-gray-950 dark:text-white md:px-8">
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-gray-200 bg-white p-5 shadow-card-2 dark:border-white/10 dark:bg-gray-900">
@@ -156,11 +194,23 @@ export default function ReelPublishPage() {
         </div>
         <div className="flex items-center gap-2">
           <button
-            onClick={() => void loadPayload()}
+            onClick={() => {
+              void loadPayload();
+              void loadStatus();
+            }}
             className="rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700 transition hover:border-primary hover:text-primary dark:border-white/10 dark:text-gray-200"
           >
             Refresh
           </button>
+          {reelStatus?.toUpperCase() !== "PUBLISHED" && (
+            <button
+              onClick={() => void handleMarkPublished()}
+              className="rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-white transition hover:bg-primary/90 disabled:opacity-60"
+              disabled={publishUpdating}
+            >
+              {publishUpdating ? "Saving..." : "Mark as Published"}
+            </button>
+          )}
           <Link
             href={`/ai-reels/${reelId}`}
             className="rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700 transition hover:border-primary hover:text-primary dark:border-white/10 dark:text-gray-200"

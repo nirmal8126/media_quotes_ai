@@ -290,7 +290,7 @@ export default function AiReelsPage() {
                         <span
                           className={cn(
                             "inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold",
-                            item.status === "READY"
+                            item.status === "READY" || item.status === "PUBLISHED"
                               ? "bg-green-100 text-green-700"
                               : item.status === "FAILED"
                                 ? "bg-red-100 text-red-700"
@@ -308,7 +308,13 @@ export default function AiReelsPage() {
                       <td className="px-4 py-3 align-top text-right">
                         <button
                           className="rounded-md border border-gray-3 px-3 py-2 text-xs font-semibold text-gray-7 transition hover:bg-gray-1 dark:border-stroke-dark dark:text-dark-7 dark:hover:bg-dark-2"
-                          onClick={() => router.push(`/ai-reels/${item.id}`)}
+                          onClick={() =>
+                            router.push(
+                              item.status?.toUpperCase() === "PUBLISHED"
+                                ? `/ai-reels/${item.id}/publish`
+                                : `/ai-reels/${item.id}`,
+                            )
+                          }
                         >
                           View
                         </button>
