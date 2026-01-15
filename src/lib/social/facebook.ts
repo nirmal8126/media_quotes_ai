@@ -193,10 +193,36 @@ export async function savePreferredFacebookPage(options: { userId: string; pageI
   return { pageId: page.pageId, pageName: page.name };
 }
 
+async function publishVideoPost(options: {
+  pageId: string;
+  accessToken: string;
+  message?: string;
+  videoUrl: string;
+}) {
+  const params = new URLSearchParams();
+  params.set("file_url", options.videoUrl);
+  if (options.message) {
+    params.set("description", options.message);
+  }
+  params.set("access_token", options.accessToken);
+
+  const res = await fetch(`${GRAPH_BASE}/${options.pageId}/videos`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: params.toString(),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(json.error?.message || "Failed to publish video");
+  }
+  return json;
+}
+
 export async function publishToFacebook(options: {
   userId: string;
   message: string;
   imageDataUrl?: string;
+  videoUrl?: string;
   pageId?: string;
 }) {
   const token = await getSocialToken(options.userId, "facebook");
@@ -215,6 +241,15 @@ export async function publishToFacebook(options: {
           name: (token.metadata as { page_name?: string } | null)?.page_name,
         }
       : await resolvePageAccessToken(token.access_token, targetPageId);
+
+  if (options.videoUrl) {
+    return publishVideoPost({
+      pageId: page.pageId,
+      accessToken: page.accessToken,
+      message: options.message,
+      videoUrl: options.videoUrl,
+    });
+  }
 
   if (options.imageDataUrl) {
     const base64 = options.imageDataUrl.split(",")[1] || "";
