@@ -124,7 +124,19 @@ function buildDrawtextFilter(textFilePath, options = {}) {
   const fontColor = options.fontColor || "white";
   const boxColor = options.boxColor || "black@0.45";
   const fontSize = options.fontSize || 48;
-  return `drawtext=textfile='${escapedPath}':fontcolor=${fontColor}:fontsize=${fontSize}:line_spacing=16:x=(w-text_w)/2:y=(h-text_h)/2:box=1:boxcolor=${boxColor}:boxborderw=24`;
+  const boxBorder = options.boxBorder ?? 24;
+  const shadowColor = options.shadowColor;
+  const shadowX = options.shadowX ?? 0;
+  const shadowY = options.shadowY ?? 0;
+  const shadow = shadowColor ? `:shadowcolor=${shadowColor}:shadowx=${shadowX}:shadowy=${shadowY}` : "";
+  return `drawtext=textfile='${escapedPath}':fontcolor=${fontColor}:fontsize=${fontSize}:line_spacing=16:x=(w-text_w)/2:y=(h-text_h)/2:box=1:boxcolor=${boxColor}:boxborderw=${boxBorder}${shadow}`;
+}
+
+function alphaExpr(startSec, endSec, fadeSec) {
+  const start = startSec.toFixed(3);
+  const end = endSec.toFixed(3);
+  const fade = fadeSec.toFixed(3);
+  return `if(between(t,${start},${end}),if(lt(t,${start}+${fade}),(t-${start})/${fade},if(gt(t,${end}-${fade}),(${end}-t)/${fade},1)),0)`;
 }
 
 async function buildSceneFilters(scenes, jobId, options = {}) {
@@ -134,6 +146,12 @@ async function buildSceneFilters(scenes, jobId, options = {}) {
   const fontColor = options.fontColor || "white";
   const boxColor = options.boxColor || "black@0.45";
   const fontSize = options.fontSize || 48;
+  const boxBorder = options.boxBorder ?? 24;
+  const shadowColor = options.shadowColor;
+  const shadowX = options.shadowX ?? 0;
+  const shadowY = options.shadowY ?? 0;
+  const pop = options.textAnimation === "pop";
+  const fadeSec = 0.35;
 
   for (const scene of scenes) {
     const durationMs = Number(scene.durationMs);
@@ -150,11 +168,21 @@ async function buildSceneFilters(scenes, jobId, options = {}) {
     index += 1;
     await fs.promises.writeFile(textFile, text);
     const escapedPath = textFile.replace(/:/g, "\\:").replace(/\\/g, "\\\\");
-    filters.push(
-      `drawtext=textfile='${escapedPath}':fontcolor=${fontColor}:fontsize=${fontSize}:line_spacing=16:x=(w-text_w)/2:y=(h-text_h)/2:box=1:boxcolor=${boxColor}:boxborderw=24:enable='between(t,${startSec.toFixed(
+    const alpha = alphaExpr(startSec, endSec, fadeSec);
+    const shadow = shadowColor ? `:shadowcolor=${shadowColor}:shadowx=${shadowX}:shadowy=${shadowY}` : "";
+    const base = `drawtext=textfile='${escapedPath}':fontcolor=${fontColor}:fontsize=${fontSize}:line_spacing=16:x=(w-text_w)/2:y=(h-text_h)/2:box=1:boxcolor=${boxColor}:boxborderw=${boxBorder}${shadow}:alpha='${alpha}'`;
+    if (pop) {
+      const popEnd = Math.min(endSec, startSec + 0.25);
+      const popAlpha = alphaExpr(startSec, popEnd, Math.min(fadeSec, 0.2));
+      const popFilter = `drawtext=textfile='${escapedPath}':fontcolor=${fontColor}:fontsize=${Math.round(
+        fontSize * 1.12,
+      )}:line_spacing=16:x=(w-text_w)/2:y=(h-text_h)/2:box=1:boxcolor=${boxColor}:boxborderw=${boxBorder}${shadow}:alpha='${popAlpha}':enable='between(t,${startSec.toFixed(
         3,
-      )},${endSec.toFixed(3)})'`,
-    );
+      )},${popEnd.toFixed(3)})'`;
+      filters.push(popFilter, base);
+    } else {
+      filters.push(base);
+    }
   }
 
   return filters.join(",");
@@ -371,16 +399,38 @@ async function handleRender(req, res, body) {
       const preset = resolvePresetPayload(payload);
       const bgColor = normalizeHexColor(preset?.background?.color, "0x111827");
       const fontColor = preset?.text?.color || "white";
-      const boxColor = normalizeBoxColor(preset?.text?.boxColor, "black@0.45");
+      let boxColor = normalizeBoxColor(preset?.text?.boxColor, "black@0.45");
+      let boxBorder = 24;
       const fontSize = preset?.textAnimation === "pop" ? 56 : 48;
+      let shadowColor = null;
+      let shadowX = 0;
+      let shadowY = 0;
+      if (preset?.key === "quote_glass") {
+        boxColor = normalizeBoxColor(preset?.text?.boxColor, "black@0.25");
+        boxBorder = 30;
+      }
+      if (preset?.key === "quote_neon" || preset?.textAnimation === "glow") {
+        shadowColor = normalizeHexColor(preset?.palette?.accent, "0x38bdf8");
+        shadowX = 2;
+        shadowY = 2;
+      }
       let filter = "";
       if (normalizedScenes && normalizedScenes.length > 0) {
-        filter = await buildSceneFilters(normalizedScenes, jobId, { fontColor, boxColor, fontSize });
+        filter = await buildSceneFilters(normalizedScenes, jobId, {
+          fontColor,
+          boxColor,
+          fontSize,
+          boxBorder,
+          shadowColor,
+          shadowX,
+          shadowY,
+          textAnimation: preset?.textAnimation,
+        });
       }
       if (!filter) {
         const textFile = path.join(PREVIEWS_DIR, `${jobId}.txt`);
         await fs.promises.writeFile(textFile, displayText);
-        filter = buildDrawtextFilter(textFile, { fontColor, boxColor, fontSize });
+        filter = buildDrawtextFilter(textFile, { fontColor, boxColor, fontSize, boxBorder, shadowColor, shadowX, shadowY });
       }
       const ffmpegArgs = [
         "-y",

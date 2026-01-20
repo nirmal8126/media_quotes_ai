@@ -23,6 +23,33 @@ function splitSentences(text: string) {
     .filter(Boolean);
 }
 
+function wrapLines(text: string, maxChars = 28) {
+  const words = text.split(/\s+/).filter(Boolean);
+  const lines: string[] = [];
+  let current = "";
+  words.forEach((word) => {
+    const next = current ? `${current} ${word}` : word;
+    if (next.length > maxChars && current) {
+      lines.push(current);
+      current = word;
+    } else {
+      current = next;
+    }
+  });
+  if (current) lines.push(current);
+  return lines;
+}
+
+function splitIfTooLong(text: string, maxLines = 2) {
+  const lines = wrapLines(text);
+  if (lines.length <= maxLines) return [lines.join("\n")];
+  const words = text.split(/\s+/).filter(Boolean);
+  const mid = Math.ceil(words.length / 2);
+  const first = words.slice(0, mid).join(" ");
+  const second = words.slice(mid).join(" ");
+  return [wrapLines(first).slice(0, maxLines).join("\n"), wrapLines(second).slice(0, maxLines).join("\n")].filter(Boolean);
+}
+
 function clampScenes(count: number) {
   return Math.max(4, Math.min(count, 8));
 }
@@ -67,12 +94,29 @@ export function splitIntoScenes(options: SplitOptions): Scene[] {
     }
   }
 
+  const wrappedChunks: string[] = [];
+  chunks.forEach((chunk) => {
+    const parts = splitIfTooLong(chunk, 2);
+    wrappedChunks.push(...parts);
+  });
+
+  while (wrappedChunks.length > 8) {
+    const last = wrappedChunks.pop();
+    const prev = wrappedChunks.pop();
+    wrappedChunks.push([prev, last].filter(Boolean).join(" "));
+  }
+
+  while (wrappedChunks.length < 4) {
+    const last = wrappedChunks[wrappedChunks.length - 1] || "";
+    wrappedChunks.push(last);
+  }
+
   const totalMs = Math.max(4000, Math.round((options.durationSec || 15) * 1000));
-  const perScene = Math.floor(totalMs / chunks.length);
-  let remainder = totalMs - perScene * chunks.length;
+  const perScene = Math.floor(totalMs / wrappedChunks.length);
+  let remainder = totalMs - perScene * wrappedChunks.length;
 
   let start = 0;
-  return chunks.map((text) => {
+  return wrappedChunks.map((text) => {
     const extra = remainder > 0 ? 1 : 0;
     remainder = Math.max(0, remainder - 1);
     const duration = perScene + extra;

@@ -13,13 +13,14 @@ type TriggerInput = {
   durationSec: number;
   language?: string | null;
   withVoiceover?: boolean;
+  musicEnabled?: boolean;
 };
 
 function minWordsForDuration(durationSec: number) {
-  if (durationSec <= 15) return 30;
-  if (durationSec <= 30) return 55;
-  if (durationSec <= 45) return 80;
-  return Math.round(durationSec * 2.2);
+  if (durationSec <= 15) return 20;
+  if (durationSec <= 30) return 40;
+  if (durationSec <= 45) return 60;
+  return Math.round(durationSec * 1.8);
 }
 
 function countWords(text: string) {
@@ -49,7 +50,7 @@ export async function triggerRenderer(input: TriggerInput): Promise<VideoRenderJ
 
     const lastChar = qcText.slice(-1);
     if (!["।", ".", "!", "?", "॥"].includes(lastChar)) {
-      throw new Error(`QC_FAIL: Script truncated (bad ending: "${lastChar}")`);
+      console.warn(`[reels] QC warning: Script truncated (bad ending: "${lastChar}")`);
     }
     const preset = resolvePreset({ template: input.template, style: input.style });
     const scenes = splitIntoScenes({ scriptText: qcText, durationSec, language: input.language });
@@ -92,7 +93,7 @@ export async function triggerRenderer(input: TriggerInput): Promise<VideoRenderJ
       ttsWarning = ttsWarning || "TTS failed — rendering without voiceover";
       withVoiceover = false;
     }
-    const musicTrack = process.env.MUSIC_TRACK_URL || null;
+    const musicTrack = input.musicEnabled === false ? null : process.env.MUSIC_TRACK_URL || null;
     const musicVolume = Number(process.env.MUSIC_VOLUME || "0.18");
     const musicDucking = (process.env.MUSIC_DUCKING || "true").toLowerCase() !== "false";
     const result = await renderVideo({

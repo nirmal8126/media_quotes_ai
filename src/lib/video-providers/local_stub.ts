@@ -33,10 +33,15 @@ function buildScenes(script: string, durationSec: number) {
   const totalMs = Math.max(4, durationSec) * 1000;
   const base = Math.floor(totalMs / segments.length);
   let remainder = totalMs - base * segments.length;
+  let cursor = 0;
   return segments.map((text) => {
     const extra = remainder > 0 ? 1 : 0;
     remainder = Math.max(0, remainder - 1);
-    return { text, durationMs: base + extra };
+    const durationMs = base + extra;
+    const startMs = cursor;
+    const endMs = cursor + durationMs;
+    cursor = endMs;
+    return { text, startMs, endMs };
   });
 }
 

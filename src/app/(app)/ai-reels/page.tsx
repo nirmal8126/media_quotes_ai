@@ -66,6 +66,7 @@ const defaultForm = {
   style: "cinematic",
   durationSec: 15,
   withVoiceover: true,
+  musicEnabled: true,
   language: DEFAULT_LANGUAGE,
   personaId: "",
 };
@@ -86,6 +87,12 @@ function ModalPortal({ children }: { children: React.ReactNode }) {
 export default function AiReelsPage() {
   const router = useRouter();
   const [form, setForm] = useState({ ...defaultForm });
+  useEffect(() => {
+    setForm((prev) => ({
+      ...prev,
+      musicEnabled: prev.musicEnabled ?? Boolean(process.env.NEXT_PUBLIC_MUSIC_TRACK_URL),
+    }));
+  }, []);
   const [status, setStatus] = useState<Status>({ type: "idle" });
   const [history, setHistory] = useState<ReelHistoryItem[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -183,6 +190,7 @@ export default function AiReelsPage() {
           personaId: form.personaId || null,
           durationSec: payloadDuration,
           withVoiceover: form.withVoiceover,
+          musicEnabled: form.musicEnabled,
         }),
       });
       const body = await res.json().catch(() => ({}));
@@ -597,6 +605,20 @@ export default function AiReelsPage() {
                     }
                   />
                   Include voiceover
+                </label>
+                <label className="mt-1 mb-1 flex items-center gap-2 text-sm font-semibold text-dark dark:text-dark-7">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 accent-primary"
+                    checked={form.musicEnabled}
+                    onChange={(e) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        musicEnabled: e.target.checked,
+                      }))
+                    }
+                  />
+                  Background music
                 </label>
               </div>
 

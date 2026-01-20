@@ -421,6 +421,7 @@ type GeneratePayload = {
   personaId?: string | null;
   durationSec?: number;
   withVoiceover?: boolean;
+  musicEnabled?: boolean;
   reelType?: string;
   template?: string;
   visual?: {
@@ -551,11 +552,13 @@ async function generateScriptFromIdea(options: {
     if (channel.ctaDefault) channelLines.push(`Preferred CTA: ${channel.ctaDefault}`);
   }
 
+  const languageLabel = language ? labelForLanguage(language) : 'English';
   const basePrompt = [
-    'Generate a COMPLETE Hindi voiceover script.',
+    `Generate a COMPLETE ${languageLabel} voiceover script.`,
     '',
     `Topic: ${idea}`,
     `Target duration: ${durationSec} seconds`,
+    `Language: ${languageLabel}`,
     '',
     'Rules:',
     '- Single continuous paragraph',
@@ -909,6 +912,7 @@ export async function startReelGeneration(user: User, payload: GeneratePayload):
     durationSec,
     language,
     withVoiceover: payload.withVoiceover !== false,
+    musicEnabled: payload.musicEnabled,
   });
 
   const reelStatus: ReelStatus =
@@ -940,6 +944,7 @@ export async function startReelGeneration(user: User, payload: GeneratePayload):
     customSettings: {
       presetKey: preset.key,
       scenes,
+      musicEnabled: payload.musicEnabled !== false,
       renderNotes: { presetLabel: preset.label },
       ttsWarning,
     },

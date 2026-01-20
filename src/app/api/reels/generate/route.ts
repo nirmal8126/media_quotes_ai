@@ -36,6 +36,7 @@ export async function POST(request: Request) {
       personaId: typeof body.personaId === "string" ? body.personaId.trim() : undefined,
       durationSec: Number.isFinite(Number(body.durationSec)) ? Number(body.durationSec) : undefined,
       withVoiceover: body.withVoiceover !== false,
+      musicEnabled: body.musicEnabled !== false,
       audio:
         body.audio && typeof body.audio === "object"
           ? {
