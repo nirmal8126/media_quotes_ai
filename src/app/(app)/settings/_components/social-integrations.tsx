@@ -31,6 +31,9 @@ export function SocialIntegrations() {
   const [connectedPages, setConnectedPages] = useState<Array<{ id: string; name: string }>>([]);
   const [selectedPageIds, setSelectedPageIds] = useState<string[]>([]);
   const [modalOpen, setModalOpen] = useState(false);
+  const [ytChannels, setYtChannels] = useState<Array<{ id: string; name: string }>>([]);
+  const [ytSelectedId, setYtSelectedId] = useState<string | null>(null);
+  const [ytModalOpen, setYtModalOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -78,6 +81,31 @@ export function SocialIntegrations() {
     }
   }, []);
 
+  const fetchYoutubeChannels = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/social/youtube/channels", { cache: "no-store" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data?.error || "Unable to load YouTube channels.");
+      }
+      const list = Array.isArray(data.channels)
+        ? data.channels.map((channel: { id?: string; name?: string | null }) => ({
+            id: String(channel.id ?? ""),
+            name: channel.name ?? "YouTube Channel",
+          }))
+        : [];
+      setYtChannels(list.filter((item) => item.id));
+      setYtSelectedId(list[0]?.id ?? null);
+      setYtModalOpen(true);
+    } catch (err) {
+      setError((err as Error).message || "Unable to load YouTube channels.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   const fetchConnectedPages = useCallback(async () => {
     try {
       const res = await fetch("/api/social/facebook/connected-pages", { cache: "no-store" });
@@ -105,7 +133,10 @@ export function SocialIntegrations() {
     if (connectedFlag === "facebook") {
       void fetchPages();
     }
-  }, [connectedFlag, fetchPages]);
+    if (connectedFlag === "youtube") {
+      void fetchYoutubeChannels();
+    }
+  }, [connectedFlag, fetchPages, fetchYoutubeChannels]);
 
   const facebookCard = useMemo(
     () => platforms.find((platform) => platform.platform === "facebook") ?? null,
@@ -170,6 +201,50 @@ export function SocialIntegrations() {
     }
   };
 
+  const handleYoutubeDisconnect = async () => {
+    setSaving(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/social/youtube/disconnect", { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data?.error || "Unable to disconnect YouTube.");
+      }
+      await fetchPlatforms();
+    } catch (err) {
+      setError((err as Error).message || "Unable to disconnect YouTube.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleYoutubeSelectChannel = async () => {
+    if (!ytSelectedId) {
+      setError("Select a YouTube channel.");
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      const selected = ytChannels.find((channel) => channel.id === ytSelectedId);
+      const res = await fetch("/api/social/youtube/select-channel", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ channelId: ytSelectedId, channelName: selected?.name }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data?.error || "Unable to save YouTube channel.");
+      }
+      setYtModalOpen(false);
+      await fetchPlatforms();
+    } catch (err) {
+      setError((err as Error).message || "Unable to save YouTube channel.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <section className="rounded-2xl border border-gray-3 bg-white p-6 shadow-card-2 dark:border-stroke-dark dark:bg-dark-2">
       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -191,6 +266,7 @@ export function SocialIntegrations() {
         ) : (
           platforms.map((platform) => {
             const isFacebook = platform.platform === "facebook";
+            const isYoutube = platform.platform === "youtube";
             const isConnected = platform.connected;
             const isDisabled = !platform.enabled;
             const statusLabel = isConnected ? "Connected" : "Not connected";
@@ -253,6 +329,57 @@ export function SocialIntegrations() {
                         <button
                           type="button"
                           onClick={handleDisconnect}
+                          disabled={saving}
+                          className="rounded-lg border border-red-200 px-4 py-2 text-sm font-semibold text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-red-400/50 dark:bg-red-500/10 dark:text-red-200"
+                        >
+                          {saving ? "Disconnecting..." : "Disconnect"}
+                        </button>
+                      </>
+                    )
+                  ) : isYoutube ? (
+                    !isConnected ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          window.location.href = "/api/auth/youtube/start";
+                        }}
+                        className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary/90"
+                      >
+                        Connect YouTube
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={handleYoutubeDisconnect}
+                        disabled={saving}
+                        className="rounded-lg border border-red-200 px-4 py-2 text-sm font-semibold text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-red-400/50 dark:bg-red-500/10 dark:text-red-200"
+                      >
+                        {saving ? "Disconnecting..." : "Disconnect"}
+                      </button>
+                    )
+                  ) : isYoutube ? (
+                    !isConnected ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          window.location.href = "/api/auth/youtube/start";
+                        }}
+                        className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary/90"
+                      >
+                        Connect YouTube
+                      </button>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => void fetchYoutubeChannels()}
+                          className="rounded-lg border border-gray-3 px-4 py-2 text-sm font-semibold text-gray-7 transition hover:bg-gray-1 dark:border-stroke-dark dark:bg-dark-2 dark:text-dark-7 dark:hover:bg-dark-3"
+                        >
+                          Select Channel
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleYoutubeDisconnect}
                           disabled={saving}
                           className="rounded-lg border border-red-200 px-4 py-2 text-sm font-semibold text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-red-400/50 dark:bg-red-500/10 dark:text-red-200"
                         >
@@ -379,6 +506,76 @@ export function SocialIntegrations() {
                 className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {saving ? "Saving..." : "Use this Page"}
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      <Modal
+        open={ytModalOpen}
+        onClose={() => setYtModalOpen(false)}
+        title="Select a YouTube Channel"
+        description="Pick the channel you want to connect."
+        widthClass="max-w-lg"
+      >
+        {loading ? (
+          <div className="py-6 text-sm text-gray-6">Loading channels...</div>
+        ) : ytChannels.length === 0 ? (
+          <div className="py-6 text-sm text-gray-6">No channels found for this account.</div>
+        ) : (
+          <div className="space-y-4">
+            <label className="block text-sm font-semibold text-dark">
+              Channel
+              <div className="mt-2 rounded-lg border border-gray-3 bg-white px-3 py-2">
+                {ytSelectedId ? (
+                  <div className="text-sm text-gray-7">
+                    {(ytChannels.find((channel) => channel.id === ytSelectedId)?.name || "YouTube Channel") as string}
+                  </div>
+                ) : (
+                  <div className="text-xs text-gray-5">Select a channel</div>
+                )}
+              </div>
+            </label>
+
+            <div className="mt-2 max-h-40 space-y-2 overflow-y-auto rounded-lg border border-gray-3 bg-white p-2 text-sm">
+              {ytChannels.map((channel) => {
+                const checked = ytSelectedId === channel.id;
+                return (
+                  <label
+                    key={channel.id}
+                    className="flex cursor-pointer items-center justify-between gap-3 rounded-md px-2 py-1 hover:bg-gray-1"
+                  >
+                    <div>
+                      <div className="font-medium text-dark">{channel.name}</div>
+                      <div className="text-xs text-gray-5">{channel.id}</div>
+                    </div>
+                    <input
+                      type="radio"
+                      checked={checked}
+                      onChange={() => setYtSelectedId(channel.id)}
+                      className="h-4 w-4 accent-primary"
+                    />
+                  </label>
+                );
+              })}
+            </div>
+
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setYtModalOpen(false)}
+                className="rounded-lg border border-gray-3 px-4 py-2 text-sm font-semibold text-gray-7"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleYoutubeSelectChannel}
+                disabled={saving}
+                className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary/90 disabled:opacity-60"
+              >
+                {saving ? "Saving..." : "Save Channel"}
               </button>
             </div>
           </div>
