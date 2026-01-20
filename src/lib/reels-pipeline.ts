@@ -18,9 +18,9 @@ type TriggerInput = {
 
 function minWordsForDuration(durationSec: number) {
   if (durationSec <= 15) return 20;
-  if (durationSec <= 30) return 40;
-  if (durationSec <= 45) return 60;
-  return Math.round(durationSec * 1.8);
+  if (durationSec <= 30) return 80;
+  if (durationSec <= 45) return 120;
+  return Math.round(durationSec * 2.7);
 }
 
 function countWords(text: string) {
@@ -94,7 +94,7 @@ export async function triggerRenderer(input: TriggerInput): Promise<VideoRenderJ
       withVoiceover = false;
     }
     const musicTrack = input.musicEnabled === false ? null : process.env.MUSIC_TRACK_URL || null;
-    const musicVolume = Number(process.env.MUSIC_VOLUME || "0.18");
+    const musicVolume = Number(process.env.MUSIC_VOLUME || "0.16");
     const musicDucking = (process.env.MUSIC_DUCKING || "true").toLowerCase() !== "false";
     const result = await renderVideo({
       scriptText: qcText,

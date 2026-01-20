@@ -3,46 +3,57 @@ import type { VideoProvider, VideoRenderInput, VideoRenderJob } from "./types";
 function getRunwayConfig() {
   const apiUrl = process.env.AI_VIDEO_API_URL;
   const apiKey = process.env.AI_VIDEO_API_KEY;
+  const apiVersion = process.env.RUNWAY_API_VERSION || process.env.AI_VIDEO_API_VERSION;
+  const model = process.env.RUNWAY_MODEL || "veo3.1";
   if (!apiUrl || !apiKey) {
     throw new Error("Runway credentials missing");
   }
-  return { apiUrl: apiUrl.replace(/\/$/, ""), apiKey };
+  if (!apiVersion) {
+    throw new Error("Runway API version missing (set RUNWAY_API_VERSION)");
+  }
+  return { apiUrl: apiUrl.replace(/\/$/, ""), apiKey, apiVersion, model };
 }
 
 async function parseResponse(res: Response): Promise<Record<string, any>> {
   return (await res.json().catch(() => ({}))) as Record<string, any>;
 }
 
+async function requestJson(url: string, apiKey: string, apiVersion: string, body: Record<string, unknown>) {
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+      "X-Runway-Version": apiVersion,
+    },
+    body: JSON.stringify(body),
+  });
+  const data = await parseResponse(res);
+  return { res, data };
+}
+
 export const runwayProvider: VideoProvider = {
   async createRender(input: VideoRenderInput): Promise<VideoRenderJob> {
-    const { apiUrl, apiKey } = getRunwayConfig();
-    const res = await fetch(`${apiUrl}/generate`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        script: input.scriptText,
-        style: input.style ?? null,
-        template: input.template ?? null,
-        durationSec: input.durationSec,
-        language: input.language ?? null,
-        withVoiceover: input.withVoiceover,
-        aspectRatio: input.aspectRatio ?? "9:16",
-      }),
+    const { apiUrl, apiKey, apiVersion, model } = getRunwayConfig();
+    const ratio = input.aspectRatio === "16:9" ? "1280:720" : "720:1280";
+    const duration = Math.max(2, Math.min(Number(input.durationSec || 2), 10));
+    const { res, data } = await requestJson(`${apiUrl}/v1/text_to_video`, apiKey, apiVersion, {
+      promptText: input.scriptText,
+      ratio,
+      audio: Boolean(input.withVoiceover),
+      duration,
+      model,
     });
 
-    const body = await parseResponse(res);
     if (!res.ok) {
       return {
-        jobId: body.jobId || body.job_id || `runway_${Date.now()}`,
+        jobId: data.jobId || data.job_id || data.id || `runway_${Date.now()}`,
         status: "failed",
-        error: body.error || body.message || `Runway request failed (${res.status})`,
+        error: data.error || data.message || `Runway request failed (${res.status})`,
       };
     }
 
-    const jobId = body.jobId || body.job_id || body.id;
+    const jobId = data.taskId || data.task_id || data.jobId || data.job_id || data.id;
     if (!jobId) {
       return {
         jobId: `runway_${Date.now()}`,
@@ -54,11 +65,12 @@ export const runwayProvider: VideoProvider = {
     return { jobId, status: "rendering" };
   },
   async getRender(jobId: string): Promise<VideoRenderJob> {
-    const { apiUrl, apiKey } = getRunwayConfig();
-    const res = await fetch(`${apiUrl}/status/${encodeURIComponent(jobId)}`, {
+    const { apiUrl, apiKey, apiVersion } = getRunwayConfig();
+    const res = await fetch(`${apiUrl}/v1/tasks/${encodeURIComponent(jobId)}`, {
       method: "GET",
       headers: {
         Authorization: `Bearer ${apiKey}`,
+        "X-Runway-Version": apiVersion,
       },
     });
 
@@ -72,12 +84,18 @@ export const runwayProvider: VideoProvider = {
     }
 
     const statusRaw = String(body.status || body.state || "").toLowerCase();
-    if (statusRaw === "ready") {
+    if (statusRaw === "ready" || statusRaw === "completed" || statusRaw === "succeeded") {
       return {
         jobId,
         status: "ready",
-        videoUrl: body.videoUrl || body.video_url || null,
-        thumbnailUrl: body.thumbnailUrl || body.thumbnail_url || null,
+        videoUrl:
+          body.videoUrl ||
+          body.video_url ||
+          body.output?.[0]?.url ||
+          body.outputs?.[0]?.url ||
+          body.result?.url ||
+          null,
+        thumbnailUrl: body.thumbnailUrl || body.thumbnail_url || body.preview_url || null,
         error: body.error || null,
       };
     }

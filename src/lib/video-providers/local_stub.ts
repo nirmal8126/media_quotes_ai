@@ -54,6 +54,10 @@ export const localStubProvider: VideoProvider = {
     const { url, apiKey } = getRendererConfig();
     const target = `${url.replace(/\/$/, "")}/render`;
     const scenes = input.scenes && input.scenes.length > 0 ? input.scenes : buildScenes(input.scriptText, input.durationSec);
+    const music =
+      input.music?.track == null && process.env.MUSIC_TRACK_URL
+        ? { track: process.env.MUSIC_TRACK_URL, volume: input.music?.volume ?? null, ducking: input.music?.ducking ?? null }
+        : input.music ?? null;
     const res = await fetch(target, {
       method: "POST",
       headers: {
@@ -68,7 +72,7 @@ export const localStubProvider: VideoProvider = {
         audioUrl: input.audioUrl ?? null,
         scenes,
         preset: input.preset ?? null,
-        music: input.music ?? null,
+        music,
         brand: input.brand ?? null,
         language: input.language ?? null,
         withVoiceover: input.withVoiceover,
