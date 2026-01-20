@@ -5,6 +5,7 @@ import { getVideoStatus, renderVideo } from "@/lib/video-providers/index";
 import type { VideoRenderJob } from "@/lib/video-providers/types";
 import { resolvePreset } from "@/lib/reels/presets";
 import { splitIntoScenes } from "@/lib/reels/sceneSplitter";
+import { runRunwayVideo } from "@/lib/video-providers/runway";
 
 type TriggerInput = {
   scriptText: string;
@@ -96,26 +97,47 @@ export async function triggerRenderer(input: TriggerInput): Promise<VideoRenderJ
     const musicTrack = input.musicEnabled === false ? null : process.env.MUSIC_TRACK_URL || null;
     const musicVolume = Number(process.env.MUSIC_VOLUME || "0.16");
     const musicDucking = (process.env.MUSIC_DUCKING || "true").toLowerCase() !== "false";
-    const result = await renderVideo({
-      scriptText: qcText,
-      style: preset.key,
-      template: preset.key,
-      durationSec: input.durationSec,
-      language: input.language ?? null,
-      withVoiceover,
-      aspectRatio: "9:16",
-      audioUrl,
-      scenes,
-      preset,
-      music: musicTrack
-        ? {
-            track: musicTrack,
-            volume: Number.isFinite(musicVolume) ? musicVolume : 0.18,
-            ducking: musicDucking,
-          }
-        : null,
-      brand: null,
-    });
+    const providerName = (process.env.VIDEO_PROVIDER || "local_stub").trim().toLowerCase();
+    const result =
+      providerName === "runway"
+        ? await (async () => {
+            const output = await runRunwayVideo({
+              prompt: qcText,
+              imageUrl: null,
+              durationSec: input.durationSec,
+              aspectRatio: "9:16",
+            });
+            if (output.durationSec && Math.round(output.durationSec) !== Math.round(input.durationSec)) {
+              console.warn("[reels] Runway duration differs", { requested: input.durationSec, actual: output.durationSec });
+            }
+            return {
+              jobId: output.jobId || `runway_${Date.now()}`,
+              status: "ready" as const,
+              videoUrl: output.videoUrl,
+              thumbnailUrl: null,
+              error: null,
+            };
+          })()
+        : await renderVideo({
+            scriptText: qcText,
+            style: preset.key,
+            template: preset.key,
+            durationSec: input.durationSec,
+            language: input.language ?? null,
+            withVoiceover,
+            aspectRatio: "9:16",
+            audioUrl,
+            scenes,
+            preset,
+            music: musicTrack
+              ? {
+                  track: musicTrack,
+                  volume: Number.isFinite(musicVolume) ? musicVolume : 0.16,
+                  ducking: musicDucking,
+                }
+              : null,
+            brand: null,
+          });
     if (ttsWarning && result.status !== "failed") {
       result.error = ttsWarning;
     }

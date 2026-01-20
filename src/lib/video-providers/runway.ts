@@ -1,112 +1,173 @@
 import type { VideoProvider, VideoRenderInput, VideoRenderJob } from "./types";
 
+type RunwayMode = "image_to_video" | "text_to_video";
+
 function getRunwayConfig() {
-  const apiUrl = process.env.AI_VIDEO_API_URL;
-  const apiKey = process.env.AI_VIDEO_API_KEY;
+  const apiBaseUrl = process.env.RUNWAY_API_BASE_URL || "https://api.runwayml.com";
+  const apiKey = process.env.RUNWAY_API_KEY || process.env.AI_VIDEO_API_KEY;
   const apiVersion = process.env.RUNWAY_API_VERSION || process.env.AI_VIDEO_API_VERSION;
   const model = process.env.RUNWAY_MODEL || "veo3.1";
-  if (!apiUrl || !apiKey) {
-    throw new Error("Runway credentials missing");
+  if (!apiKey) {
+    throw new Error("Runway API key missing (set RUNWAY_API_KEY).");
   }
-  if (!apiVersion) {
-    throw new Error("Runway API version missing (set RUNWAY_API_VERSION)");
-  }
-  return { apiUrl: apiUrl.replace(/\/$/, ""), apiKey, apiVersion, model };
+  return { apiBaseUrl: apiBaseUrl.replace(/\/$/, ""), apiKey, apiVersion, model };
 }
 
 async function parseResponse(res: Response): Promise<Record<string, any>> {
   return (await res.json().catch(() => ({}))) as Record<string, any>;
 }
 
-async function requestJson(url: string, apiKey: string, apiVersion: string, body: Record<string, unknown>) {
-  const res = await fetch(url, {
+async function requestJson(
+  url: string,
+  apiKey: string,
+  apiVersion: string | undefined,
+  body: Record<string, unknown>,
+  fetcher: typeof fetch,
+) {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${apiKey}`,
+  };
+  if (apiVersion) headers["X-Runway-Version"] = apiVersion;
+  const res = await fetcher(url, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-      "X-Runway-Version": apiVersion,
-    },
+    headers,
     body: JSON.stringify(body),
   });
   const data = await parseResponse(res);
   return { res, data };
 }
 
+async function fetchTask(
+  url: string,
+  apiKey: string,
+  apiVersion: string | undefined,
+  fetcher: typeof fetch,
+) {
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${apiKey}`,
+  };
+  if (apiVersion) headers["X-Runway-Version"] = apiVersion;
+  const res = await fetcher(url, { method: "GET", headers });
+  const data = await parseResponse(res);
+  return { res, data };
+}
+
+function pickTaskId(body: Record<string, any>) {
+  return body.taskId || body.task_id || body.jobId || body.job_id || body.id || null;
+}
+
+function pickVideoUrl(body: Record<string, any>) {
+  return (
+    body.videoUrl ||
+    body.video_url ||
+    body.output?.[0]?.url ||
+    body.outputs?.[0]?.url ||
+    body.result?.url ||
+    null
+  );
+}
+
+export async function runRunwayVideo(options: {
+  mode?: RunwayMode;
+  prompt: string;
+  imageUrl?: string | null;
+  durationSec: number;
+  aspectRatio: "9:16" | "16:9";
+  fetcher?: typeof fetch;
+}) {
+  const { apiBaseUrl, apiKey, apiVersion, model } = getRunwayConfig();
+  const fetcher = options.fetcher || fetch;
+  const ratio = options.aspectRatio === "16:9" ? "1280:720" : "720:1280";
+  const duration = Math.max(2, Math.min(Number(options.durationSec || 2), 10));
+  const mode: RunwayMode =
+    options.mode || (options.imageUrl ? "image_to_video" : "text_to_video");
+
+  const endpoint = mode === "image_to_video" ? "/v1/image_to_video" : "/v1/text_to_video";
+  const body =
+    mode === "image_to_video"
+      ? {
+          promptText: options.prompt,
+          promptImage: options.imageUrl,
+          ratio,
+          duration,
+          model,
+        }
+      : {
+          promptText: options.prompt,
+          ratio,
+          audio: true,
+          duration,
+          model,
+        };
+
+  const { res, data } = await requestJson(`${apiBaseUrl}${endpoint}`, apiKey, apiVersion, body, fetcher);
+  if (!res.ok) {
+    throw new Error(data.error || data.message || `Runway request failed (${res.status})`);
+  }
+
+  const taskId = pickTaskId(data);
+  const immediateUrl = pickVideoUrl(data);
+  if (immediateUrl) {
+    return { jobId: taskId || `runway_${Date.now()}`, videoUrl: immediateUrl, durationSec: data.duration };
+  }
+  if (!taskId) {
+    throw new Error("Runway response missing task id.");
+  }
+
+  let attempts = 0;
+  while (attempts < 30) {
+    attempts += 1;
+    const { res: statusRes, data: statusBody } = await fetchTask(
+      `${apiBaseUrl}/v1/tasks/${encodeURIComponent(taskId)}`,
+      apiKey,
+      apiVersion,
+      fetcher,
+    );
+    if (!statusRes.ok) {
+      throw new Error(statusBody.error || statusBody.message || `Runway status failed (${statusRes.status})`);
+    }
+    const statusRaw = String(statusBody.status || statusBody.state || "").toLowerCase();
+    if (statusRaw === "ready" || statusRaw === "completed" || statusRaw === "succeeded") {
+      const url = pickVideoUrl(statusBody);
+      if (!url) {
+        throw new Error("Runway completed without a video URL.");
+      }
+      return { jobId: taskId, videoUrl: url, durationSec: statusBody.duration };
+    }
+    if (statusRaw === "failed") {
+      throw new Error(statusBody.error || statusBody.message || "Runway job failed");
+    }
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+  }
+
+  throw new Error("Runway job timed out.");
+}
+
 export const runwayProvider: VideoProvider = {
   async createRender(input: VideoRenderInput): Promise<VideoRenderJob> {
-    const { apiUrl, apiKey, apiVersion, model } = getRunwayConfig();
-    const ratio = input.aspectRatio === "16:9" ? "1280:720" : "720:1280";
-    const duration = Math.max(2, Math.min(Number(input.durationSec || 2), 10));
-    const { res, data } = await requestJson(`${apiUrl}/v1/text_to_video`, apiKey, apiVersion, {
-      promptText: input.scriptText,
-      ratio,
-      audio: Boolean(input.withVoiceover),
-      duration,
-      model,
-    });
-
-    if (!res.ok) {
+    try {
+      const result = await runRunwayVideo({
+        prompt: input.scriptText,
+        imageUrl: null,
+        durationSec: input.durationSec,
+        aspectRatio: input.aspectRatio ?? "9:16",
+      });
       return {
-        jobId: data.jobId || data.job_id || data.id || `runway_${Date.now()}`,
-        status: "failed",
-        error: data.error || data.message || `Runway request failed (${res.status})`,
+        jobId: result.jobId || `runway_${Date.now()}`,
+        status: "ready",
+        videoUrl: result.videoUrl,
+        thumbnailUrl: null,
       };
-    }
-
-    const jobId = data.taskId || data.task_id || data.jobId || data.job_id || data.id;
-    if (!jobId) {
+    } catch (error) {
       return {
         jobId: `runway_${Date.now()}`,
         status: "failed",
-        error: "Runway response missing jobId",
+        error: (error as Error).message || "Runway job failed",
       };
     }
-
-    return { jobId, status: "rendering" };
   },
   async getRender(jobId: string): Promise<VideoRenderJob> {
-    const { apiUrl, apiKey, apiVersion } = getRunwayConfig();
-    const res = await fetch(`${apiUrl}/v1/tasks/${encodeURIComponent(jobId)}`, {
-      method: "GET",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "X-Runway-Version": apiVersion,
-      },
-    });
-
-    const body = await parseResponse(res);
-    if (!res.ok) {
-      return {
-        jobId,
-        status: "failed",
-        error: body.error || body.message || `Runway status failed (${res.status})`,
-      };
-    }
-
-    const statusRaw = String(body.status || body.state || "").toLowerCase();
-    if (statusRaw === "ready" || statusRaw === "completed" || statusRaw === "succeeded") {
-      return {
-        jobId,
-        status: "ready",
-        videoUrl:
-          body.videoUrl ||
-          body.video_url ||
-          body.output?.[0]?.url ||
-          body.outputs?.[0]?.url ||
-          body.result?.url ||
-          null,
-        thumbnailUrl: body.thumbnailUrl || body.thumbnail_url || body.preview_url || null,
-        error: body.error || null,
-      };
-    }
-    if (statusRaw === "failed") {
-      return {
-        jobId,
-        status: "failed",
-        error: body.error || body.message || "Runway job failed",
-      };
-    }
-
     return { jobId, status: "rendering" };
   },
 };
