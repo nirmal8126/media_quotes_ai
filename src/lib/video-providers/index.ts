@@ -1,9 +1,10 @@
 import type { VideoProvider, VideoRenderInput, VideoRenderJob } from "./types";
 import { localStubProvider } from "./local_stub";
 import { runwayProvider } from "./runway";
+import { resolveProviderKey } from "./config";
 
 export function getVideoProvider(): VideoProvider {
-  const provider = (process.env.VIDEO_PROVIDER || "").trim().toLowerCase();
+  const provider = resolveProviderKey(process.env.VIDEO_PROVIDER);
   if (provider === "runway") {
     return runwayProvider;
   }

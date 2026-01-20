@@ -1,12 +1,14 @@
 import type { VideoProvider, VideoRenderInput, VideoRenderJob } from "./types";
+import { getProviderEnv } from "./config";
 
 type RunwayMode = "image_to_video" | "text_to_video";
 
 function getRunwayConfig() {
-  const apiBaseUrl = process.env.RUNWAY_API_BASE_URL || "https://api.runwayml.com";
-  const apiKey = process.env.RUNWAY_API_KEY || process.env.AI_VIDEO_API_KEY;
-  const apiVersion = process.env.RUNWAY_API_VERSION || process.env.AI_VIDEO_API_VERSION;
-  const model = process.env.RUNWAY_MODEL || "veo3.1";
+  const env = getProviderEnv("runway");
+  const apiBaseUrl = env.apiBaseUrl || "https://api.runwayml.com";
+  const apiKey = env.apiKey;
+  const apiVersion = env.apiVersion;
+  const model = env.model || "veo3.1";
   if (!apiKey) {
     throw new Error("Runway API key missing (set RUNWAY_API_KEY).");
   }
@@ -79,7 +81,13 @@ export async function runRunwayVideo(options: {
   const { apiBaseUrl, apiKey, apiVersion, model } = getRunwayConfig();
   const fetcher = options.fetcher || fetch;
   const ratio = options.aspectRatio === "16:9" ? "1280:720" : "720:1280";
-  const duration = Math.max(2, Math.min(Number(options.durationSec || 2), 10));
+  const rawDuration = Math.max(2, Math.min(Number(options.durationSec || 2), 10));
+  const allowedDurations = [4, 6, 8];
+  const duration = allowedDurations.reduce(
+    (closest, value) =>
+      Math.abs(value - rawDuration) < Math.abs(closest - rawDuration) ? value : closest,
+    allowedDurations[0],
+  );
   const mode: RunwayMode =
     options.mode || (options.imageUrl ? "image_to_video" : "text_to_video");
 
@@ -102,6 +110,8 @@ export async function runRunwayVideo(options: {
         };
 
   const { res, data } = await requestJson(`${apiBaseUrl}${endpoint}`, apiKey, apiVersion, body, fetcher);
+  console.error("Runway validation issues", JSON.stringify(data.issues, null, 2));
+  console.error("Runway request body", body);
   if (!res.ok) {
     throw new Error(data.error || data.message || `Runway request failed (${res.status})`);
   }
