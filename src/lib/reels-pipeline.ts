@@ -3,6 +3,8 @@ import path from "node:path";
 import { synthesizeWithElevenLabs } from "@/lib/tts";
 import { getVideoStatus, renderVideo } from "@/lib/video-providers/index";
 import type { VideoRenderJob } from "@/lib/video-providers/types";
+import { resolvePreset } from "@/lib/reels/presets";
+import { splitIntoScenes } from "@/lib/reels/sceneSplitter";
 
 type TriggerInput = {
   scriptText: string;
@@ -13,11 +15,18 @@ type TriggerInput = {
   withVoiceover?: boolean;
 };
 
-function minCharsForDuration(durationSec: number) {
-  if (durationSec <= 15) return 120;
-  if (durationSec <= 30) return 220;
-  if (durationSec <= 45) return 320;
-  return Math.round(durationSec * 7);
+function minWordsForDuration(durationSec: number) {
+  if (durationSec <= 15) return 30;
+  if (durationSec <= 30) return 55;
+  if (durationSec <= 45) return 80;
+  return Math.round(durationSec * 2.2);
+}
+
+function countWords(text: string) {
+  return text
+    .split(/\s+/)
+    .map((word) => word.trim())
+    .filter(Boolean).length;
 }
 
 export async function triggerRenderer(input: TriggerInput): Promise<VideoRenderJob> {
@@ -29,21 +38,25 @@ export async function triggerRenderer(input: TriggerInput): Promise<VideoRenderJ
       .join("\n")
       .trim();
     const durationSec = input.durationSec || 15;
-    const minChars = minCharsForDuration(durationSec);
+    const minWords = minWordsForDuration(durationSec);
+    const wordCount = countWords(qcText);
 
-    if (!qcText || qcText.length < minChars) {
+    if (!qcText || wordCount < minWords) {
       throw new Error(
-        `QC_FAIL: Script too short or incomplete (len=${qcText.length}, min=${minChars})`,
+        `QC_FAIL: Script too short or incomplete (words=${wordCount}, min=${minWords})`,
       );
     }
 
     const lastChar = qcText.slice(-1);
-    if (!["।", ".", "!", "?"].includes(lastChar)) {
+    if (!["।", ".", "!", "?", "॥"].includes(lastChar)) {
       throw new Error(`QC_FAIL: Script truncated (bad ending: "${lastChar}")`);
     }
-    const withVoiceover = input.withVoiceover !== false;
+    const preset = resolvePreset({ template: input.template, style: input.style });
+    const scenes = splitIntoScenes({ scriptText: qcText, durationSec, language: input.language });
+    let withVoiceover = input.withVoiceover !== false;
     let audioUrl: string | null = null;
     let ttsAudioPath: string | null = null;
+    let ttsWarning: string | null = null;
     if (withVoiceover && process.env.TTS_PROVIDER_API_KEY) {
       const voiceId = process.env.TTS_VOICE_DEFAULT || "";
       try {
@@ -54,11 +67,8 @@ export async function triggerRenderer(input: TriggerInput): Promise<VideoRenderJ
         });
         ttsAudioPath = audioUrl;
         if (!audioUrl) {
-          return {
-            jobId: `tts_${Date.now()}`,
-            status: "failed",
-            error: "Voiceover generation failed: no audio returned",
-          };
+          ttsWarning = "Voiceover generation failed: no audio returned";
+          withVoiceover = false;
         }
         console.log("[reels] voiceover voiceId", voiceId || "missing");
         console.log("[reels] voiceover audioUrl", audioUrl);
@@ -66,34 +76,48 @@ export async function triggerRenderer(input: TriggerInput): Promise<VideoRenderJ
         if (providerName === "local_stub") {
           const mediaDir = process.env.MEDIA_DIR || path.join(process.cwd(), "renderer-media");
           const mediaBase = process.env.MEDIA_CDN_BASE_URL || "http://localhost:4001/media";
-          const audioPath = audioUrl.startsWith(mediaBase)
-            ? path.join(mediaDir, audioUrl.replace(mediaBase, "").replace(/^\/+/, ""))
-            : null;
+          const audioPath =
+            audioUrl && audioUrl.startsWith(mediaBase)
+              ? path.join(mediaDir, audioUrl.replace(mediaBase, "").replace(/^\/+/, ""))
+              : null;
           const exists = audioPath ? fs.existsSync(audioPath) : false;
           console.log("[reels] voiceover file exists", exists);
         }
       } catch (error) {
-        return {
-          jobId: `tts_${Date.now()}`,
-          status: "failed",
-          error: (error as Error).message || "Voiceover generation failed",
-        };
+        ttsWarning = (error as Error).message || "Voiceover generation failed";
+        withVoiceover = false;
       }
     }
     if (withVoiceover && !ttsAudioPath) {
-      throw new Error("TTS failed — aborting reel generation");
+      ttsWarning = ttsWarning || "TTS failed — rendering without voiceover";
+      withVoiceover = false;
     }
+    const musicTrack = process.env.MUSIC_TRACK_URL || null;
+    const musicVolume = Number(process.env.MUSIC_VOLUME || "0.18");
+    const musicDucking = (process.env.MUSIC_DUCKING || "true").toLowerCase() !== "false";
     const result = await renderVideo({
-      scriptText: input.scriptText,
-      style: input.style ?? null,
-      template: input.template ?? null,
+      scriptText: qcText,
+      style: preset.key,
+      template: preset.key,
       durationSec: input.durationSec,
       language: input.language ?? null,
       withVoiceover,
       aspectRatio: "9:16",
       audioUrl,
+      scenes,
+      preset,
+      music: musicTrack
+        ? {
+            track: musicTrack,
+            volume: Number.isFinite(musicVolume) ? musicVolume : 0.18,
+            ducking: musicDucking,
+          }
+        : null,
       brand: null,
     });
+    if (ttsWarning && result.status !== "failed") {
+      result.error = ttsWarning;
+    }
     return result;
   } catch (error) {
     console.warn("Renderer failed", error);

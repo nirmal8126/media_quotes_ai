@@ -6,6 +6,15 @@ export type VideoRenderInput = {
   style?: string | null;
   template?: string | null;
   audioUrl?: string | null;
+  scenes?: Array<{ startMs: number; endMs: number; text: string }>;
+  preset?: {
+    key: string;
+    background: { color: string; overlay?: string | null };
+    text: { font: string; color: string; boxColor?: string | null };
+    textAnimation: string;
+    palette: { accent: string; secondary: string };
+  } | null;
+  music?: { track?: string | null; volume?: number | null; ducking?: boolean | null } | null;
   brand?: {
     colors?: string[] | null;
     fonts?: string[] | null;

@@ -48,7 +48,7 @@ export const localStubProvider: VideoProvider = {
   async createRender(input: VideoRenderInput): Promise<VideoRenderJob> {
     const { url, apiKey } = getRendererConfig();
     const target = `${url.replace(/\/$/, "")}/render`;
-    const scenes = buildScenes(input.scriptText, input.durationSec);
+    const scenes = input.scenes && input.scenes.length > 0 ? input.scenes : buildScenes(input.scriptText, input.durationSec);
     const res = await fetch(target, {
       method: "POST",
       headers: {
@@ -61,11 +61,13 @@ export const localStubProvider: VideoProvider = {
         style: input.style ?? null,
         template: input.template ?? null,
         audioUrl: input.audioUrl ?? null,
+        scenes,
+        preset: input.preset ?? null,
+        music: input.music ?? null,
         brand: input.brand ?? null,
         language: input.language ?? null,
         withVoiceover: input.withVoiceover,
         aspectRatio: input.aspectRatio ?? "9:16",
-        scenes,
       }),
     });
 

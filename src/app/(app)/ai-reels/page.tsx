@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 import { DEFAULT_LANGUAGE, languageOptions, resolveLanguageCode } from "@/lib/languages";
 import { useRouter } from "next/navigation";
+import { listPresets } from "@/lib/reels/presets";
 
 type ReelHistoryItem = {
   id: string;
@@ -52,6 +53,7 @@ const platforms = [
 const tones = ["motivational", "educational", "funny", "dramatic", "emotional"];
 const styles = ["cinematic", "minimal", "aesthetic", "bold", "fast-cut", "cartoon"];
 const templates = ["cinematic", "cartoon", "meme", "talking_head", "minimal"];
+const presetOptions = listPresets();
 
 const defaultForm = {
   idea: "",
@@ -59,6 +61,7 @@ const defaultForm = {
   channelId: "",
   platform: "YOUTUBE_SHORTS",
   tone: "motivational",
+  preset: "quote_minimal",
   template: "cinematic",
   style: "cinematic",
   durationSec: 15,
@@ -162,6 +165,7 @@ export default function AiReelsPage() {
       message: "Generating script and starting render...",
     });
     const normalizedLanguage = resolveLanguageCode(form.language);
+    const presetKey = form.preset || form.template || form.style;
     const payloadDuration = Number(form.durationSec) || 15;
     try {
       const res = await fetch("/api/reels/generate", {
@@ -173,9 +177,9 @@ export default function AiReelsPage() {
           channelId: form.channelId || null,
           platform: form.platform,
           language: normalizedLanguage,
-          template: form.template,
+          template: presetKey,
           tone: form.tone,
-          style: form.style,
+          style: presetKey,
           personaId: form.personaId || null,
           durationSec: payloadDuration,
           withVoiceover: form.withVoiceover,
@@ -465,6 +469,30 @@ export default function AiReelsPage() {
                     {languageOptions.map((lang) => (
                       <option key={lang.code} value={lang.code}>
                         {lang.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="block text-sm font-semibold text-dark dark:text-dark-7">
+                  <div className="flex items-center gap-2">
+                    <span>Reel Preset</span>
+                    <span className="text-xs font-normal text-gray-6 dark:text-dark-6">(quote styles)</span>
+                  </div>
+                  <select
+                    className="mt-2 w-full rounded-lg border border-gray-3 bg-white px-4 py-3 text-sm text-dark outline-none transition focus:border-primary dark:border-stroke-dark dark:bg-dark-3 dark:text-dark-8"
+                    value={form.preset}
+                    onChange={(e) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        preset: e.target.value,
+                        template: e.target.value,
+                        style: e.target.value,
+                      }))
+                    }
+                  >
+                    {presetOptions.map((preset) => (
+                      <option key={preset.key} value={preset.key}>
+                        {preset.label}
                       </option>
                     ))}
                   </select>

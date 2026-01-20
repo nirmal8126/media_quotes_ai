@@ -23,7 +23,7 @@ export async function GET(request: Request) {
     .select(
       `
       id, status, platform, tone, style, duration_sec, renderer_job_id, video_url, thumbnail_url, error_message,
-      channel_id, script_id, created_at, updated_at,
+      channel_id, script_id, created_at, updated_at, custom_settings,
       scripts:script_id ( id, text, input_prompt )
     `,
     )
@@ -42,7 +42,12 @@ export async function GET(request: Request) {
 
   const normalizedError = (error?.message ?? '').toLowerCase();
 
-  if (error && (normalizedError.includes('scripts') || normalizedError.includes('schema cache'))) {
+  if (
+    error &&
+    (normalizedError.includes('scripts') ||
+      normalizedError.includes('schema cache') ||
+      normalizedError.includes('custom_settings'))
+  ) {
     const { data: fallbackData, error: fallbackError } = await supabaseAdmin
       .from('reels')
       .select(
@@ -74,6 +79,7 @@ export async function GET(request: Request) {
         scriptId: row.script_id,
         scriptText: null,
         inputPrompt: null,
+        customSettings: null,
         createdAt: row.created_at,
         updatedAt: row.updated_at,
       })) ?? [];
@@ -135,6 +141,7 @@ export async function GET(request: Request) {
       scriptId: row.script_id,
       scriptText: row.scripts?.text ?? row.scripts?.[0]?.text ?? null,
       inputPrompt: row.scripts?.input_prompt ?? row.scripts?.[0]?.input_prompt ?? null,
+      customSettings: row.custom_settings ?? null,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     })) ?? [];

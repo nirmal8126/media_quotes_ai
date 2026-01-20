@@ -26,6 +26,7 @@ function mapReelRow(row: Record<string, any>) {
     errorMessage: row.error_message ?? null,
     createdAt: row.created_at ?? null,
     updatedAt: row.updated_at ?? null,
+    customSettings: row.custom_settings ?? null,
     caption: row.caption ?? row.custom_settings?.caption?.text ?? null,
     hashtags,
     thumbnailPrompt: row.thumbnail_prompt ?? row.custom_settings?.thumbnailPrompt ?? null,

@@ -5,6 +5,8 @@ import { pickProvider } from '@/lib/llm-provider';
 import { getChannel, type ChannelRecord } from '@/lib/channel-service';
 import { labelForLanguage } from '@/lib/languages';
 import { getRendererStatus, triggerRenderer } from '@/lib/reels-pipeline';
+import { resolvePreset } from '@/lib/reels/presets';
+import { splitIntoScenes } from '@/lib/reels/sceneSplitter';
 import type { User } from '@supabase/supabase-js';
 import type { PostgrestError } from '@supabase/supabase-js';
 
@@ -706,6 +708,7 @@ async function insertReelRecord(payload: {
   videoUrl?: string | null;
   thumbnailUrl?: string | null;
   errorMessage?: string | null;
+  customSettings?: Record<string, unknown> | null;
 }): Promise<ReelRecord> {
   const now = new Date().toISOString();
   const fullInsert = {
@@ -731,6 +734,7 @@ async function insertReelRecord(payload: {
     video_url: payload.videoUrl || null,
     thumbnail_url: payload.thumbnailUrl || null,
     error_message: payload.errorMessage || null,
+    custom_settings: payload.customSettings || null,
     created_at: now,
     updated_at: now,
   };
@@ -750,7 +754,8 @@ async function insertReelRecord(payload: {
       msg.includes('template') ||
       msg.includes('logo_url') ||
       msg.includes('audio') ||
-      msg.includes('language')
+      msg.includes('language') ||
+      msg.includes('custom_settings')
     ) {
       const trimmed = {
         user_id: payload.userId,
@@ -871,6 +876,11 @@ export async function startReelGeneration(user: User, payload: GeneratePayload):
     });
   }
 
+  const preset = resolvePreset({ template, style, platform });
+  const resolvedTemplate = template || preset.key;
+  const resolvedStyle = style || preset.key;
+  const scenes = splitIntoScenes({ scriptText: finalScript, durationSec, language });
+
   const script = await insertScriptRecord({
     userId: user.id,
     channelId,
@@ -878,8 +888,8 @@ export async function startReelGeneration(user: User, payload: GeneratePayload):
     platform,
     language,
     tone,
-    style,
-    template,
+    style: resolvedStyle,
+    template: resolvedTemplate,
     brandColors,
     brandFonts,
     logoUrl,
@@ -894,8 +904,8 @@ export async function startReelGeneration(user: User, payload: GeneratePayload):
 
   const rendererJob = await triggerRenderer({
     scriptText: finalScript,
-    style,
-    template,
+    style: resolvedStyle,
+    template: resolvedTemplate,
     durationSec,
     language,
     withVoiceover: payload.withVoiceover !== false,
@@ -903,6 +913,7 @@ export async function startReelGeneration(user: User, payload: GeneratePayload):
 
   const reelStatus: ReelStatus =
     rendererJob.status === 'ready' ? 'READY' : rendererJob.status === 'failed' ? 'FAILED' : 'RENDERING';
+  const ttsWarning = rendererJob.status !== 'failed' && rendererJob.error ? rendererJob.error : null;
   const reel = await insertReelRecord({
     userId: user.id,
     channelId,
@@ -911,8 +922,8 @@ export async function startReelGeneration(user: User, payload: GeneratePayload):
     platform,
     language,
     tone,
-    style,
-    template,
+    style: resolvedStyle,
+    template: resolvedTemplate,
     brandColors,
     brandFonts,
     logoUrl,
@@ -925,7 +936,13 @@ export async function startReelGeneration(user: User, payload: GeneratePayload):
     rendererJobId: rendererJob.jobId,
     videoUrl: rendererJob.videoUrl ?? null,
     thumbnailUrl: rendererJob.thumbnailUrl ?? null,
-    errorMessage: rendererJob.error || null,
+    errorMessage: rendererJob.status === 'failed' ? rendererJob.error || null : null,
+    customSettings: {
+      presetKey: preset.key,
+      scenes,
+      renderNotes: { presetLabel: preset.label },
+      ttsWarning,
+    },
   });
 
   return { script, reel };

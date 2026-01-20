@@ -27,6 +27,7 @@ type ReelDetail = {
   caption?: string | null;
   hashtags?: string[] | null;
   thumbnailPrompt?: string | null;
+  customSettings?: Record<string, any> | null;
 };
 
 type PublishPayload = {
@@ -420,6 +421,14 @@ export default function ReelDetailPage() {
               </ModalPortal>
             )}
           </div>
+          {(publishPayload?.videoUrl || reel?.videoUrl) && (
+            <Link
+              href={`/ai-reels/${reelId}/publish`}
+              className="rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-white transition hover:bg-primary/90"
+            >
+              Publish/Share
+            </Link>
+          )}
           <button
             onClick={() => {
               void loadDetail();
@@ -609,6 +618,20 @@ export default function ReelDetailPage() {
                   {reel.scriptText || "No script stored yet."}
                 </div>
               </div>
+
+              {Array.isArray(reel.customSettings?.scenes) && reel.customSettings?.scenes?.length > 0 ? (
+                <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-card-2 dark:border-white/10 dark:bg-gray-900">
+                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary">Scenes</p>
+                  <div className="mt-3 space-y-2 text-sm text-gray-7 dark:text-dark-7">
+                    {reel.customSettings.scenes.map((scene: { text?: string }, idx: number) => (
+                      <div key={`${idx}-${scene.text?.slice(0, 12) || "scene"}`} className="rounded-lg border border-gray-200 px-3 py-2">
+                        <span className="mr-2 text-xs font-semibold text-primary">{idx + 1}.</span>
+                        <span>{scene.text || "Scene"}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
 
               {reel.thumbnailUrl ? (
                 <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-card-2 dark:border-white/10 dark:bg-gray-900">

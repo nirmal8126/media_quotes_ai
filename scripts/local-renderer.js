@@ -119,15 +119,21 @@ function writeSvgThumbnail({ text, outputPath }) {
   return fs.promises.writeFile(outputPath, svg);
 }
 
-function buildDrawtextFilter(textFilePath) {
+function buildDrawtextFilter(textFilePath, options = {}) {
   const escapedPath = textFilePath.replace(/:/g, "\\:").replace(/\\/g, "\\\\");
-  return `drawtext=textfile='${escapedPath}':fontcolor=white:fontsize=48:line_spacing=16:x=(w-text_w)/2:y=(h-text_h)/2:box=1:boxcolor=black@0.45:boxborderw=24`;
+  const fontColor = options.fontColor || "white";
+  const boxColor = options.boxColor || "black@0.45";
+  const fontSize = options.fontSize || 48;
+  return `drawtext=textfile='${escapedPath}':fontcolor=${fontColor}:fontsize=${fontSize}:line_spacing=16:x=(w-text_w)/2:y=(h-text_h)/2:box=1:boxcolor=${boxColor}:boxborderw=24`;
 }
 
-async function buildSceneFilters(scenes, jobId) {
+async function buildSceneFilters(scenes, jobId, options = {}) {
   let cursor = 0;
   const filters = [];
   let index = 0;
+  const fontColor = options.fontColor || "white";
+  const boxColor = options.boxColor || "black@0.45";
+  const fontSize = options.fontSize || 48;
 
   for (const scene of scenes) {
     const durationMs = Number(scene.durationMs);
@@ -145,13 +151,20 @@ async function buildSceneFilters(scenes, jobId) {
     await fs.promises.writeFile(textFile, text);
     const escapedPath = textFile.replace(/:/g, "\\:").replace(/\\/g, "\\\\");
     filters.push(
-      `drawtext=textfile='${escapedPath}':fontcolor=white:fontsize=48:line_spacing=16:x=(w-text_w)/2:y=(h-text_h)/2:box=1:boxcolor=black@0.45:boxborderw=24:enable='between(t,${startSec.toFixed(
+      `drawtext=textfile='${escapedPath}':fontcolor=${fontColor}:fontsize=${fontSize}:line_spacing=16:x=(w-text_w)/2:y=(h-text_h)/2:box=1:boxcolor=${boxColor}:boxborderw=24:enable='between(t,${startSec.toFixed(
         3,
       )},${endSec.toFixed(3)})'`,
     );
   }
 
   return filters.join(",");
+}
+
+function resolvePresetPayload(payload) {
+  if (payload?.preset && typeof payload.preset === "object") return payload.preset;
+  if (payload?.visual?.preset && typeof payload.visual.preset === "object") return payload.visual.preset;
+  if (payload?.custom?.preset && typeof payload.custom.preset === "object") return payload.custom.preset;
+  return null;
 }
 
 function getAudioDurationSec(audioPath) {
@@ -193,12 +206,71 @@ function resolveAudioPath(input) {
   return null;
 }
 
+function resolveMusicInput(input) {
+  if (!input || typeof input !== "string") return null;
+  const trimmed = input.trim();
+  if (!trimmed) return null;
+
+  if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+    try {
+      const parsed = new URL(trimmed);
+      if (parsed.pathname.startsWith("/media/")) {
+        const relative = decodeURIComponent(parsed.pathname.replace(/^\/media\//, ""));
+        return { source: path.join(MEDIA_DIR, relative), isLocal: true };
+      }
+      return { source: trimmed, isLocal: false };
+    } catch {
+      return null;
+    }
+  }
+
+  if (trimmed.startsWith("/media/")) {
+    return { source: path.join(MEDIA_DIR, trimmed.replace(/^\/media\//, "")), isLocal: true };
+  }
+
+  if (fs.existsSync(trimmed)) return { source: trimmed, isLocal: true };
+  return null;
+}
+
+function normalizeHexColor(input, fallback) {
+  if (!input || typeof input !== "string") return fallback;
+  const trimmed = input.trim();
+  const hex = trimmed.startsWith("#") ? trimmed.slice(1) : trimmed;
+  if (/^[0-9a-fA-F]{6}$/.test(hex)) return `0x${hex}`;
+  return fallback;
+}
+
+function normalizeBoxColor(input, fallback) {
+  if (!input || typeof input !== "string") return fallback;
+  const trimmed = input.trim();
+  if (/^rgba\(/i.test(trimmed)) {
+    const parts = trimmed.replace(/rgba\(|\)/gi, "").split(",").map((part) => part.trim());
+    const r = Number(parts[0]);
+    const g = Number(parts[1]);
+    const b = Number(parts[2]);
+    const a = Number(parts[3]);
+    if ([r, g, b, a].every((val) => Number.isFinite(val))) {
+      const hex = [r, g, b]
+        .map((val) => Math.max(0, Math.min(255, Math.round(val))).toString(16).padStart(2, "0"))
+        .join("");
+      return `0x${hex}@${Math.max(0, Math.min(1, a))}`;
+    }
+  }
+  if (trimmed.includes("@")) return trimmed;
+  if (trimmed.startsWith("#")) return `${normalizeHexColor(trimmed, "0x000000")}@0.45`;
+  return trimmed;
+}
+
 function normalizeScenes(payload, fallbackDurationSec) {
   if (!Array.isArray(payload?.scenes) || payload.scenes.length === 0) return null;
   const rawScenes = payload.scenes
     .map((scene) => ({
       text: sanitizeText(scene?.text || scene?.script || ""),
-      durationMs: Number(scene?.durationMs ?? scene?.duration_ms),
+      durationMs: Number(
+        scene?.durationMs ??
+          scene?.duration_ms ??
+          (Number(scene?.endMs) > Number(scene?.startMs) ? Number(scene?.endMs) - Number(scene?.startMs) : 0),
+      ),
     }))
     .filter((scene) => scene.text);
 
@@ -264,6 +336,10 @@ async function handleRender(req, res, body) {
 
   const requestedDuration = Math.max(4, Math.min(Number(payload.durationSec || payload.duration || 8), 60));
   const audioPath = resolveAudioPath(payload.audioUrl);
+  const musicInput = resolveMusicInput(payload?.music?.track);
+  const musicVolumeRaw = Number(payload?.music?.volume ?? process.env.MUSIC_VOLUME ?? "0.18");
+  const musicVolume = Number.isFinite(musicVolumeRaw) ? musicVolumeRaw : 0.18;
+  const musicDucking = payload?.music?.ducking !== false;
   const audioDuration = getAudioDurationSec(audioPath);
   const scenesDurationMs = normalizedScenes
     ? normalizedScenes.reduce((sum, scene) => sum + scene.durationMs, 0)
@@ -292,38 +368,79 @@ async function handleRender(req, res, body) {
 
   try {
     if (canRenderVideo) {
+      const preset = resolvePresetPayload(payload);
+      const bgColor = normalizeHexColor(preset?.background?.color, "0x111827");
+      const fontColor = preset?.text?.color || "white";
+      const boxColor = normalizeBoxColor(preset?.text?.boxColor, "black@0.45");
+      const fontSize = preset?.textAnimation === "pop" ? 56 : 48;
       let filter = "";
       if (normalizedScenes && normalizedScenes.length > 0) {
-        filter = await buildSceneFilters(normalizedScenes, jobId);
+        filter = await buildSceneFilters(normalizedScenes, jobId, { fontColor, boxColor, fontSize });
       }
       if (!filter) {
         const textFile = path.join(PREVIEWS_DIR, `${jobId}.txt`);
         await fs.promises.writeFile(textFile, displayText);
-        filter = buildDrawtextFilter(textFile);
+        filter = buildDrawtextFilter(textFile, { fontColor, boxColor, fontSize });
       }
       const ffmpegArgs = [
         "-y",
         "-f",
         "lavfi",
         "-i",
-        `color=c=0x111827:s=720x1280:d=${durationSec}`,
+        `color=c=${bgColor}:s=720x1280:d=${durationSec}`,
       ];
+      let voiceIndex = null;
+      let musicIndex = null;
+      let inputIndex = 1;
+
       if (audioPath && fs.existsSync(audioPath)) {
+        ffmpegArgs.push("-stream_loop", "-1", "-i", audioPath);
+        voiceIndex = inputIndex;
+        inputIndex += 1;
+      }
+
+      if (musicInput?.source) {
+        if (musicInput.isLocal) {
+          ffmpegArgs.push("-stream_loop", "-1", "-i", musicInput.source);
+        } else {
+          ffmpegArgs.push("-i", musicInput.source);
+        }
+        musicIndex = inputIndex;
+        inputIndex += 1;
+      }
+
+      let audioFilterComplex = "";
+      let audioMap = "";
+      if (voiceIndex !== null && musicIndex !== null) {
+        const duckFilter = musicDucking
+          ? `[music][voice]sidechaincompress=threshold=0.1:ratio=8:attack=5:release=200[ducked];[voice][ducked]amix=inputs=2:duration=first:dropout_transition=2[a]`
+          : `[voice][music]amix=inputs=2:duration=first:dropout_transition=2[a]`;
+        audioFilterComplex = [
+          `[${voiceIndex}:a]aresample=async=1,apad[voice]`,
+          `[${musicIndex}:a]volume=${musicVolume}[music]`,
+          duckFilter,
+        ].join(";");
+        audioMap = "[a]";
+      } else if (voiceIndex !== null) {
+        audioFilterComplex = `[${voiceIndex}:a]aresample=async=1,apad[a]`;
+        audioMap = "[a]";
+      } else if (musicIndex !== null) {
+        audioFilterComplex = `[${musicIndex}:a]volume=${musicVolume},apad[a]`;
+        audioMap = "[a]";
+      }
+
+      if (audioFilterComplex) {
         ffmpegArgs.push(
-          "-stream_loop",
-          "-1",
-          "-i",
-          audioPath,
           "-vf",
           filter,
           "-r",
           "30",
+          "-filter_complex",
+          audioFilterComplex,
           "-map",
           "0:v:0",
           "-map",
-          "[a]",
-          "-filter_complex",
-          "[1:a]aresample=async=1,apad[a]",
+          audioMap,
           "-c:v",
           "libx264",
           "-c:a",
